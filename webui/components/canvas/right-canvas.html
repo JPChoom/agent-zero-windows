@@ -1,0 +1,131 @@
+<html>
+<head>
+  <script type="module">
+    import { store } from "/components/canvas/right-canvas-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.rightCanvas">
+      <aside
+        id="right-canvas"
+        class="right-canvas"
+        :class="{
+          'is-open': $store.rightCanvas.isOpen,
+          'is-closed': !$store.rightCanvas.isOpen,
+          'is-overlay': $store.rightCanvas.isOverlayMode,
+          'is-mobile': $store.rightCanvas.isMobileMode
+        }"
+        :style="$store.rightCanvas.widthStyle()"
+        x-show="$store.rightCanvas.shouldRender()"
+        x-init="$store.rightCanvas.init($el)"
+        x-effect="$store.rightCanvas.applyLayoutState()"
+        aria-label="Universal Canvas"
+      >
+        <div class="right-canvas-resize-handle" title="Resize canvas" @pointerdown="$store.rightCanvas.startResize($event)"></div>
+
+        <nav class="right-canvas-rail" aria-label="Canvas surfaces">
+          <button
+            type="button"
+            class="right-canvas-rail-button right-canvas-toggle-button"
+            :class="{ 'is-active': $store.rightCanvas.isOpen }"
+            :title="$store.rightCanvas.isOpen ? 'Hide canvas' : 'Show canvas'"
+            :aria-label="$store.rightCanvas.isOpen ? 'Hide canvas' : 'Show canvas'"
+            :aria-pressed="$store.rightCanvas.isOpen.toString()"
+            @click="$store.rightCanvas.toggleCanvas()"
+          >
+            <span class="material-symbols-outlined">dock_to_right</span>
+          </button>
+
+          <div class="right-canvas-rail-separator" aria-hidden="true"></div>
+
+          <template x-for="surface in $store.rightCanvas.railSurfaces" :key="surface.id">
+            <button
+              type="button"
+              class="right-canvas-rail-button"
+              :class="{ 'is-active': $store.rightCanvas.isSurfaceActive(surface.id) && $store.rightCanvas.isOpen }"
+              :title="surface.title"
+              :aria-label="surface.title"
+              @click="$store.rightCanvas.open(surface.id)"
+            >
+              <template x-if="surface.image">
+                <img class="right-canvas-surface-image" :src="surface.image" alt="" aria-hidden="true">
+              </template>
+              <template x-if="!surface.image">
+                <span class="material-symbols-outlined" x-text="surface.icon"></span>
+              </template>
+            </button>
+          </template>
+        </nav>
+
+        <section class="right-canvas-shell">
+          <x-extension id="right-canvas-shell-start"></x-extension>
+
+          <header class="right-canvas-header">
+            <div class="right-canvas-tabs" role="tablist" aria-label="Canvas tabs">
+              <x-extension id="right-canvas-tabs-start"></x-extension>
+              <template x-for="surface in $store.rightCanvas.panelSurfaces" :key="surface.id">
+                <button
+                  type="button"
+                  class="right-canvas-tab"
+                  role="tab"
+                  :aria-selected="$store.rightCanvas.isSurfaceActive(surface.id).toString()"
+                  :title="surface.title"
+                  :class="{ 'is-active': $store.rightCanvas.isSurfaceActive(surface.id) }"
+                  @click="$store.rightCanvas.open(surface.id)"
+                >
+                  <template x-if="surface.image">
+                    <img class="right-canvas-surface-image" :src="surface.image" alt="" aria-hidden="true">
+                  </template>
+                  <template x-if="!surface.image">
+                    <span class="material-symbols-outlined" aria-hidden="true" x-text="surface.icon"></span>
+                  </template>
+                  <span class="right-canvas-tab-label" x-text="surface.title"></span>
+                </button>
+              </template>
+              <x-extension id="right-canvas-tabs-end"></x-extension>
+            </div>
+
+            <div class="right-canvas-toolbar" aria-label="Canvas toolbar">
+              <x-extension id="right-canvas-toolbar-start"></x-extension>
+              <button
+                type="button"
+                class="right-canvas-icon-button"
+                title="Open as window"
+                aria-label="Open as window"
+                x-show="$store.rightCanvas.currentSurfaceCanUndock()"
+                @click="$store.rightCanvas.undockActiveSurface()"
+              >
+                <span class="material-symbols-outlined">open_in_new</span>
+              </button>
+              <button
+                type="button"
+                class="right-canvas-icon-button right-canvas-close-button"
+                title="Close canvas"
+                aria-label="Close canvas"
+                @click="$store.rightCanvas.close()"
+              >
+                <span class="material-symbols-outlined">close</span>
+              </button>
+              <x-extension id="right-canvas-toolbar-end"></x-extension>
+            </div>
+          </header>
+
+          <main class="right-canvas-panels">
+            <x-extension id="right-canvas-panels"></x-extension>
+            <template x-if="$store.rightCanvas.panelSurfaces.length === 0">
+              <div class="right-canvas-empty-state">
+                <x-extension id="right-canvas-empty-state"></x-extension>
+                <span class="material-symbols-outlined">space_dashboard</span>
+                <span>Canvas</span>
+              </div>
+            </template>
+          </main>
+
+          <x-extension id="right-canvas-shell-end"></x-extension>
+        </section>
+      </aside>
+    </template>
+  </div>
+</body>
+</html>

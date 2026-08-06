@@ -1,0 +1,356 @@
+<html>
+<head>
+  <title>Skills</title>
+  <script type="module" src="/plugins/_skills/webui/config-store.js"></script>
+</head>
+<body>
+  <div
+    x-data="createSkillsConfigModel(context, config)"
+    x-init="
+      initDefaults();
+      await loadCatalog();
+      $watch('context.projectName', async () => { await loadCatalog(); });
+    "
+  >
+    <div class="skills-layout">
+      <div class="section-title">Skills</div>
+
+      <template x-if="!isChatMode">
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Pinned skill cap</div>
+            <div class="field-description">
+              Maximum number of pinned skills stored in this scope. Higher values inject more instructions into every prompt.
+            </div>
+          </div>
+          <div class="field-control">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              x-model.number="config.max_active_skills"
+              @change="applyMaxActiveSkills(config.max_active_skills, { notify: true })"
+            >
+          </div>
+        </div>
+      </template>
+
+      <div class="skills-toolbar">
+        <label class="skills-search">
+          <span class="material-symbols-outlined">search</span>
+          <input
+            type="text"
+            x-model.trim="search"
+            placeholder="Search skills"
+          >
+        </label>
+
+        <div class="skills-actions">
+          <button type="button" class="button" @click="loadCatalog()" :disabled="loadingCatalog || mutatingChat">
+            <span class="icon material-symbols-outlined">refresh</span>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div class="skills-section">
+        <div class="skills-panel-title">Pinned skills</div>
+        <div class="skills-panel-subtitle" x-text="pinnedSubtitle()"></div>
+
+        <template x-if="!loadingCatalog && selectedSkills.length === 0">
+          <div class="skills-empty">No pinned skills yet. Pin from the list below.</div>
+        </template>
+
+        <div class="skills-selected-list">
+          <template x-for="entry in selectedSkills" :key="entryKey(entry)">
+            <div class="skills-row skills-pinned-row" :class="{ 'is-missing': isEntryMissing(entry) }">
+              <div class="skills-row-copy">
+                <div class="skills-row-title" x-text="labelForEntry(entry)"></div>
+                <div class="skills-row-meta" x-text="secondaryLabelForEntry(entry)"></div>
+              </div>
+              <div class="skills-row-actions">
+                <button
+                  type="button"
+                  class="button icon-button"
+                  title="Open skill"
+                  aria-label="Open skill"
+                  @click="openSkill(entry)"
+                >
+                  <span class="icon material-symbols-outlined">article</span>
+                </button>
+                <button
+                  type="button"
+                  class="button cancel icon-button"
+                  title="Remove"
+                  aria-label="Remove skill"
+                  @click="$confirmClick($event, () => removeEntry(entry))"
+                  :disabled="mutatingChat"
+                >
+                  <span class="icon material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <hr class="skills-divider">
+
+      <div class="skills-section">
+        <div class="skills-panel-title">All skills</div>
+        <div class="skills-panel-subtitle" x-text="allSkillsSubtitle()"></div>
+
+        <div class="skills-loading" x-show="loadingCatalog">
+          <span class="material-symbols-outlined spinning">progress_activity</span>
+          <span>Loading skills...</span>
+        </div>
+
+        <template x-if="!loadingCatalog && filteredCatalog.length === 0">
+          <div class="skills-empty">No skills matched your search.</div>
+        </template>
+
+        <div class="skills-list">
+          <template x-for="skill in filteredCatalog" :key="skill.path">
+            <div
+              class="skills-row skills-catalog-row"
+              :class="{
+                'is-pinned': isSelected(skill),
+                'is-hidden': isHidden(skill),
+              }"
+            >
+              <label class="skills-checkbox" :title="isSelected(skill) ? 'Pinned' : 'Pin skill'">
+                <input
+                  type="checkbox"
+                  :checked="isSelected(skill)"
+                  :disabled="isPinDisabled(skill)"
+                  @change="togglePinnedSkill(skill, $event.target.checked)"
+                >
+              </label>
+              <div class="skills-row-copy">
+                <div class="skills-row-title" x-text="skill.name || '(unnamed skill)'"></div>
+                <div class="skills-row-description" x-text="skill.description || 'No description provided.'"></div>
+                <div
+                  class="skills-row-state"
+                  x-show="isHidden(skill)"
+                  x-text="hiddenStateLabel()"
+                >
+                </div>
+              </div>
+              <div class="skills-row-actions">
+                <button
+                  type="button"
+                  class="button icon-button skills-visibility-button"
+                  :class="{ 'is-hidden-state': isHidden(skill) }"
+                  :title="visibilityButtonTitle(skill)"
+                  :aria-label="visibilityButtonTitle(skill)"
+                  :disabled="isVisibilityDisabled()"
+                  @click.prevent.stop="toggleVisibility(skill)"
+                >
+                  <span class="icon material-symbols-outlined" x-text="visibilityButtonIcon(skill)"></span>
+                </button>
+                <button
+                  type="button"
+                  class="button icon-button"
+                  title="Open skill"
+                  aria-label="Open skill"
+                  @click.prevent.stop="openSkill(skill)"
+                >
+                  <span class="icon material-symbols-outlined">article</span>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .skills-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .skills-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .skills-search {
+      flex: 1 1 18rem;
+      min-width: 14rem;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      border: 1px solid var(--color-border);
+      border-radius: 0.5rem;
+      background: var(--color-bg-primary);
+      padding: var(--spacing-xs) var(--spacing-sm);
+    }
+
+    .skills-search input {
+      width: 100%;
+      border: none;
+      background: transparent;
+      outline: none;
+    }
+
+    .skills-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+
+    .skills-section {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .skills-divider {
+      width: 100%;
+      border: 0;
+      border-top: 1px solid var(--color-border);
+      margin: 0;
+    }
+
+    .skills-help,
+    .skills-panel-subtitle,
+    .skills-row-meta,
+    .skills-row-description {
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-small);
+    }
+
+    .skills-panel-title {
+      font-weight: 700;
+      margin-bottom: 0.3rem;
+    }
+
+    .skills-selected-list,
+    .skills-list {
+      display: flex;
+      flex-direction: column;
+      margin-top: 0.75rem;
+    }
+
+    .skills-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.85rem;
+      padding: 0.95rem 0;
+    }
+
+    .skills-row + .skills-row {
+      border-top: 1px solid var(--color-border);
+    }
+
+    .skills-row.is-pinned .skills-row-title {
+      color: var(--color-text);
+    }
+
+    .skills-row.is-hidden {
+      opacity: 0.72;
+    }
+
+    .skills-row.is-missing .skills-row-title::after {
+      content: " (missing)";
+      color: var(--color-text-secondary);
+      font-weight: 500;
+    }
+
+    .skills-row-copy {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .skills-row-title {
+      font-weight: 650;
+      word-break: break-word;
+    }
+
+    .skills-row-meta {
+      margin-top: 0.25rem;
+      word-break: break-all;
+    }
+
+    .skills-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 0 0 auto;
+      margin-left: auto;
+    }
+
+    .skills-row-description {
+      margin-top: 0.3rem;
+      line-height: 1.45;
+    }
+
+    .skills-row-state {
+      margin-top: 0.4rem;
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-small);
+      font-weight: 600;
+    }
+
+    .skills-checkbox {
+      display: inline-flex;
+      align-items: flex-start;
+      justify-content: center;
+      width: 1.25rem;
+      margin-top: 0.1rem;
+    }
+
+    .skills-checkbox input {
+      margin: 0.1rem 0 0;
+      accent-color: var(--color-primary);
+    }
+
+    .skills-visibility-button.is-hidden-state {
+      color: var(--color-text-secondary);
+    }
+
+    .skills-loading {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      color: var(--color-text-secondary);
+    }
+
+    .skills-empty {
+      color: var(--color-text-secondary);
+      margin-top: 0.75rem;
+      padding: 0.15rem 0 0;
+    }
+
+    .button, .button.cancel {
+      padding: var(--spacing-sm) !important;
+    }
+
+    .icon-button {
+      flex: 0 0 auto;
+      width: 2.5rem;
+      min-width: 2.5rem;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .spinning {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</body>
+</html>

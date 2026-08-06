@@ -1,0 +1,33 @@
+<html>
+  <head>
+    <title>A0 A2A Server</title>
+  </head>
+
+  <body>
+    <div x-data="{ get settings() { return $store.settings.settings } }">
+      <template x-if="settings">
+        <div>
+          <div class="section-title">A0 A2A Server</div>
+          <div class="section-description">
+            Expose this Agent Zero instance to other agents over A2A. See <a href="javascript:openModal('settings/a2a/a2a-connection.html')">connection example</a>.
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Enable A2A server</div>
+              <div class="field-description">
+                Let trusted agents connect to A0 through the A2A protocol.
+              </div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="settings.a2a_server_enabled" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>

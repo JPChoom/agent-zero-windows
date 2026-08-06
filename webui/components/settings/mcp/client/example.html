@@ -1,0 +1,145 @@
+<html>
+
+<head>
+    <title>Configuring MCP Servers</title>
+
+</head>
+
+<body>
+    <div x-data>
+        <section class="mcp-example-intro">
+            <p>
+                Agent Zero uses the standard <code>mcpServers</code> JSON shape used by MCP-compatible clients.
+                Each key under <code>mcpServers</code> is one MCP server.
+            </p>
+
+            <div class="mcp-example-notes">
+                <div>
+                    <strong>Local command servers</strong>
+                    <span>Use <code>command</code>, optional <code>args</code>, and optional <code>env</code>.</span>
+                </div>
+                <div>
+                    <strong>Remote servers</strong>
+                    <span>Use <code>url</code>, optional <code>headers</code>, and a transport <code>type</code>.</span>
+                </div>
+                <div>
+                    <strong>Common fields</strong>
+                    <span><code>description</code>, <code>disabled</code>, <code>init_timeout</code>, and <code>tool_timeout</code> work on either kind of server.</span>
+                </div>
+            </div>
+        </section>
+
+        <h3>Example MCP servers configuration JSON</h3>
+        <div id="mcp-servers-example"></div>
+
+        <script>
+            setTimeout(() => {
+                const jsonExample = JSON.stringify({
+                    "mcpServers":
+                    {
+                        "sqlite": {
+                            "command": "uvx",
+                            "args": [
+                                "mcp-server-sqlite",
+                                "--db-path",
+                                "/root/db.sqlite"
+                            ],
+                            "init_timeout": 10,
+                            "tool_timeout": 200
+                        },
+                        "sequential-thinking": {
+                            "disabled": true,
+                            "command": "npx",
+                            "args": [
+                                "--yes",
+                                "--package",
+                                "@modelcontextprotocol/server-sequential-thinking",
+                                "mcp-server-sequential-thinking"
+                            ]
+                        },
+                        "deep-wiki": {
+                            "description": "Use this MCP to analyze github repositories",
+                            "url": "https://mcp.deepwiki.com/mcp",
+                            "type": "streamable-http"
+                        }
+                    }
+                }, null, 2);
+
+                const editor = ace.edit("mcp-servers-example");
+                const dark = localStorage.getItem("darkMode");
+                if (dark != "false") {
+                    editor.setTheme("ace/theme/github_dark");
+                } else {
+                    editor.setTheme("ace/theme/tomorrow");
+                }
+                editor.session.setMode("ace/mode/json");
+                editor.setValue(jsonExample);
+                editor.clearSelection();
+                editor.setReadOnly(true);
+            }, 0);
+        </script>
+    </div>
+
+    <style>
+        .mcp-example-intro {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            margin-bottom: 1rem;
+            color: var(--color-text);
+        }
+
+        .mcp-example-intro p,
+        .mcp-example-intro h3 {
+            margin: 0;
+        }
+
+        .mcp-example-notes {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .mcp-example-notes > div {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            padding: 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--color-panel) 88%, transparent);
+        }
+
+        .mcp-example-notes span {
+            color: var(--color-text-muted);
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .mcp-example-intro code {
+            padding: 0.08rem 0.28rem;
+            border-radius: 4px;
+            background: var(--color-input);
+            color: var(--color-text);
+            font-family: var(--font-family-code);
+            font-size: 0.88em;
+        }
+
+        #mcp-servers-example {
+            width: 100%;
+            height: 40em;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        @media (max-width: 840px) {
+            .mcp-example-notes {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+</body>
+
+</html>

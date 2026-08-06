@@ -1,0 +1,58 @@
+<html>
+
+<head>
+    <title>Project LLM</title>
+    <script type="module">
+        import { store } from "/components/projects/projects-store.js";
+    </script>
+</head>
+
+<body>
+    <div x-data>
+        <template x-if="$store.projects && $store.projects.selectedProject && $store.projects.selectedProject.llm">
+            <div class="project-llm-preset-row">
+                <div class="projects-form-group project-llm-preset-field">
+                    <label class="projects-form-label">Model preset</label>
+                    <div class="projects-input-with-button-wrapper project-llm-preset-controls">
+                        <select class="projects-form-select"
+                            x-model="$store.projects.selectedProject.llm.preset_key"
+                            @change="$store.projects.applySelectedLlmPreset()">
+                            <option value="current">Current project config</option>
+                            <template x-for="preset in $store.projects.selectedProject.llm.global_presets" :key="$store.projects.getLlmPresetKey(preset)">
+                                <option :value="$store.projects.getLlmPresetKey(preset)" x-text="preset.name"></option>
+                            </template>
+                        </select>
+                        <button type="button" class="button icon-button project-llm-edit-presets"
+                            @click="openModal('/plugins/_model_config/webui/main.html')">
+                            <span class="icon material-symbols-outlined">tune</span>
+                            <span>Edit Presets</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</body>
+<style>
+    .project-llm-preset-row {
+        max-width: 100%;
+    }
+
+    .project-llm-preset-field {
+        margin-bottom: 0;
+    }
+
+    .project-llm-preset-controls {
+        align-items: stretch;
+    }
+
+    .project-llm-preset-controls select {
+        min-width: 0;
+    }
+
+    .project-llm-edit-presets {
+        flex: 0 0 auto;
+    }
+</style>
+
+</html>

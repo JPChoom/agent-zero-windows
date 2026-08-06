@@ -1,0 +1,75 @@
+<html>
+  <head>
+    <title>Agent Config</title>
+  </head>
+
+  <body>
+    <div x-data>
+      <template x-if="$store.settings.settings">
+        <div>
+          <div class="section-title">Agent Config</div>
+          <div class="section-description">
+            Choose the default personality and operating profile for new chats.
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Default agent profile</div>
+              <div class="field-description">
+                New top-level chats start here. Existing chats keep their own selected profile.
+              </div>
+            </div>
+            <div class="field-control">
+              <select x-model="$store.settings.settings.agent_profile">
+                <template x-for="option in $store.settings.additional?.agent_subdirs" :key="option.value">
+                  <option :value="option.value" :selected="option.value === $store.settings.settings.agent_profile" x-text="option.label"></option>
+                </template>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-advanced-section" x-data="{ advOpen: false }">
+            <button type="button" class="settings-advanced-toggle" @click="advOpen = !advOpen">
+              <span class="material-symbols-outlined settings-advanced-toggle-icon"
+                    :style="advOpen ? 'transform:rotate(90deg)' : ''">chevron_right</span>
+              <span>Advanced Settings</span>
+            </button>
+
+            <div class="settings-advanced-body" x-show="advOpen" x-transition.opacity>
+              <div class="field">
+                <div class="field-label">
+                  <div class="field-title">Knowledge subdirectory</div>
+                  <div class="field-description">
+                    Add a specialized knowledge folder on top of the framework defaults.
+                  </div>
+                </div>
+                <div class="field-control">
+                  <select x-model="$store.settings.settings.agent_knowledge_subdir">
+                    <template x-for="option in $store.settings.additional?.knowledge_subdirs" :key="option.value">
+                      <option :value="option.value" :selected="option.value === $store.settings.settings.agent_knowledge_subdir" x-text="option.label"></option>
+                    </template>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-label">
+                  <div class="field-title">Inherit active project</div>
+                  <div class="field-description">
+                    Start new chats in the same project context as the current chat.
+                  </div>
+                </div>
+                <div class="field-control">
+                  <label class="toggle">
+                    <input type="checkbox" x-model="$store.settings.settings.chat_inherit_project">
+                    <span class="toggler"> </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>

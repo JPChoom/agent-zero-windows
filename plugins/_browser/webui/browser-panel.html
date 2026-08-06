@@ -1,0 +1,1349 @@
+<html class="browser-modal">
+
+<head>
+  <title>Browser</title>
+  <script type="module">
+    import { store } from "/plugins/_browser/webui/browser-store.js";
+  </script>
+</head>
+
+<body class="browser-modal-body">
+  <div x-data>
+    <template x-if="$store.browserPage">
+      <div class="browser-panel" x-create="$store.browserPage.onOpen($el, xAttrs($el) || {})" x-destroy="$store.browserPage.cleanup()"
+        x-effect="$store.browserPage.handleSelectedContextChange($store.chats?.selected)"
+        @keydown.window="$store.browserPage.handleKeydown($event)">
+        <div class="browser-meta">
+          <div class="browser-meta-top">
+            <div class="browser-session-tabs" role="tablist" aria-label="Browser sessions">
+              <template x-for="browser in $store.browserPage.browsers" :key="$store.browserPage.browserTabKey(browser)">
+                <div class="browser-tab-shell" :class="{ 'is-active': $store.browserPage.isActiveBrowser(browser) }">
+	                  <button type="button" class="browser-tab" role="tab"
+	                    :aria-selected="$store.browserPage.isActiveBrowser(browser).toString()"
+	                    :title="$store.browserPage.browserTabTooltip(browser)"
+	                    @click="$store.browserPage.selectBrowser(browser.id, browser.context_id)">
+                    <span class="material-symbols-outlined browser-tab-icon" aria-hidden="true">language</span>
+                    <span class="browser-tab-title" x-text="$store.browserPage.browserTabTitle(browser)"></span>
+                  </button>
+	                  <button type="button" class="browser-tab-close"
+	                    :title="'Close ' + $store.browserPage.browserTabLabel(browser)"
+	                    :aria-label="'Close ' + $store.browserPage.browserTabLabel(browser)"
+	                    :disabled="$store.browserPage.isClosingBrowser(browser.id, browser.context_id)"
+	                    @pointerdown.stop
+	                    @click.stop="$store.browserPage.closeBrowser(browser.id, browser.context_id)">
+                    <span class="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+              </template>
+	              <button type="button" class="browser-new-tab" title="New Browser" aria-label="New Browser"
+	                :disabled="$store.browserPage.isBusy()"
+	                @click="$store.browserPage.openNewBrowser()">
+                <span class="material-symbols-outlined">add</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="browser-toolbar">
+          <div class="browser-navigation">
+	            <button class="btn btn-icon-action" title="Back" @click="$store.browserPage.command('back')"
+	              :disabled="!$store.browserPage.activeBrowserId || $store.browserPage.isBusy()">
+              <span class="material-symbols-outlined">arrow_back</span>
+            </button>
+	            <button class="btn btn-icon-action" title="Forward" @click="$store.browserPage.command('forward')"
+	              :disabled="!$store.browserPage.activeBrowserId || $store.browserPage.isBusy()">
+              <span class="material-symbols-outlined">arrow_forward</span>
+            </button>
+	            <button class="btn btn-icon-action" title="Reload" @click="$store.browserPage.command('reload')"
+	              :disabled="!$store.browserPage.activeBrowserId || $store.browserPage.isBusy()">
+              <span class="material-symbols-outlined">refresh</span>
+            </button>
+          </div>
+
+          <div class="browser-session-controls">
+            <button type="button" class="btn browser-annotate-toggle" title="Annotate" aria-label="Annotate"
+              :aria-pressed="$store.browserPage.annotating.toString()"
+              :class="{ 'is-active': $store.browserPage.annotating }"
+              :disabled="!$store.browserPage.canAnnotate() && !$store.browserPage.annotating"
+              @click="$store.browserPage.toggleAnnotationMode()">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                x-text="$store.browserPage.annotating ? 'rate_review' : 'edit_note'"></span>
+              <span x-text="$store.browserPage.annotating ? 'Annotating' : 'Annotate'"></span>
+            </button>
+            <div class="browser-extension-menu" @click.outside="$store.browserPage.closeExtensionsMenu()"
+              @keydown.escape.window="$store.browserPage.closeExtensionsMenu()">
+              <button type="button" class="btn btn-icon-action browser-extensions" title="Browser settings"
+                aria-label="Browser settings" @click.stop="$store.browserPage.toggleExtensionsMenu()"
+                :aria-expanded="$store.browserPage.extensionMenuOpen.toString()"
+                :class="{ 'is-active': $store.browserPage.status?.extensions?.active }">
+                <span class="material-symbols-outlined">tune</span>
+              </button>
+              <div class="browser-extension-dropdown" x-show="$store.browserPage.extensionMenuOpen" x-transition
+                style="display: none;">
+                <div class="browser-extension-preset">
+                  <label for="browser-model-preset">Browser LLM Preset</label>
+                  <select id="browser-model-preset" x-model="$store.browserPage.modelPreset"
+                    @change="$store.browserPage.setBrowserModelPreset($event.target.value)"
+                    :disabled="$store.browserPage.modelPresetSaving">
+                    <option value="">Default Main Model</option>
+                    <template x-for="preset in $store.browserPage.modelPresetOptions" :key="preset.name">
+                      <option :value="preset.name" x-text="preset.label"></option>
+                    </template>
+                  </select>
+                  <div class="browser-extension-preset-summary" x-text="$store.browserPage.modelPresetSummary()">
+                  </div>
+                </div>
+                <div class="browser-extension-section-title">Chrome Extensions</div>
+                <button type="button" class="dropdown-item" @click="$store.browserPage.createExtensionWithAgent()">
+                  <span class="material-symbols-outlined">add_circle</span>
+                  <span>Create New Extension with A0</span>
+                </button>
+                <div class="browser-extension-url">
+                  <label for="browser-extension-url">Input a Chrome Web Store URL</label>
+                  <input id="browser-extension-url" type="url" x-model="$store.browserPage.extensionInstallUrl"
+                    @keydown.enter.prevent="$store.browserPage.installExtensionFromUrl()"
+                    placeholder="https://chromewebstore.google.com/detail/..." />
+                  <div class="browser-extension-url-actions">
+                    <button type="button" class="btn btn-ok" @click="$store.browserPage.installExtensionFromUrl()"
+                      :disabled="$store.browserPage.extensionActionLoading">
+                      <span class="material-symbols-outlined"
+                        :class="{ spinning: $store.browserPage.extensionActionLoading }"
+                        x-text="$store.browserPage.extensionActionLoading ? 'progress_activity' : 'download'"></span>
+                      <span>Install URL</span>
+                    </button>
+                    <button type="button" class="btn btn-field"
+                      @click="$store.browserPage.askAgentInstallExtension()">
+                      <span class="material-symbols-outlined">psychology_alt</span>
+                      <span x-text="$store.browserPage.extensionAssistantActionLabel()">Scan with A0</span>
+                    </button>
+                  </div>
+                  <div class="browser-extension-warning" x-show="$store.browserPage.hasExtensionInstallUrl()"
+                    x-transition style="display: none;">
+                    <span class="material-symbols-outlined">warning</span>
+                    <span>
+                      Extensions run inside the Docker browser sandbox, but malicious or buggy extensions can still
+                      damage that environment. Review what you install.
+                    </span>
+                  </div>
+                </div>
+                <div class="browser-extension-list"
+                  x-show="$store.browserPage.extensionsListLoading || $store.browserPage.extensionsList.length"
+                  style="display: none;">
+                  <div class="browser-extension-list-header">
+                    <span>Installed extensions</span>
+                    <span class="material-symbols-outlined spinning"
+                      x-show="$store.browserPage.extensionsListLoading">progress_activity</span>
+                  </div>
+                  <template x-for="extension in $store.browserPage.extensionsList" :key="extension.path">
+                    <div class="browser-extension-row" :title="extension.path">
+                      <span class="browser-extension-row-text">
+                        <span class="browser-extension-name" x-text="extension.name || 'Unnamed extension'"></span>
+                        <span class="browser-extension-meta"
+                          x-text="$store.browserPage.extensionVersionLabel(extension)"></span>
+                      </span>
+                      <span class="browser-extension-row-actions">
+                        <button type="button" class="browser-extension-open"
+                          x-show="$store.browserPage.extensionHasOpenUi(extension)"
+                          :title="$store.browserPage.extensionOpenTitle(extension)"
+                          :aria-label="$store.browserPage.extensionOpenTitle(extension)"
+                          :disabled="!extension.enabled || $store.browserPage.isBusy()"
+                          @click.stop="$store.browserPage.openExtensionUi(extension)">
+                          <span class="material-symbols-outlined">open_in_new</span>
+                          <span>Open</span>
+                        </button>
+                        <label class="browser-extension-toggle">
+                          <input type="checkbox" :checked="extension.enabled"
+                            :disabled="$store.browserPage.extensionToggleLoadingPath === extension.path"
+                            @change="$store.browserPage.setExtensionEnabled(extension, $event.target.checked, $event.target)" />
+                          <span class="browser-extension-switch"></span>
+                        </label>
+                      </span>
+                    </div>
+                  </template>
+                </div>
+                <button type="button" class="dropdown-item" @click="$store.browserPage.openExtensionsSettings()">
+                  <span class="material-symbols-outlined">tune</span>
+                  <span>Settings</span>
+                </button>
+                <div class="browser-extension-message" x-show="$store.browserPage.extensionActionMessage"
+                  x-text="$store.browserPage.extensionActionMessage"></div>
+                <div class="browser-extension-error" x-show="$store.browserPage.extensionActionError"
+                  x-text="$store.browserPage.extensionActionError"></div>
+              </div>
+            </div>
+          </div>
+
+          <form class="browser-address-form" aria-label="Browser navigation" @submit.prevent="$store.browserPage.go()">
+            <span class="material-symbols-outlined browser-address-icon">language</span>
+	            <input class="browser-address" aria-label="Browser address" name="browser_address" x-model="$store.browserPage.address"
+	              @focus="$store.browserPage.onAddressFocus()" @blur="$store.browserPage.onAddressBlur()"
+	              @keydown.enter.prevent="$store.browserPage.go()"
+	              :disabled="$store.browserPage.isBusy()"
+	              placeholder="https://example.com" autocomplete="off" />
+          </form>
+        </div>
+
+	        <div class="browser-stage" tabindex="0" @click="$el.focus()"
+	          :class="{ 'is-annotating': $store.browserPage.annotating }"
+	          @wheel.prevent="$store.browserPage.handleStageWheel($event)">
+	          <template x-if="$store.browserPage.frameSrc">
+            <img class="browser-frame" :src="$store.browserPage.frameSrc"
+              @click="$store.browserPage.sendMouse('click', $event)"
+              @mousemove.throttle.250ms="$store.browserPage.sendMouse('move', $event)" draggable="false" />
+          </template>
+	          <template x-if="$store.browserPage.annotating && $store.browserPage.frameSrc">
+	            <div class="browser-annotation-layer"
+	              :class="{ 'is-busy': $store.browserPage.annotationBusy }"
+	              @pointerdown.stop.prevent="$store.browserPage.startAnnotationSelection($event)"
+	              @pointermove.stop.prevent="$store.browserPage.moveAnnotationSelection($event)"
+	              @pointerup.stop.prevent="$store.browserPage.finishAnnotationSelection($event)"
+	              @pointercancel.stop.prevent="$store.browserPage.cancelAnnotationSelection($event)">
+	              <template x-for="annotation in $store.browserPage.visibleAnnotations()" :key="annotation.id">
+	                <div class="browser-annotation-box is-saved"
+	                  :style="$store.browserPage.annotationBoxStyle(annotation.rect)">
+	                  <span class="browser-annotation-number" x-text="annotation.index"></span>
+	                </div>
+	              </template>
+	              <template x-if="$store.browserPage.annotationDragRect">
+	                <div class="browser-annotation-box is-draft"
+	                  :style="$store.browserPage.annotationBoxStyle($store.browserPage.annotationDragRect)">
+	                </div>
+	              </template>
+	            </div>
+	          </template>
+	          <template x-if="$store.browserPage.annotationDraft">
+	            <div class="browser-annotation-popover"
+	              :style="$store.browserPage.annotationPopoverStyle()"
+	              @click.stop @pointerdown.stop @keydown.stop>
+	              <div class="browser-annotation-popover-title">
+	                <span class="browser-annotation-number" x-text="$store.browserPage.nextAnnotationIndex()"></span>
+	                <span x-text="$store.browserPage.annotationDraftTitle()"></span>
+	              </div>
+	              <textarea x-model="$store.browserPage.annotationDraftText" placeholder="Comment"
+	                maxlength="1200"></textarea>
+	              <div class="browser-annotation-actions">
+	                <button type="button" class="btn btn-field"
+	                  @click="$store.browserPage.cancelAnnotationDraft()">Cancel</button>
+	                <button type="button" class="btn btn-ok"
+	                  :disabled="!String($store.browserPage.annotationDraftText || '').trim()"
+	                  @click="$store.browserPage.addAnnotationComment()">Add</button>
+	              </div>
+	            </div>
+	          </template>
+	          <div class="browser-annotation-tray"
+	            x-show="$store.browserPage.visibleAnnotations().length"
+	            :class="{ 'is-floating': $store.browserPage.annotationTrayPosition, 'is-dragging': $store.browserPage.annotationTrayDragging }"
+	            :style="$store.browserPage.annotationTrayStyle()"
+	            x-transition style="display: none;"
+	            @click.stop @pointerdown.stop @keydown.stop
+	            @pointermove.window="$store.browserPage.moveAnnotationTrayDrag($event)"
+	            @pointerup.window="$store.browserPage.finishAnnotationTrayDrag($event)"
+	            @pointercancel.window="$store.browserPage.finishAnnotationTrayDrag($event)">
+	            <div class="browser-annotation-tray-header"
+	              @pointerdown.stop="$store.browserPage.startAnnotationTrayDrag($event)">
+	              <span>Annotations</span>
+	              <button type="button" class="browser-annotation-clear" title="Clear annotations"
+	                aria-label="Clear annotations" @click="$store.browserPage.clearVisibleAnnotations()">
+	                <span class="material-symbols-outlined">delete</span>
+	              </button>
+	            </div>
+	            <div class="browser-annotation-chips">
+	              <template x-for="annotation in $store.browserPage.visibleAnnotations()" :key="annotation.id">
+	                <div class="browser-annotation-chip">
+	                  <span class="browser-annotation-number" x-text="annotation.index"></span>
+	                  <span class="browser-annotation-chip-text" x-text="annotation.comment"></span>
+	                  <button type="button" title="Remove annotation" aria-label="Remove annotation"
+	                    @click="$store.browserPage.removeAnnotationComment(annotation.id)">
+	                    <span class="material-symbols-outlined">close</span>
+	                  </button>
+	                </div>
+	              </template>
+	            </div>
+	            <div class="browser-annotation-tray-actions">
+	              <button type="button" class="btn btn-field"
+	                @click="$store.browserPage.draftAnnotationsToChat()">Draft to chat</button>
+	              <button type="button" class="btn btn-ok"
+	                @click="$store.browserPage.sendAnnotationsToChat()">Send now</button>
+	            </div>
+	          </div>
+	          <template x-if="!$store.browserPage.frameSrc && !$store.browserPage.isBusy()">
+            <div class="browser-empty">
+              <span class="material-symbols-outlined">captive_portal</span>
+              <button class="btn btn-field" @click="$store.browserPage.command('open')">Open
+                Browser</button>
+            </div>
+          </template>
+        </div>
+
+        <div class="browser-bottom-status"
+          :class="{ 'is-active': $store.browserPage.isBusy() || $store.browserPage.error, 'has-error': $store.browserPage.error && !$store.browserPage.isBusy() }">
+          <template x-if="$store.browserPage.isBusy()">
+            <div class="browser-status" :title="$store.browserPage.loadingMessage()">
+              <span class="material-symbols-outlined spinning">progress_activity</span>
+              <span x-text="$store.browserPage.loadingMessage()">Loading</span>
+            </div>
+          </template>
+          <template x-if="!$store.browserPage.isBusy() && $store.browserPage.error">
+            <div class="browser-error" x-text="$store.browserPage.error" :title="$store.browserPage.error"></div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .modal-inner.browser-modal {
+      box-sizing: border-box;
+      container-type: inline-size;
+      width: min(78vw, 1120px);
+      height: min(88vh, 900px);
+      min-width: min(320px, calc(100vw - 16px));
+      min-height: min(480px, calc(100vh - 16px));
+      max-width: calc(100vw - 16px);
+      max-height: calc(100vh - 16px);
+      resize: both;
+      border: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+      border-radius: 7px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+      background: color-mix(in srgb, var(--color-background) 94%, #000 6%);
+    }
+
+    .modal-inner.browser-modal.is-focus-mode {
+      resize: none;
+      border-radius: 6px;
+    }
+
+    .modal-inner.browser-modal.is-focus-mode .browser-modal-focus-button {
+      color: var(--color-text);
+      border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+      background: color-mix(in srgb, var(--color-primary) 16%, var(--color-background));
+    }
+
+    .modal.modal-floating {
+      pointer-events: none;
+    }
+
+    .modal.modal-floating .modal-inner {
+      pointer-events: auto;
+    }
+
+    .modal-inner.browser-modal .modal-header {
+      min-height: 34px;
+      padding: 0.35rem 0.75rem 0.35rem 1rem;
+      cursor: move;
+      user-select: none;
+      background: color-mix(in srgb, var(--color-background) 92%, #000 8%);
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    }
+
+    .modal-inner.browser-modal .modal-close {
+      font-size: 1.35rem;
+      line-height: 1;
+    }
+
+    .modal-inner.browser-modal .modal-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .modal-inner.browser-modal .modal-bd.browser-modal-body {
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 0;
+      min-height: 0;
+    }
+
+	    .modal-inner.browser-modal .modal-bd.browser-modal-body>x-component,
+	    .modal-inner.browser-modal .modal-bd.browser-modal-body>x-component>div,
+	    .modal-inner.browser-modal .modal-bd.browser-modal-body>div {
+	      display: flex;
+	      flex: 1 1 auto;
+	      width: 100%;
+	      height: 100%;
+	      min-width: 0;
+	      min-height: 0;
+	    }
+
+	    .modal-inner.browser-modal .browser-panel {
+	      height: 100%;
+	      max-height: 100%;
+	      overflow: hidden;
+	    }
+
+    .browser-panel {
+      --browser-chrome-surface: color-mix(in srgb, var(--color-background) 92%, #000 8%);
+      --browser-chrome-border: color-mix(in srgb, var(--color-border) 58%, transparent);
+      --browser-tab-hover-border: color-mix(in srgb, var(--color-border) 78%, transparent);
+      --browser-control-size: 34px;
+      --browser-address-height: 34px;
+      --browser-tab-height: 36px;
+      --browser-tab-close-size: 32px;
+      --browser-control-radius: 0.55rem;
+      box-sizing: border-box;
+      container-type: inline-size;
+      display: flex;
+      flex: 1 1 auto;
+	      flex-direction: column;
+	      gap: 0;
+	      height: 100%;
+	      min-height: 0;
+	      position: relative;
+    }
+
+    .browser-toolbar {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas: "nav address controls";
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px 9px;
+      border-bottom: 0;
+      background: transparent;
+    }
+
+    .browser-navigation {
+      grid-area: nav;
+      display: flex;
+      gap: 6px;
+    }
+
+    .browser-panel .btn-icon-action,
+    .browser-new-tab {
+      width: var(--browser-control-size);
+      min-width: var(--browser-control-size);
+      height: var(--browser-control-size);
+      min-height: var(--browser-control-size);
+      border-radius: var(--browser-control-radius);
+    }
+
+    .browser-panel .btn-icon-action {
+      color: color-mix(in srgb, var(--color-text) 72%, var(--color-primary) 28%);
+      background: color-mix(in srgb, var(--color-background) 26%, transparent);
+      border-color: var(--browser-chrome-border);
+    }
+
+    .browser-panel .btn-icon-action:hover:not(:disabled) {
+      color: var(--color-text);
+      border-color: color-mix(in srgb, var(--color-primary) 34%, var(--browser-chrome-border));
+      background: color-mix(in srgb, var(--color-background-hover) 62%, transparent);
+      box-shadow: none;
+    }
+
+    .browser-panel .btn-icon-action .material-symbols-outlined {
+      font-size: 1.12rem;
+    }
+
+    .browser-address-form {
+      grid-area: address;
+      min-width: 0;
+      position: relative;
+      margin: 0;
+    }
+
+    .browser-address-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 18px;
+      opacity: 0.58;
+      pointer-events: none;
+    }
+
+    .browser-address {
+      width: 100%;
+      min-height: var(--browser-address-height);
+      padding: 5px 10px 5px 34px;
+      border-radius: var(--browser-control-radius);
+      border: 1px solid var(--browser-chrome-border);
+      background: var(--color-input);
+      color: var(--color-text);
+      font: inherit;
+    }
+
+    .browser-meta {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+      padding: 7px 10px 0;
+      border-bottom: 1px solid var(--browser-chrome-border);
+      background: var(--browser-chrome-surface);
+    }
+
+    .browser-meta-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      align-items: end;
+    }
+
+    .browser-session-tabs {
+      display: flex;
+      align-items: end;
+      gap: 4px;
+      min-width: 0;
+      overflow-x: auto;
+      padding: 1px 0 0;
+      scrollbar-width: thin;
+      overflow-y: hidden;
+    }
+
+    .browser-session-tabs::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .browser-session-tabs::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .browser-session-tabs::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--color-border) 78%, transparent);
+      border-radius: 999px;
+    }
+
+    .browser-new-tab {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid transparent;
+      color: var(--color-text);
+      cursor: pointer;
+      transition: background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        border-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .browser-tab-shell {
+      flex: 0 1 210px;
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) var(--browser-tab-close-size);
+      align-items: center;
+      gap: 3px;
+      min-width: 128px;
+      max-width: 250px;
+      height: var(--browser-tab-height);
+      padding: 0 7px 0 10px;
+      border: 1px solid transparent;
+      border-radius: var(--browser-control-radius) var(--browser-control-radius) 0 0;
+      background: transparent;
+      opacity: 0.72;
+      transition: border-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .browser-tab-shell:hover,
+    .browser-tab-shell:focus-within {
+      border-color: var(--browser-tab-hover-border);
+      opacity: 0.94;
+    }
+
+    .browser-tab-shell.is-active {
+      z-index: 2;
+      margin-bottom: -1px;
+      border-color: var(--browser-chrome-border);
+      background: transparent;
+      opacity: 1;
+      box-shadow: none;
+    }
+
+    .browser-tab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      min-width: 0;
+      width: 100%;
+      height: 100%;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+
+    .browser-tab:hover {
+      background: transparent;
+    }
+
+    .browser-tab:focus-visible,
+    .browser-tab-close:focus-visible {
+      outline: 1px solid color-mix(in srgb, var(--color-primary) 70%, transparent);
+      outline-offset: 1px;
+    }
+
+    .browser-tab-icon {
+      flex: 0 0 auto;
+      color: color-mix(in srgb, var(--color-text) 72%, var(--color-primary) 28%);
+      font-size: 1.04rem;
+      line-height: 1;
+    }
+
+    .browser-tab-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .browser-tab-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--browser-tab-close-size);
+      min-width: var(--browser-tab-close-size);
+      height: var(--browser-tab-close-size);
+      min-height: var(--browser-tab-close-size);
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: color-mix(in srgb, var(--color-text) 52%, var(--color-primary) 48%);
+      cursor: pointer;
+      opacity: 0.72;
+      transition: background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .browser-tab-close:hover,
+    .browser-tab-close.confirming {
+      background: color-mix(in srgb, var(--color-background-hover) 70%, transparent);
+      color: var(--color-text);
+      opacity: 1;
+    }
+
+    .browser-tab-close .material-symbols-outlined {
+      font-size: 1rem;
+      line-height: 1;
+    }
+
+    .browser-new-tab {
+      flex: 0 0 var(--browser-control-size);
+      justify-content: center;
+      padding: 0;
+      border-color: transparent;
+      border-radius: var(--browser-control-radius);
+      background: transparent;
+      color: color-mix(in srgb, var(--color-text) 62%, var(--color-primary) 38%);
+    }
+
+    .browser-new-tab:hover {
+      background: color-mix(in srgb, var(--color-background-hover) 58%, transparent);
+      color: var(--color-text);
+    }
+
+    .browser-new-tab .material-symbols-outlined {
+      font-size: 1.18rem;
+    }
+
+    .browser-session-controls {
+      grid-area: controls;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .browser-annotate-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+      min-height: var(--browser-control-size);
+      padding: 0 10px;
+      border: 1px solid var(--browser-chrome-border);
+      border-radius: var(--browser-control-radius);
+      background: color-mix(in srgb, var(--color-background) 26%, transparent);
+      color: color-mix(in srgb, var(--color-text) 74%, var(--color-primary) 26%);
+      font-size: 0.82rem;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .browser-annotate-toggle:hover:not(:disabled),
+    .browser-annotate-toggle.is-active {
+      border-color: color-mix(in srgb, var(--color-primary) 48%, var(--browser-chrome-border));
+      background: color-mix(in srgb, var(--color-primary) 16%, var(--color-background));
+      color: var(--color-text);
+    }
+
+    .browser-annotate-toggle .material-symbols-outlined {
+      font-size: 1.05rem;
+    }
+
+    .browser-session-controls .browser-extensions.is-active {
+      color: #2e7d32;
+    }
+
+    .browser-extension-menu {
+      position: relative;
+      display: flex;
+      flex: 0 0 auto;
+    }
+
+    .browser-extension-dropdown {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      width: min(360px, calc(100vw - 24px));
+      max-height: min(72vh, 560px);
+      overflow-y: auto;
+      padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+      border-radius: 7px;
+      background: var(--color-background);
+      box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
+    }
+
+    .browser-extension-dropdown .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 34px;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--color-text);
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .browser-extension-dropdown .dropdown-item:hover {
+      background: color-mix(in srgb, var(--color-panel) 82%, transparent);
+    }
+
+    .browser-extension-warning,
+    .browser-extension-message,
+    .browser-extension-error {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 9px 10px;
+      border-radius: 7px;
+      font-size: 0.8rem;
+      line-height: 1.35;
+    }
+
+    .browser-extension-warning {
+      border: 1px solid color-mix(in srgb, #d97706 42%, var(--color-border));
+      background: color-mix(in srgb, #d97706 14%, var(--color-background));
+      color: color-mix(in srgb, var(--color-text) 86%, #92400e);
+    }
+
+    .browser-extension-warning .material-symbols-outlined {
+      color: #b45309;
+      font-size: 19px;
+    }
+
+    .browser-extension-url {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      padding: 8px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+      border-radius: 7px;
+      background: var(--color-panel);
+    }
+
+    .browser-extension-url label {
+      font-size: 0.76rem;
+      color: var(--color-text-secondary);
+    }
+
+    .browser-extension-url input {
+      min-width: 0;
+      min-height: 32px;
+      padding: 6px 8px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+      border-radius: 6px;
+      background: var(--color-input);
+      color: var(--color-text);
+    }
+
+    .browser-extension-url-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    .browser-extension-url-actions .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      min-width: 0;
+      min-height: 30px;
+    }
+
+    .browser-extension-preset,
+    .browser-extension-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .browser-extension-section-title {
+      padding: 6px 2px 0;
+      color: var(--color-text-secondary);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    .browser-extension-preset label,
+    .browser-extension-list-header {
+      font-size: 0.76rem;
+      font-weight: 650;
+      color: var(--color-text-secondary);
+    }
+
+    .browser-extension-preset select {
+      width: 100%;
+      min-height: 32px;
+      padding: 5px 8px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+      border-radius: 6px;
+      background: var(--color-input);
+      color: var(--color-text);
+    }
+
+    .browser-extension-preset-summary,
+    .browser-extension-meta {
+      color: var(--color-text-secondary);
+      font-size: 0.75rem;
+      padding-left: var(--spacing-xxs);
+    }
+
+    .browser-extension-list-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .browser-extension-list-header .material-symbols-outlined {
+      font-size: 16px;
+    }
+
+    .browser-extension-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 34px;
+      padding: 5px 0;
+    }
+
+    .browser-extension-row+.browser-extension-row {
+      border-top: 1px solid color-mix(in srgb, var(--color-border) 42%, transparent);
+    }
+
+    .browser-extension-row-text {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .browser-extension-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.82rem;
+      font-weight: 650;
+      color: var(--color-text);
+    }
+
+    .browser-extension-row-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .browser-extension-open {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 0;
+      min-height: 28px;
+      padding: 0 8px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--color-panel) 70%, transparent);
+      color: var(--color-text);
+      font: inherit;
+      font-size: 0.76rem;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .browser-extension-open:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+      background: color-mix(in srgb, var(--color-primary) 13%, var(--color-background));
+    }
+
+    .browser-extension-open:disabled {
+      cursor: not-allowed;
+      opacity: 0.52;
+    }
+
+    .browser-extension-open .material-symbols-outlined {
+      font-size: 15px;
+    }
+
+    .browser-extension-toggle {
+      position: relative;
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      width: 38px;
+      height: 22px;
+    }
+
+    .browser-extension-toggle input {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .browser-extension-toggle input:disabled {
+      cursor: wait;
+    }
+
+    .browser-extension-switch {
+      width: 100%;
+      height: 100%;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color-border) 78%, transparent);
+      transition: background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .browser-extension-switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--color-background);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+      transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .browser-extension-toggle input:checked+.browser-extension-switch {
+      background: color-mix(in srgb, var(--color-primary) 76%, #16a34a);
+    }
+
+    .browser-extension-toggle input:checked+.browser-extension-switch::after {
+      transform: translateX(16px);
+    }
+
+    .browser-extension-toggle input:disabled+.browser-extension-switch {
+      opacity: 0.58;
+    }
+
+    .browser-extension-message {
+      background: color-mix(in srgb, #15803d 12%, var(--color-background));
+      color: color-mix(in srgb, var(--color-text) 88%, #166534);
+    }
+
+    .browser-extension-error {
+      background: color-mix(in srgb, #be123c 12%, var(--color-background));
+      color: #9f1239;
+    }
+
+      .browser-stage {
+        flex: 1 1 auto;
+	        min-height: 0;
+	        overflow: hidden;
+	        position: relative;
+	        contain: size layout paint;
+	        outline: none;
+	      }
+
+      .browser-stage.is-annotating {
+        cursor: crosshair;
+      }
+
+	    .browser-frame {
+	      display: block;
+	      position: absolute;
+	      inset: 0;
+	      width: 100%;
+	      height: 100%;
+	      min-width: 0;
+	      min-height: 0;
+	      object-fit: fill;
+	      image-rendering: auto;
+	      user-select: none;
+	      background: #fff;
+      }
+
+    .browser-annotation-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 12;
+      cursor: crosshair;
+      touch-action: none;
+      background: rgba(37, 99, 235, 0.035);
+    }
+
+    .browser-annotation-layer.is-busy {
+      cursor: progress;
+    }
+
+    .browser-annotation-box {
+      position: absolute;
+      box-sizing: border-box;
+      min-width: 8px;
+      min-height: 8px;
+      border: 2px solid #3399ff;
+      background: rgba(51, 153, 255, 0.16);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.52), 0 8px 22px rgba(0, 0, 0, 0.18);
+      pointer-events: none;
+    }
+
+    .browser-annotation-box.is-draft {
+      border-style: dashed;
+      background: rgba(51, 153, 255, 0.1);
+    }
+
+    .browser-annotation-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      min-width: 22px;
+      height: 22px;
+      min-height: 22px;
+      border-radius: 50%;
+      background: #3399ff;
+      color: #fff;
+      font-size: 0.74rem;
+      font-weight: 800;
+      line-height: 1;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    }
+
+    .browser-annotation-box .browser-annotation-number {
+      position: absolute;
+      top: -12px;
+      left: -12px;
+    }
+
+    .browser-annotation-popover,
+    .browser-annotation-tray {
+      position: absolute;
+      border: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--color-background) 96%, #000 4%);
+      color: var(--color-text);
+      box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
+    }
+
+    .browser-annotation-popover {
+      z-index: 24;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+    }
+
+    .browser-annotation-popover-title,
+    .browser-annotation-tray-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      font-size: 0.82rem;
+      font-weight: 750;
+    }
+
+    .browser-annotation-popover textarea {
+      width: 100%;
+      min-height: 82px;
+      max-height: 160px;
+      resize: vertical;
+      padding: 8px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 74%, transparent);
+      border-radius: 6px;
+      background: var(--color-input);
+      color: var(--color-text);
+      font: inherit;
+      line-height: 1.35;
+    }
+
+    .browser-annotation-actions,
+    .browser-annotation-tray-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 7px;
+    }
+
+    .browser-annotation-actions .btn,
+    .browser-annotation-tray-actions .btn {
+      min-height: 30px;
+      padding: 0 10px;
+      white-space: nowrap;
+    }
+
+    .browser-annotation-tray {
+      z-index: 20;
+      right: 10px;
+      bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      width: min(360px, calc(100% - 20px));
+      max-height: min(48%, 310px);
+      padding: 10px;
+    }
+
+    .browser-annotation-tray.is-dragging {
+      user-select: none;
+    }
+
+    .browser-annotation-tray-header {
+      justify-content: space-between;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .browser-annotation-tray.is-dragging .browser-annotation-tray-header {
+      cursor: grabbing;
+    }
+
+    .browser-annotation-clear,
+    .browser-annotation-chip button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      min-width: 24px;
+      min-height: 24px;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: color-mix(in srgb, var(--color-text) 64%, transparent);
+      cursor: pointer;
+    }
+
+    .browser-annotation-clear:hover,
+    .browser-annotation-chip button:hover {
+      background: color-mix(in srgb, var(--color-panel) 82%, transparent);
+      color: var(--color-text);
+    }
+
+    .browser-annotation-clear .material-symbols-outlined,
+    .browser-annotation-chip button .material-symbols-outlined {
+      font-size: 16px;
+    }
+
+    .browser-annotation-chips {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .browser-annotation-chip {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 5px 6px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 54%, transparent);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--color-panel) 74%, transparent);
+    }
+
+    .browser-annotation-chip .browser-annotation-number {
+      width: 20px;
+      min-width: 20px;
+      height: 20px;
+      min-height: 20px;
+      font-size: 0.68rem;
+    }
+
+    .browser-annotation-chip-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.78rem;
+      line-height: 1.25;
+    }
+
+    .browser-empty {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      font-size: 0.88rem;
+    }
+
+    .browser-bottom-status {
+      display: flex;
+      align-items: center;
+      flex: 0 0 24px;
+      min-height: 24px;
+      max-height: 24px;
+      min-width: 0;
+      padding: 0 10px;
+      overflow: hidden;
+      border-top: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+      background: color-mix(in srgb, var(--color-background) 95%, #000 5%);
+      color: color-mix(in srgb, var(--color-text) 74%, transparent);
+      font-size: 0.76rem;
+      line-height: 1;
+    }
+
+    .browser-bottom-status.has-error {
+      color: #fca5a5;
+      background: color-mix(in srgb, #7f1d1d 22%, var(--color-background));
+    }
+
+    .browser-status,
+    .browser-error {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .browser-status span:not(.material-symbols-outlined),
+    .browser-error {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .browser-status .material-symbols-outlined {
+      font-size: 15px;
+    }
+
+	    .browser-modal .spinning,
+    .browser-panel .spinning {
+      display: inline-block;
+      transform-origin: center;
+      animation: browser-spin 0.8s linear infinite;
+    }
+
+    @keyframes browser-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .browser-empty {
+      display: grid;
+      flex: 1 1 auto;
+      width: 100%;
+      min-height: 0;
+      justify-items: center;
+      align-content: center;
+      text-align: center;
+      padding: 24px;
+      color: var(--color-text);
+    }
+
+    @container (max-width: 460px) {
+      .browser-toolbar {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+          "nav . controls"
+          "address address address";
+        align-items: center;
+        gap: 7px;
+      }
+
+      .browser-navigation {
+        justify-content: flex-start;
+      }
+
+      .browser-address-form {
+        width: 100%;
+      }
+
+      .browser-meta-top {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .browser-session-controls {
+        width: auto;
+        justify-content: flex-end;
+      }
+
+      .browser-session-tabs {
+        width: 100%;
+      }
+
+      .browser-tab-shell {
+        flex-basis: 170px;
+        min-width: 142px;
+      }
+
+      .browser-new-tab,
+      .browser-session-controls .btn-icon-action {
+        width: var(--browser-control-size);
+        height: var(--browser-control-size);
+      }
+
+      .browser-annotate-toggle {
+        width: var(--browser-control-size);
+        min-width: var(--browser-control-size);
+        padding: 0;
+      }
+
+      .browser-annotate-toggle span:not(.material-symbols-outlined) {
+        display: none;
+      }
+
+      .browser-extension-dropdown {
+        right: 0;
+        left: auto;
+        top: calc(var(--browser-control-size) + var(--browser-address-height) + 13px);
+        width: min(296px, calc(100vw - 72px));
+      }
+
+      .browser-address {
+        min-height: var(--browser-address-height);
+      }
+    }
+  </style>
+</body>
+
+</html>

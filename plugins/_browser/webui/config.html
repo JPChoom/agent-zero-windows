@@ -1,0 +1,507 @@
+<html>
+<head>
+  <title>Browser Settings</title>
+  <script type="module">
+    import { store } from "/plugins/_browser/webui/browser-config-store.js";
+  </script>
+</head>
+
+<body>
+  <div x-data>
+    <template x-if="$store.browserConfig && config">
+      <div
+        class="browser-config-sections"
+        x-init="$store.browserConfig.init(config)"
+        x-effect="$store.browserConfig.bindConfig(config)"
+        x-destroy="$store.browserConfig.cleanup()"
+      >
+        <div class="browser-config-card">
+          <div class="section-title">Browser Runtime</div>
+          <div class="section-description">
+            Choose the internal Docker browser or a browser on the computer running A0 CLI.
+          </div>
+
+          <label class="browser-config-field">
+            <span class="browser-config-field-label">Browser location</span>
+            <select x-model="$store.browserConfig.config.runtime_backend">
+              <option value="container">Internal Docker browser</option>
+              <option value="host_required">Host browser through A0 CLI</option>
+            </select>
+            <span
+              class="browser-config-field-help"
+              x-show="$store.browserConfig.config.runtime_backend !== 'host_required'"
+            >
+              Runs inside Agent Zero's Docker environment. No A0 CLI connection or host browser setup is needed.
+            </span>
+            <span
+              class="browser-config-field-help"
+              x-show="$store.browserConfig.config.runtime_backend === 'host_required'"
+            >
+              Uses Chrome, Edge, or Chromium on the A0 CLI host. Keep A0 CLI connected; the browser opens when the agent first needs it. For an already-open browser, use chrome://inspect/#remote-debugging and enable "Allow remote debugging for this browser instance".
+            </span>
+          </label>
+
+          <div
+            class="browser-config-note browser-config-success"
+            x-show="$store.browserConfig.config.runtime_backend !== 'host_required'"
+          >
+            <span class="material-symbols-outlined">deployed_code</span>
+            <span>Internal Docker browser selected. Host-browser CLI settings are ignored for Browser tool runs.</span>
+          </div>
+
+          <label
+            class="browser-config-field"
+            x-show="$store.browserConfig.config.runtime_backend === 'host_required'"
+          >
+            <span class="browser-config-field-label">Host browser profile</span>
+            <select x-model="$store.browserConfig.config.host_browser_profile_mode">
+              <option value="existing">Existing browser profile</option>
+              <option value="agent">Clean Agent profile</option>
+            </select>
+            <span
+              class="browser-config-field-help"
+              x-show="$store.browserConfig.config.host_browser_profile_mode === 'agent'"
+            >
+              Uses a separate A0-controlled local profile on this computer.
+            </span>
+          </label>
+
+          <div
+            class="browser-config-warning"
+            x-show="$store.browserConfig.config.runtime_backend === 'host_required' && $store.browserConfig.config.host_browser_profile_mode !== 'agent'"
+          >
+            <span class="material-symbols-outlined">warning</span>
+            <span>
+              Existing profile lets the agent interact with the browser instance you authorize,
+              including signed-in sites, cookies, tabs, downloads, and page content.
+            </span>
+          </div>
+
+          <label
+            class="browser-config-field"
+            x-show="$store.browserConfig.config.runtime_backend === 'host_required'"
+          >
+            <span class="browser-config-field-label">Page content access</span>
+            <select x-model="$store.browserConfig.config.host_browser_privacy_policy">
+              <option value="enforce_local">Local models only</option>
+              <option value="warn">Warn when using cloud</option>
+              <option value="allow">Allow</option>
+            </select>
+            <span class="browser-config-field-help">Controls page text and screenshots from the host browser.</span>
+          </label>
+
+          <div class="browser-config-note">
+            <span class="material-symbols-outlined" :class="{ spinning: $store.browserConfig.hostBrowserStatusLoading }" x-text="$store.browserConfig.hostBrowserStatusLoading ? 'progress_activity' : 'captive_portal'"></span>
+            <span x-text="$store.browserConfig.browserRuntimeStatusLabel()"></span>
+          </div>
+        </div>
+
+        <div class="browser-config-card">
+          <div class="section-title">Browsing</div>
+          <div class="section-description">
+            Set how new Browser sessions start and how an already-open Browser surface follows agent activity.
+          </div>
+
+          <label class="browser-config-field">
+            <span class="browser-config-field-label">Starting page</span>
+            <input
+              type="text"
+              x-model="$store.browserConfig.config.default_homepage"
+              placeholder="about:blank or https://example.com"
+              autocomplete="off"
+            />
+          </label>
+
+          <label class="browser-config-switch-row">
+            <span class="browser-config-switch-copy">
+              <span class="browser-config-field-label">Autofocus active page</span>
+              <span class="browser-config-field-help">Update the visible Browser surface for pages opened or changed by Browser tool results.</span>
+            </span>
+            <span class="browser-config-toggle-with-label">
+              <span class="browser-config-toggle-label" x-text="$store.browserConfig.autofocusLabel()"></span>
+              <span class="browser-config-toggle">
+                <input
+                  type="checkbox"
+                  :checked="$store.browserConfig.config.autofocus_active_page !== false"
+                  @change="$store.browserConfig.setAutofocusActivePage($event.target.checked)"
+                />
+                <span class="browser-config-switch"></span>
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div class="browser-config-card">
+          <div class="section-title">Extensions</div>
+          <div class="section-description">
+            Choose which installed Chrome extensions Browser loads.
+          </div>
+
+          <div class="browser-config-warning">
+            <span class="material-symbols-outlined">warning</span>
+            <span>
+              Extensions run inside the Docker browser sandbox, but malicious or buggy extensions can
+              still damage that environment. Keep only the extensions you trust enabled.
+            </span>
+          </div>
+
+          <div class="browser-config-extension-list">
+            <div class="browser-config-subtitle">
+              <span>Installed extensions</span>
+              <span class="material-symbols-outlined spinning" x-show="$store.browserConfig.extensionsLoading">progress_activity</span>
+            </div>
+            <template x-if="!$store.browserConfig.extensionsLoading && !$store.browserConfig.extensionsList.length">
+              <div class="browser-config-empty">No installed extensions found.</div>
+            </template>
+            <template x-for="extension in $store.browserConfig.extensionsList" :key="extension.path">
+              <div class="browser-config-extension-row" :title="extension.path">
+                <span class="browser-config-extension-text">
+                  <span class="browser-config-extension-name" x-text="extension.name || 'Unnamed extension'"></span>
+                  <span class="browser-config-extension-meta" x-text="$store.browserConfig.extensionVersionLabel(extension)"></span>
+                </span>
+                <span class="browser-config-extension-actions">
+                  <label class="browser-config-toggle">
+                    <input
+                      type="checkbox"
+                      :checked="$store.browserConfig.extensionEnabled(extension)"
+                      :disabled="$store.browserConfig.extensionDeleteLoadingPath === extension.path"
+                      @change="$store.browserConfig.setExtensionEnabled(extension, $event.target.checked)"
+                    />
+                    <span class="browser-config-switch"></span>
+                  </label>
+                  <button
+                    type="button"
+                    class="browser-config-extension-delete"
+                    :disabled="!$store.browserConfig.extensionCanDelete(extension) || $store.browserConfig.extensionDeleteLoadingPath === extension.path"
+                    :title="$store.browserConfig.extensionDeleteTitle(extension)"
+                    :aria-label="'Delete ' + (extension.name || 'extension')"
+                    @click.stop="$store.browserConfig.deleteExtension(extension)"
+                  >
+                    <span
+                      class="material-symbols-outlined"
+                      :class="{ spinning: $store.browserConfig.extensionDeleteLoadingPath === extension.path }"
+                      x-text="$store.browserConfig.extensionDeleteLoadingPath === extension.path ? 'progress_activity' : 'delete'"
+                    ></span>
+                  </button>
+                </span>
+              </div>
+            </template>
+            <div class="browser-config-note browser-config-success" x-show="$store.browserConfig.extensionsMessage">
+              <span class="material-symbols-outlined">check_circle</span>
+              <span x-text="$store.browserConfig.extensionsMessage"></span>
+            </div>
+            <div class="browser-config-note" x-show="$store.browserConfig.extensionsError">
+              <span class="material-symbols-outlined">error</span>
+              <span x-text="$store.browserConfig.extensionsError"></span>
+            </div>
+          </div>
+
+          <div class="browser-config-pill-row">
+            <span class="browser-config-pill" x-text="$store.browserConfig.pathCountLabel()"></span>
+            <span class="browser-config-pill tone-active" x-show="$store.browserConfig.extensionModeReady()">
+              Ready
+            </span>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .browser-config-sections {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .browser-config-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+    }
+
+    .browser-config-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .browser-config-field-label {
+      color: var(--color-text);
+      font-size: 0.84rem;
+      font-weight: 650;
+    }
+
+    .browser-config-field-help {
+      color: var(--color-text-secondary);
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+
+    .browser-config-field input[type="text"],
+    .browser-config-field select {
+      width: 100%;
+      min-height: 36px;
+      padding: 7px 10px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 74%, transparent);
+      border-radius: 8px;
+      background: var(--color-input);
+      color: var(--color-text);
+      font: inherit;
+    }
+
+    .browser-config-switch-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 16px;
+      min-height: 46px;
+      padding-top: 2px;
+    }
+
+    .browser-config-switch-copy {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .browser-config-toggle-with-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .browser-config-toggle-label {
+      min-width: 24px;
+      color: var(--color-text-secondary);
+      font-size: 0.78rem;
+      font-weight: 650;
+      text-align: right;
+    }
+
+    .browser-config-extension-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--color-panel) 78%, transparent);
+    }
+
+    .browser-config-subtitle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--color-text-secondary);
+      font-size: 0.82rem;
+      font-weight: 650;
+    }
+
+    .browser-config-subtitle .material-symbols-outlined {
+      font-size: 18px;
+    }
+
+    .browser-config-empty,
+    .browser-config-extension-meta {
+      color: var(--color-text-secondary);
+      font-size: 0.78rem;
+    }
+
+    .browser-config-extension-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      min-height: 42px;
+      padding: 8px 0;
+    }
+
+    .browser-config-extension-row + .browser-config-extension-row {
+      border-top: 1px solid color-mix(in srgb, var(--color-border) 52%, transparent);
+    }
+
+    .browser-config-extension-text {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .browser-config-extension-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--color-text);
+      font-weight: 650;
+    }
+
+    .browser-config-extension-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .browser-config-toggle {
+      position: relative;
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      width: 42px;
+      height: 24px;
+    }
+
+    .browser-config-toggle input {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .browser-config-toggle input:disabled {
+      cursor: wait;
+    }
+
+    .browser-config-switch {
+      width: 100%;
+      height: 100%;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color-border) 78%, transparent);
+      pointer-events: none;
+      transition: background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .browser-config-switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--color-background);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+      transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .browser-config-toggle input:checked + .browser-config-switch {
+      background: color-mix(in srgb, var(--color-primary) 76%, #16a34a);
+    }
+
+    .browser-config-toggle input:checked + .browser-config-switch::after {
+      transform: translateX(18px);
+    }
+
+    .browser-config-toggle input:disabled + .browser-config-switch {
+      opacity: 0.58;
+    }
+
+    .browser-config-extension-delete {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      min-width: 28px;
+      height: 28px;
+      min-height: 28px;
+      padding: 0;
+      border: 1px solid color-mix(in srgb, #be123c 30%, var(--color-border));
+      border-radius: 7px;
+      background: transparent;
+      color: color-mix(in srgb, #be123c 78%, var(--color-text));
+      cursor: pointer;
+    }
+
+    .browser-config-extension-delete:hover:not(:disabled) {
+      background: color-mix(in srgb, #be123c 12%, var(--color-background));
+      color: #be123c;
+    }
+
+    .browser-config-extension-delete:disabled {
+      cursor: not-allowed;
+      opacity: 0.48;
+    }
+
+    .browser-config-extension-delete .material-symbols-outlined {
+      font-size: 17px;
+    }
+
+    .browser-config-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--color-panel) 82%, transparent);
+      color: var(--color-text-secondary);
+      font-size: var(--font-size-small);
+    }
+
+    .browser-config-note.browser-config-success {
+      background: color-mix(in srgb, #15803d 12%, var(--color-background));
+      color: color-mix(in srgb, var(--color-text) 88%, #166534);
+    }
+
+    .browser-config-warning {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 11px 12px;
+      border: 1px solid color-mix(in srgb, #d97706 44%, var(--color-border));
+      border-radius: 8px;
+      background: color-mix(in srgb, #d97706 14%, var(--color-background));
+      color: color-mix(in srgb, var(--color-text) 86%, #92400e);
+      font-size: var(--font-size-small);
+      line-height: 1.4;
+    }
+
+    .browser-config-warning .material-symbols-outlined {
+      color: #b45309;
+      font-size: 20px;
+    }
+
+    .browser-config-sections .spinning {
+      display: inline-block;
+      transform-origin: center;
+      animation: browser-config-spin 0.8s linear infinite;
+    }
+
+    @keyframes browser-config-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .browser-config-pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .browser-config-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+      background: color-mix(in srgb, var(--color-panel) 88%, transparent);
+      font-size: 0.78rem;
+      color: var(--color-text-secondary);
+    }
+
+    .browser-config-pill.tone-active {
+      color: #1b5e20;
+      border-color: rgba(27, 94, 32, 0.18);
+      background: rgba(46, 125, 50, 0.12);
+    }
+  </style>
+</body>
+</html>

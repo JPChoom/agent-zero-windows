@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Agent Zero</title>
+    <link rel="icon" type="image/svg+xml" href="public/favicon.svg">
+    <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="css/messages.css">
+    <link rel="stylesheet" href="components/messages/action-buttons/simple-action-buttons.css">
+    <link rel="stylesheet" href="components/messages/process-group/process-group.css">
+    <link rel="stylesheet" href="css/toast.css">
+    <link rel="stylesheet" href="css/settings.css">
+    <link rel="stylesheet" href="css/modals.css">
+    <link rel="stylesheet" href="css/surfaces.css">
+    <link rel="stylesheet" href="css/scheduler-datepicker.css">
+    <link rel="stylesheet" href="css/scheduler.css">
+    <link rel="stylesheet" href="css/notification.css">
+    <link rel="stylesheet" href="css/buttons.css">
+    <link rel="stylesheet" href="css/tables.css">
+    <link rel="stylesheet" href="components/canvas/right-canvas.css">
+
+    <!-- Flatpickr for datetime picker -->
+    <link rel="stylesheet" href="vendor/flatpickr/flatpickr.min.css">
+    <script src="vendor/flatpickr/flatpickr.min.js"></script>
+
+    <script>
+        globalThis.safeCall = function (name, ...args) {
+            if (window[name]) window[name](...args)
+        }
+    </script>
+
+    <script type="module" src="index.js"></script>
+
+    <!-- Bootstrap JS (only for logic, importing bundled CSS => UI conflicts) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+        crossorigin="anonymous"></script>
+
+    <!-- Then load Alpine.js -->
+    <!-- <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script> -->
+    <script type="module" src="js/initFw.js"></script>
+
+    <script src="vendor/ace-min/ace.js"></script>
+    <link href="vendor/ace-min/ace.min.css" rel="stylesheet">
+    <!-- KaTeX CSS -->
+    <link rel="stylesheet" href="vendor/katex/katex.min.css" crossorigin="anonymous">
+
+    <!-- KaTeX javascript -->
+    <script defer src="vendor/katex/katex.min.js" crossorigin="anonymous"></script>
+    <script defer src="vendor/katex/katex.auto-render.min.js" crossorigin="anonymous"></script>
+
+    <!-- QR Code Library -->
+    <script src="vendor/qrcode.min.js"></script>
+
+    <!-- Google Icons -->
+    <link rel="stylesheet" href="vendor/google/google-icons.css" />
+
+    <!-- Link the PWA manifest file -->
+    <link rel="manifest" href="js/manifest.json">
+
+    <script>
+        // Expose git info for sidebar component
+        globalThis.gitinfo = { version: "{{version_no}}", commit_time: "{{version_time}}" };
+
+        // Expose runtime info for frontend components (development gating, runtime-scoped cookies).
+        globalThis.runtimeInfo = {
+            ...(globalThis.runtimeInfo || {}),
+            id: "{{runtime_id}}",
+            isDevelopment: "{{runtime_is_development}}" === "true",
+            loggedIn: "{{logged_in}}" === "true",
+            timezone: "{{user_timezone_setting}}",
+            timeFormat: "{{user_time_format_setting}}",
+        };
+    </script>
+    <!-- Plugin head injections (scripts, stylesheets) -->
+    <x-extension id="page-head"></x-extension>
+</head>
+
+<body class="dark-mode device-pointer" x-data>
+    <div class="container">
+        <!-- Sidebar Overlay -->
+        <div id="sidebar-overlay" x-data>
+            <template x-if="$store.sidebar">
+                <div class="sidebar-overlay" :class="{'visible': $store.sidebar.isOpen && $store.sidebar.isMobile()}" @click="$store.sidebar.close()"></div>
+            </template>
+        </div>
+        <!-- Left Sidebar (Header Icons, Quick Actions, Tabs, Chats, Tasks) -->
+        <x-component path="sidebar/left-sidebar.html"></x-component>
+
+        <!-- Right Panel (Message History and Input Section) -->
+        <div id="right-panel" class="panel" >
+
+            <!-- top section with time, status etc. -->
+            <x-component path="chat/top-section/chat-top.html"></x-component>
+
+            <!-- Welcome Screen Component -->
+            <div x-data>
+                <template x-if="$store.welcomeStore && $store.welcomeStore.isVisible">
+                    <div class="welcome-host">
+                        <x-component path="welcome/welcome-screen.html"></x-component>
+                    </div>
+                </template>
+            </div>
+            <!-- Message History (actual messages) -->
+            <div id="chat-area-wrapper" x-data x-show="!$store.welcomeStore || !$store.welcomeStore.isVisible">
+              <div id="chat-history"></div>
+
+              <!-- Chat Navigation Buttons (floating over chat area) -->
+              <div id="chat-nav-buttons" aria-label="Chat navigation" x-cloak>
+                <button class="btn-icon-action" title="Scroll to top" @click="$store.chatNavigation.scrollToTop()">
+                  <span class="material-symbols-outlined">vertical_align_top</span>
+                </button>
+                <button class="btn-icon-action" title="Previous user message" @click="$store.chatNavigation.scrollToPrevUserMessage()">
+                  <span class="material-symbols-outlined">keyboard_arrow_up</span>
+                </button>
+                <button class="btn-icon-action" title="Next user message" @click="$store.chatNavigation.scrollToNextUserMessage()">
+                  <span class="material-symbols-outlined">keyboard_arrow_down</span>
+                </button>
+                <button class="btn-icon-action" title="Scroll to bottom" @click="$store.chatNavigation.scrollToBottom()">
+                  <span class="material-symbols-outlined">vertical_align_bottom</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- NEW: Toast Stack Component -->
+            <div style="position: relative; height: 0;">
+                <x-component path="notifications/notification-toast-stack.html"></x-component>
+            </div>
+
+            <div id="toast" class="toast">
+                <div class="toast__content">
+                    <div class="toast__title"></div>
+                    <div class="toast__separator"></div>
+                    <div class="toast__message"></div>
+                </div>
+                <button class="toast__copy" style="display: none;">Copy</button>
+                <button class="toast__close">Close</button>
+            </div>
+            <!-- Chat Input Area -->
+            <div x-data>
+                <template x-if="!$store.welcomeStore || !$store.welcomeStore.isVisible">
+                    <div>
+                        <!-- Progress Bar -->
+                        <x-component path="chat/input/progress.html"></x-component>
+                        <!-- Input Section -->
+                        <x-component path="chat/input/chat-bar.html"></x-component>
+                    </div>
+                </template>
+            </div>
+        </div>
+        <x-component path="canvas/right-canvas.html"></x-component>
+    </div>
+
+    <!-- Drag and Drop Overlay Component -->
+    <x-component path="chat/attachments/dragDropOverlay.html"></x-component>
+
+    <!-- Register Service Worker for offline support and caching -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('js/sw.js').then(registration => {
+                    console.log('SW registered: ', registration);
+                }).catch(registrationError => {
+                    console.log('SW registration failed: ', registrationError);
+                });
+            });
+        }
+    </script>
+
+</body>
+
+</html>

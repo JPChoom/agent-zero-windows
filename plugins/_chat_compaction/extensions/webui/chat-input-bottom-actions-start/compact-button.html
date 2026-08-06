@@ -1,0 +1,382 @@
+<html>
+<head>
+  <title>Compact Button Extension</title>
+  <script type="module" src="/plugins/_chat_compaction/webui/compact-store.js"></script>
+</head>
+<body>
+  <div x-data="{ 
+    get disabled() { 
+      return !$store.chats?.selected || $store.compactStore?.compacting || $store.chatInput?.running;
+    },
+    get disabledReason() {
+      if (!$store.chats?.selected) return 'No active chat selected';
+      if ($store.compactStore?.compacting) return 'Compaction in progress';
+      if ($store.chatInput?.running) return 'Cannot compact while agent is running';
+      return 'Compact chat history into a single summary';
+    }
+  }">
+    <template x-if="$store.compactStore">
+      <button 
+        class="text-button" 
+        @click="$store.compactStore.fetchStats()"
+        :disabled="disabled"
+        :title="disabledReason"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+          <polyline points="4 14 10 14 10 20"/><line x1="3" y1="21" x2="10" y2="14"/>
+          <polyline points="20 10 14 10 14 4"/><line x1="21" y1="3" x2="14" y2="10"/>
+        </svg>
+        <p>Compact</p>
+      </button>
+    </template>
+  </div>
+
+  <!-- Modal with unique class names to avoid global CSS collision -->
+  <div x-data x-show="$store.compactStore?.showModal" style="display: none;">
+    <div class="cmpct-overlay" @click="$store.compactStore?.closeModal()">
+      <div class="cmpct-dialog" @click.stop>
+        <div class="cmpct-header">
+          <h3>Compact Chat History</h3>
+          <button class="cmpct-close" @click="$store.compactStore?.closeModal()">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        
+        <div class="cmpct-body">
+          <template x-if="$store.compactStore?.stats">
+            <div>
+              <p class="cmpct-desc">
+                This will summarize your entire conversation into a single optimized message.
+              </p>
+              
+              <div class="cmpct-stats">
+                <div class="cmpct-stat">
+                  <span class="cmpct-stat-label">Messages</span>
+                  <span class="cmpct-stat-value" x-text="$store.compactStore?.stats?.message_count"></span>
+                </div>
+                <div class="cmpct-stat">
+                  <span class="cmpct-stat-label">Tokens</span>
+                  <span class="cmpct-stat-value" x-text="$store.compactStore?.stats?.token_count?.toLocaleString()"></span>
+                </div>
+              </div>
+
+              <!-- Model selection -->
+              <div class="cmpct-model-section">
+                <div class="cmpct-model-label">Model</div>
+
+                <div class="cmpct-model-controls">
+                  <select class="cmpct-select"
+                          x-model="$store.compactStore.selectedPresetName">
+                    <option value="">Current</option>
+                    <template x-for="preset in $store.compactStore.presets" :key="preset.name">
+                      <option :value="preset.name" x-text="preset.name"></option>
+                    </template>
+                  </select>
+
+                  <div class="cmpct-toggle">
+                    <button :class="{ active: $store.compactStore.useChatModel }"
+                            @click="$store.compactStore.useChatModel = true">Chat</button>
+                    <button :class="{ active: !$store.compactStore.useChatModel }"
+                            @click="$store.compactStore.useChatModel = false">Utility</button>
+                  </div>
+                </div>
+
+                <div class="cmpct-model-name" x-text="$store.compactStore.selectedModelDisplay"></div>
+              </div>
+              
+              <div class="cmpct-info">
+                <span class="material-symbols-outlined">check_circle</span>
+                <span>The context will be replaced with a compacted summary. The original conversation will be backed up.</span>
+              </div>
+            </div>
+          </template>
+          
+          <template x-if="!$store.compactStore?.stats">
+            <div class="cmpct-loading">
+              <span class="cmpct-spinner"></span>
+              <span>Loading statistics...</span>
+            </div>
+          </template>
+        </div>
+        
+        <div class="cmpct-footer">
+          <button class="cmpct-btn cmpct-btn-cancel" @click="$store.compactStore?.closeModal()">
+            Cancel
+          </button>
+          <button 
+            class="cmpct-btn cmpct-btn-danger" 
+            @click="$store.compactStore?.compact()"
+            :disabled="$store.compactStore?.compacting || !$store.compactStore?.stats"
+          >
+            <template x-if="$store.compactStore?.compacting">
+              <span class="cmpct-spinner"></span>
+            </template>
+            <span>Compact</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    /* All classes prefixed with cmpct- to avoid global CSS collision */
+    .cmpct-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5002;
+      white-space: normal;
+    }
+    
+    .cmpct-dialog {
+      background: var(--color-panel, #1a1a1a);
+      border-radius: 12px;
+      box-shadow: 0 4px 23px rgba(0, 0, 0, 0.3);
+      width: 90%;
+      max-width: 560px;
+      max-height: calc(100vh - 24px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      white-space: normal;
+    }
+    
+    .cmpct-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--color-border, #333);
+    }
+    
+    .cmpct-header h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--color-text, #e5e5e5);
+    }
+    
+    .cmpct-close {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      color: var(--color-text-secondary, #999);
+      transition: color 0.2s;
+    }
+    
+    .cmpct-close:hover {
+      color: var(--color-text, #e5e5e5);
+    }
+    
+    .cmpct-body {
+      padding: 20px;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    
+    .cmpct-desc {
+      margin: 0 0 16px 0;
+      color: var(--color-text-secondary, #999);
+      font-size: 0.9rem;
+    }
+    
+    .cmpct-stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .cmpct-stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 8px;
+      background: var(--color-background-muted, #252525);
+      border-radius: 8px;
+    }
+    
+    .cmpct-stat-label {
+      font-size: 0.7rem;
+      color: var(--color-text-secondary, #999);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    
+    .cmpct-stat-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--color-text, #e5e5e5);
+    }
+    
+    /* Model selection section */
+    .cmpct-model-section {
+      margin-bottom: 16px;
+    }
+
+    .cmpct-model-label {
+      font-size: 0.7rem;
+      color: var(--color-text-secondary, #999);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .cmpct-model-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .cmpct-select {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--color-border, #333);
+      background: var(--color-background-muted, #252525);
+      color: var(--color-text, #e5e5e5);
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .cmpct-select:focus {
+      outline: none;
+      border-color: var(--color-primary, #3b82f6);
+    }
+
+    .cmpct-toggle {
+      display: flex;
+      border-radius: 6px;
+      border: 1px solid var(--color-border, #333);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .cmpct-toggle button {
+      padding: 6px 14px;
+      border: none;
+      background: var(--color-background-muted, #252525);
+      color: var(--color-text-secondary, #999);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .cmpct-toggle button:first-child {
+      border-right: 1px solid var(--color-border, #333);
+    }
+
+    .cmpct-toggle button.active {
+      background: var(--color-primary, #3b82f6);
+      color: white;
+    }
+
+    .cmpct-toggle button:hover:not(.active) {
+      background: var(--color-background-hover, #444);
+    }
+
+    .cmpct-model-name {
+      font-size: 0.85rem;
+      color: var(--color-text, #e5e5e5);
+      opacity: 0.7;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cmpct-info {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      border-radius: 8px;
+      color: #4ade80;
+      font-size: 0.8rem;
+    }
+    
+    .cmpct-info .material-symbols-outlined {
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+    
+    .cmpct-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 30px;
+      color: var(--color-text-secondary, #999);
+    }
+    
+    .cmpct-footer {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-top: 1px solid var(--color-border, #333);
+      flex-shrink: 0;
+    }
+    
+    .cmpct-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: none;
+    }
+    
+    .cmpct-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .cmpct-btn-cancel {
+      background: var(--color-background-muted, #333);
+      color: var(--color-text, #e5e5e5);
+    }
+    
+    .cmpct-btn-cancel:hover:not(:disabled) {
+      background: var(--color-background-hover, #444);
+    }
+    
+    .cmpct-btn-danger {
+      background: #dc2626;
+      color: white;
+    }
+    
+    .cmpct-btn-danger:hover:not(:disabled) {
+      background: #b91c1c;
+    }
+    
+    .cmpct-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: cmpct-spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    
+    @keyframes cmpct-spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</body>
+</html>

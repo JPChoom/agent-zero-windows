@@ -1,0 +1,67 @@
+<html>
+  <head>
+    <title>Authentication</title>
+  </head>
+
+  <body>
+    <div
+      x-data="{
+        get settings() { return $store.settings.settings },
+        get additional() { return $store.settings.additional || {} }
+      }"
+    >
+      <template x-if="settings">
+        <div>
+          <div class="section-title">Authentication</div>
+          <div class="section-description">
+            Protect the web UI with credentials you control.
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">UI Login</div>
+              <div class="field-description">The username requested when the web UI asks you to sign in.</div>
+            </div>
+            <div class="field-control">
+              <input type="text" x-model="settings.auth_login" />
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">UI Password</div>
+              <div class="field-description">The password for browser access to this Agent Zero instance.</div>
+            </div>
+            <div class="field-control">
+              <input type="text" class="masked-text-input" autocomplete="off" x-model="settings.auth_password" />
+            </div>
+          </div>
+
+          <div class="settings-advanced-section" x-data="{ advOpen: false }">
+            <button type="button" class="settings-advanced-toggle" @click="advOpen = !advOpen">
+              <span class="material-symbols-outlined settings-advanced-toggle-icon"
+                    :style="advOpen ? 'transform:rotate(90deg)' : ''">chevron_right</span>
+              <span>Advanced Settings</span>
+            </button>
+
+            <div class="settings-advanced-body" x-show="advOpen" x-transition.opacity>
+              <template x-if="additional.is_dockerized">
+                <div class="field">
+                  <div class="field-label">
+                    <div class="field-title">Container root password</div>
+                    <div class="field-description">
+                      Change the Linux root password used for SSH access to the Docker container.
+                    </div>
+                  </div>
+                  <div class="field-control">
+                    <input type="text" class="masked-text-input" autocomplete="off" x-model="settings.root_password" />
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>

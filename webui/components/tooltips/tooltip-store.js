@@ -1,0 +1,127 @@
+import { createStore } from "/js/AlpineStore.js";
+
+let bootstrapTooltipObserver = null;
+
+function ensureBootstrapTooltip(element) {
+  if (!element || !(element instanceof Element)) return;
+  
+  const bs = globalThis.bootstrap;
+  if (!bs?.Tooltip) return;
+
+  const existing = bs.Tooltip.getInstance(element);
+  const title = element.getAttribute("title") || element.getAttribute("data-bs-original-title");
+
+  if (!title) return;
+
+  if (existing) {
+    if (element.getAttribute("title")) {
+      element.setAttribute("data-bs-original-title", title);
+      element.removeAttribute("title");
+    }
+    existing.setContent({ ".tooltip-inner": title });
+    return;
+  }
+
+  if (element.getAttribute("title")) {
+    element.setAttribute("data-bs-original-title", title);
+    element.removeAttribute("title");
+  }
+
+  element.setAttribute("data-bs-toggle", "tooltip");
+  element.setAttribute("data-bs-trigger", "hover");
+  element.setAttribute("data-bs-tooltip-initialized", "true");
+  new bs.Tooltip(element, {
+    delay: { show: 0, hide: 0 },
+    trigger: "hover",
+  });
+}
+
+function initBootstrapTooltips(root = document) {
+  if (!globalThis.bootstrap?.Tooltip) return;
+  const selector = "[title], [data-bs-original-title]";
+  const rootIsElement = root instanceof Element;
+  const tooltipTargets = [
+    ...(rootIsElement && root.matches(selector) ? [root] : []),
+    ...Array.from(root.querySelectorAll(selector)),
+  ];
+  tooltipTargets.forEach((element) => ensureBootstrapTooltip(element));
+}
+
+function disposeBootstrapTooltip(element) {
+  const instance = globalThis.bootstrap?.Tooltip?.getInstance(element);
+  if (!instance) return;
+  try {
+    instance.dispose();
+  } catch {
+    // Bootstrap 5 can throw while disposing an already-torn-down tooltip node.
+  }
+}
+
+function observeBootstrapTooltips() {
+  if (!globalThis.bootstrap?.Tooltip) return;
+  
+  // Prevent multiple observers
+  if (bootstrapTooltipObserver) return;
+  
+  bootstrapTooltipObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (
+        mutation.type === "attributes" &&
+        (mutation.attributeName === "title" ||
+          mutation.attributeName === "data-bs-original-title")
+      ) {
+        ensureBootstrapTooltip(mutation.target);
+        return;
+      }
+
+      if (mutation.type === "childList") {
+        // Check removed nodes for tooltip cleanup
+        mutation.removedNodes.forEach((node) => {
+          if (!(node instanceof Element)) return;
+          const tooltipElements = node.matches?.("[data-bs-tooltip-initialized]")
+            ? [node]
+            : Array.from(
+                node.querySelectorAll?.("[data-bs-tooltip-initialized]") || []
+              );
+          tooltipElements.forEach((el) => {
+            if (el.isConnected) return;
+            disposeBootstrapTooltip(el);
+          });
+        });
+        
+        mutation.addedNodes.forEach((node) => {
+          if (!(node instanceof Element)) return;
+          if (
+            node.matches("[title], [data-bs-original-title]") ||
+            node.querySelector("[title], [data-bs-original-title]")
+          ) {
+            initBootstrapTooltips(node);
+          }
+        });
+      }
+    });
+  });
+
+  bootstrapTooltipObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["title", "data-bs-original-title"],
+  });
+}
+
+function cleanupTooltipObserver() {
+  if (bootstrapTooltipObserver) {
+    bootstrapTooltipObserver.disconnect();
+    bootstrapTooltipObserver = null;
+  }
+}
+
+export const store = createStore("tooltips", {
+  init() {
+    initBootstrapTooltips();
+    observeBootstrapTooltips();
+  },
+  
+  cleanup: cleanupTooltipObserver,
+});

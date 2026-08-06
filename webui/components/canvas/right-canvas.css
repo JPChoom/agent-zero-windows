@@ -1,0 +1,384 @@
+.container > *,
+#right-panel {
+  min-width: 0;
+}
+
+#right-panel {
+  position: relative;
+}
+
+.container > x-component[path="canvas/right-canvas.html"],
+.container > x-component[path="canvas/right-canvas.html"] > div[x-data] {
+  display: flex;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+body.right-canvas-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.right-canvas {
+  --right-canvas-chrome: color-mix(in srgb, var(--color-background) 94%, #000 6%);
+  --right-canvas-surface: color-mix(in srgb, var(--color-panel) 88%, var(--color-background) 12%);
+  --right-canvas-border: color-mix(in srgb, var(--color-border) 70%, transparent);
+  position: relative;
+  z-index: 1200;
+  display: flex;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  border-left: 1px solid var(--right-canvas-border);
+  background: var(--right-canvas-chrome);
+  transition: width 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.right-canvas-rail {
+  position: absolute;
+  top: 33%;
+  right: 100%;
+  z-index: 4;
+  display: flex;
+  flex: 0 0 52px;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  height: auto;
+  max-height: min(70vh, calc(100vh - 32px));
+  padding: 10px 7px;
+  transform: translateY(-50%);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.24);
+  background: var(--color-chat-background);
+}
+
+.right-canvas-rail-separator {
+  width: 24px;
+  height: 1px;
+  margin: 1px 0 3px;
+  background: color-mix(in srgb, var(--right-canvas-border) 76%, transparent);
+}
+
+.right-canvas.is-closed {
+  width: 0 !important;
+  min-width: 0;
+  overflow: visible;
+  border-left: 0;
+  background: transparent;
+}
+
+.right-canvas.is-open {
+  overflow: visible;
+}
+
+.right-canvas.is-closed .right-canvas-shell,
+.right-canvas.is-closed .right-canvas-resize-handle {
+  display: none;
+}
+
+.right-canvas-rail-button,
+.right-canvas-icon-button,
+.right-canvas-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.right-canvas-rail-button,
+.right-canvas-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  opacity: 0.76;
+  transition: background-color 0.16s ease, border-color 0.16s ease, opacity 0.16s ease;
+}
+
+.right-canvas-toggle-button {
+  color: color-mix(in srgb, var(--color-primary) 70%, var(--color-text));
+}
+
+.right-canvas-rail-button:hover,
+.right-canvas-icon-button:hover,
+.right-canvas-rail-button.is-active {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--right-canvas-border));
+  background: color-mix(in srgb, var(--color-background-hover) 72%, transparent);
+}
+
+.right-canvas-rail-button .material-symbols-outlined,
+.right-canvas-icon-button .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.right-canvas-surface-image {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.right-canvas-shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.right-canvas-header {
+  position: relative;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 45px;
+  padding: 7px 8px 0 10px;
+  border-bottom: 1px solid var(--right-canvas-border);
+  background: color-mix(in srgb, var(--color-background) 91%, #000 9%);
+  overflow: visible;
+}
+
+.right-canvas-tabs {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.right-canvas-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.right-canvas-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.right-canvas-tabs::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 76%, transparent);
+  border-radius: 999px;
+}
+
+.right-canvas-tab {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 10px;
+  background: transparent;
+  opacity: 0.4;
+  white-space: nowrap;
+  transition: border-color 0.16s ease, background-color 0.16s ease, opacity 0.16s ease;
+}
+
+.right-canvas-tab:hover,
+.right-canvas-tab.is-active {
+  opacity: 1;
+}
+
+.right-canvas-tab .material-symbols-outlined {
+  flex: 0 0 auto;
+  font-size: 18px;
+}
+
+.right-canvas-tab .right-canvas-surface-image {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.right-canvas-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.right-canvas-toolbar {
+  position: relative;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-bottom: 6px;
+  overflow: visible;
+}
+
+.right-canvas-panels {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--right-canvas-surface);
+}
+
+.right-canvas-panels > x-extension {
+  display: contents;
+}
+
+.right-canvas-panels > x-extension > x-component {
+  display: contents;
+}
+
+.right-canvas-surface-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.right-canvas-surface-panel.is-active {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.right-canvas-surface-panel > x-component,
+.right-canvas-surface-panel > x-component > div[x-data] {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.right-canvas-empty-state {
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+
+.right-canvas-empty-state .material-symbols-outlined {
+  font-size: 28px;
+}
+
+.right-canvas-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 3;
+  width: 7px;
+  cursor: col-resize;
+}
+
+body.right-canvas-overlay-mode .right-canvas {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  max-width: calc(100vw - 44px);
+  box-shadow: -16px 0 38px rgba(0, 0, 0, 0.34);
+  transform: translateX(100%);
+}
+
+body.right-canvas-overlay-mode .right-canvas.is-open {
+  transform: translateX(0);
+}
+
+body.right-canvas-overlay-mode .right-canvas-resize-handle {
+  display: none;
+}
+
+body.right-canvas-mobile-mode .right-canvas {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3400;
+  display: flex !important;
+  width: 0 !important;
+  min-width: 0;
+  height: 100%;
+  overflow: visible;
+  transform: none;
+  border-left: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+body.right-canvas-mobile-mode .right-canvas.is-open {
+  transform: none;
+}
+
+body.right-canvas-mobile-mode .right-canvas-rail {
+  position: fixed;
+  top: 50%;
+  right: max(0px, env(safe-area-inset-right));
+  display: flex !important;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}
+
+body.right-canvas-mobile-mode .right-canvas-shell,
+body.right-canvas-mobile-mode .right-canvas-resize-handle {
+  display: none !important;
+}
+
+@media (max-width: 420px) {
+  body.right-canvas-mobile-mode .right-canvas-rail {
+    gap: 5px;
+    padding: 8px 6px;
+    transform: translateY(-50%) scale(0.92);
+    transform-origin: right center;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.22);
+  }
+
+  body.right-canvas-mobile-mode .right-canvas-rail-button,
+  body.right-canvas-mobile-mode .right-canvas-icon-button {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  body.right-canvas-mobile-mode .right-canvas-rail-button .material-symbols-outlined,
+  body.right-canvas-mobile-mode .right-canvas-icon-button .material-symbols-outlined {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .right-canvas-tab-label {
+    display: none;
+  }
+}

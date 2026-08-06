@@ -1,0 +1,152 @@
+<html>
+  <head>
+    <title>Development</title>
+  </head>
+
+  <body>
+    <div x-data>
+      <template x-if="$store.settings.settings">
+        <div>
+          <div class="section-title">Development</div>
+          <div class="section-description">
+            Low-level controls for local framework development and transport diagnostics.
+          </div>
+
+          <template x-if="!$store.settings.additional?.is_dockerized">
+            <div>
+              <div class="field">
+                <div class="field-label">
+                  <div class="field-title">RFC destination URL</div>
+                  <div class="field-description">
+                    Base URL of the Dockerized Agent Zero instance used for remote function calls.
+                  </div>
+                </div>
+                <div class="field-control">
+                  <input type="text" x-model="$store.settings.settings.rfc_url" />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">RFC password</div>
+              <div class="field-description">
+                Shared password required by both instances before remote calls are accepted.
+              </div>
+            </div>
+            <div class="field-control">
+              <input type="text" class="masked-text-input" autocomplete="off" x-model="$store.settings.settings.rfc_password" />
+            </div>
+          </div>
+
+          <template x-if="!$store.settings.additional?.is_dockerized">
+            <div>
+              <div class="field">
+                <div class="field-label">
+                  <div class="field-title">RFC HTTP port</div>
+                  <div class="field-description">HTTP port exposed by the Dockerized Agent Zero instance.</div>
+                </div>
+                <div class="field-control">
+                  <input type="number" x-model.number="$store.settings.settings.rfc_port_http" />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <div class="settings-advanced-section" x-data="{ advOpen: false }">
+            <button type="button" class="settings-advanced-toggle" @click="advOpen = !advOpen">
+              <span class="material-symbols-outlined settings-advanced-toggle-icon"
+                    :style="advOpen ? 'transform:rotate(90deg)' : ''">chevron_right</span>
+              <span>Advanced Settings</span>
+            </button>
+
+            <div class="settings-advanced-body" x-show="advOpen" x-transition.opacity>
+              <div class="field">
+                <div class="field-label">
+                  <div class="field-title">Broadcast restart events</div>
+                  <div class="field-description">
+                    Tell connected clients when the server has started again.
+                  </div>
+                </div>
+                <div class="field-control">
+                  <label class="toggle">
+                    <input type="checkbox" x-model="$store.settings.settings.websocket_server_restart_enabled" />
+                    <span class="toggler"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-label">
+                  <div class="field-title">Uvicorn access logs</div>
+                  <div class="field-description">
+                    Temporarily log HTTP traffic while debugging transport issues.
+                  </div>
+                  <template
+                    x-if="$store.settings.additional?.runtime_settings &&
+                      $store.settings.settings?.uvicorn_access_logs_enabled !==
+                        $store.settings.additional.runtime_settings.uvicorn_access_logs_enabled"
+                  >
+                    <div class="field-description">
+                      Applies after backend restart.
+                    </div>
+                  </template>
+                </div>
+                <div class="field-control">
+                  <label class="toggle">
+                    <input type="checkbox" x-model="$store.settings.settings.uvicorn_access_logs_enabled" />
+                    <span class="toggler"></span>
+                  </label>
+                </div>
+              </div>
+
+              <template x-if="!$store.settings.additional?.is_dockerized">
+                <div>
+                  <div class="settings-subsection-title">Testing</div>
+                  <div class="settings-subsection-description">
+                    Utilities for validating WebSocket infrastructure in development environments.
+                  </div>
+
+                  <div class="field">
+                    <div class="field-label">
+                      <div class="field-title">WebSocket test harness</div>
+                      <div class="field-description">
+                        Run automated and manual WebSocket validation suites.
+                      </div>
+                    </div>
+                    <div class="field-control">
+                      <button
+                        class="btn btn-field"
+                        @click="openModal('settings/developer/websocket-tester.html');"
+                      >
+                        Open Harness
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <div class="field-label">
+                      <div class="field-title">WebSocket event console</div>
+                      <div class="field-description">
+                        Inspect inbound and outbound envelopes and lifecycle events in real time.
+                      </div>
+                    </div>
+                    <div class="field-control">
+                      <button
+                        class="btn btn-field"
+                        @click="openModal('settings/developer/websocket-event-console.html');"
+                      >
+                        Open Console
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>

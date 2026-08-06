@@ -1,0 +1,15 @@
+<div
+  class="right-canvas-surface-panel desktop-canvas-surface"
+  data-surface-id="desktop"
+  :class="{
+    'is-active': $store.rightCanvas?.isSurfaceVisible('desktop'),
+    'is-mounted': $store.rightCanvas?.isSurfaceRendered('desktop')
+  }"
+  :aria-hidden="(!$store.rightCanvas?.isSurfaceVisible('desktop')).toString()"
+  x-effect="(() => {
+    const visible = Boolean($store.rightCanvas?.isSurfaceRendered('desktop'));
+    (globalThis.queueMicrotask || ((callback) => globalThis.setTimeout(callback, 0)))(() => $store.desktop?.setDesktopHostVisible?.(visible));
+  })()"
+>
+  <x-component path="/plugins/_desktop/webui/desktop-panel.html"></x-component>
+</div>

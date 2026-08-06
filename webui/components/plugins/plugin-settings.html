@@ -1,0 +1,365 @@
+<html>
+<head>
+    <title>Plugin Settings</title>
+    <script type="module">
+        import { store } from "/components/plugins/plugin-settings-store.js";
+    </script>
+</head>
+<body>
+        <div x-data="(() => {
+        const context = $instantiate($store.pluginSettingsPrototype);
+        return {
+            context,
+            get config() {
+                return this.context.settings;
+            },
+        };
+    })()">
+        <template x-if="context">
+            <div>
+            <div x-create="(() => {
+                     const modal = $el.closest('.modal');
+                     if (modal) {
+                         modal.__pluginSettingsContext = context;
+                         const modalTitle = modal.querySelector('.modal-title');
+                         if (modalTitle) modalTitle.textContent = context.modalTitle || 'Plugin Settings';
+                     }
+                  })()"
+                 x-destroy="context.cleanup()">
+
+                <!-- Context toolbar: Project + Agent profile (only when at least one scope is configurable) -->
+                <div class="plugin-settings-scope-section"
+                     x-show="(context.perProjectConfig || context.perAgentConfig) && !context.hideSettingsActions">
+                    <div class="plugin-settings-scope-header">
+                        <div class="plugin-settings-scope-header-copy">
+                            <div class="plugin-settings-scope-title">Settings scope</div>
+                            <div class="plugin-settings-scope-desc"
+                                 x-text="
+                                    context.perProjectConfig && context.perAgentConfig
+                                      ? 'This plugin supports settings per project or agent profile.'
+                                      : context.perProjectConfig
+                                        ? 'This plugin supports settings per project.'
+                                        : 'This plugin supports settings per agent profile.'
+                                 ">
+                            </div>
+                        </div>
+                        <div class="plugin-settings-scope-header-toggle"
+                             x-show="$store.pluginToggle && !$store.pluginToggle.alwaysEnabled">
+                            <span class="plugin-settings-toolbar-label">Enabled</span>
+                            <label class="toggle">
+                                <input type="checkbox"
+                                       :checked="$store.pluginToggle?.status === 'enabled'"
+                                       :disabled="$store.pluginToggle?.isSaving || context.isLoading"
+                                       @change="context.setPluginEnabled($event.target.checked)">
+                                <span class="toggler"></span>
+                            </label>
+                            <span class="plugin-toggle-status-text" x-text="$store.pluginToggle?.statusLabel"></span>
+                        </div>
+                    </div>
+                    <div class="plugin-settings-toolbar">
+                    <div class="plugin-settings-toolbar-row">
+
+                        <label class="plugin-settings-toolbar-item"
+                               x-show="context.perProjectConfig">
+                            <span class="plugin-settings-toolbar-label">Project</span>
+                            <select x-model="context.projectName"
+                                    x-init="$nextTick(() => $el.value = context.projectName)"
+                                    @change="context.onScopeChanged()"
+                                    :disabled="!context.perProjectConfig">
+                                <option value="">Global</option>
+                                <template x-for="project in context.projects" :key="project.key">
+                                    <option :value="project.key" x-text="project.label"></option>
+                                </template>
+                            </select>
+                        </label>
+
+                        <label class="plugin-settings-toolbar-item"
+                               x-show="context.perAgentConfig">
+                            <span class="plugin-settings-toolbar-label">Agent profile</span>
+                            <select x-model="context.agentProfileKey"
+                                    x-init="$nextTick(() => $el.value = context.agentProfileKey)"
+                                    @change="context.onScopeChanged()"
+                                    :disabled="!context.perAgentConfig">
+                                <option value="">All profiles</option>
+                                <template x-for="profile in context.agentProfiles" :key="profile.key">
+                                    <option :value="profile.key" x-text="profile.label"></option>
+                                </template>
+                            </select>
+                        </label>
+
+                        <button type="button" class="button plugin-settings-toolbar-button" title="Show existing configurations" @click="context.openConfigListModal()">
+                            <span class="icon material-symbols-outlined">list</span>
+                        </button>
+
+                    </div>
+                </div>
+
+                <div x-show="context.scopeMismatchMessage" class="plugin-settings-scope-info">
+                    <span class="material-symbols-outlined">info</span>
+                    <span x-text="context.scopeMismatchMessage"></span>
+                </div>
+                </div>
+
+                <!-- Error -->
+                <div x-show="context.error" class="plugin-settings-error">
+                    <span class="material-symbols-outlined">error</span>
+                    <span x-text="context.error"></span>
+                </div>
+
+                <!-- Loading -->
+                <div x-show="context.isLoading" class="plugin-settings-loading">
+                    <span class="material-symbols-outlined spinning">progress_activity</span>
+                    <span>Loading settings...</span>
+                </div>
+
+                <!-- Plugin settings body: plugin provides /plugins/<name>/webui/config.html -->
+                <div x-show="!context.isLoading"
+                     class="plugin-settings-body"
+                     x-html="context.settingsComponentHtml">
+                </div>
+
+            </div>
+
+            <!-- Footer (pinned outside scroll area) -->
+            <div class="modal-footer plugin-settings-footer" data-modal-footer>
+                <div class="plugin-settings-footer-nav"
+                     x-show="context.wizardFooter?.visible?.()">
+                    <div class="plugin-settings-footer-nav-row">
+                        <button class="btn"
+                                @click="context.wizardFooter?.onBack?.()"
+                                :disabled="!context.wizardFooter?.canGoBack?.()">
+                            <span x-text="context.wizardFooter?.backLabel?.() || 'Back'"></span>
+                        </button>
+                        <div class="plugin-settings-footer-note" x-text="context.wizardFooter?.note?.() || ''"></div>
+                    </div>
+                </div>
+
+                <div class="plugin-settings-footer-actions">
+                    <button class="btn"
+                            x-show="!context.hideSettingsActions"
+                            @click="context.resetToDefault()"
+                            :disabled="context?.isSaving || context?.isLoading">
+                        Default
+                    </button>
+                    <button class="btn btn-field"
+                            x-show="context.wizardFooter?.showNext?.()"
+                            @click="context.wizardFooter?.onNext?.()"
+                            :disabled="context.wizardFooter?.nextDisabled?.()">
+                        <span x-text="context.wizardFooter?.nextLabel?.() || 'Next'"></span>
+                    </button>
+                    <button class="btn btn-ok"
+                            x-show="!context.hideSettingsActions && (!context.wizardFooter || context.wizardFooter?.showSave?.())"
+                            @click="context.save()"
+                            :disabled="context?.isSaving || context?.isLoading">
+                        Save
+                    </button>
+                    <button class="btn btn-cancel"
+                            @click="window.closeModal?.()">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+            </div>
+        </template>
+    </div>
+
+    <style>
+        .plugin-settings-toolbar, .plugin-settings-body {
+            padding: 1rem;
+        }
+
+        .plugin-settings-toolbar-row {
+            display: flex;
+            align-items: center;
+            gap: clamp(0.75rem, 2vw, 2rem);
+            flex-wrap: wrap;
+        }
+
+        .plugin-settings-toolbar-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex: 1 1 0;
+            min-width: 12rem;
+            margin: 0;
+        }
+
+        .plugin-settings-toolbar-button {
+            flex: 0 0 auto;
+            padding: 0.5rem 0.75rem;
+            height: 2.5rem;
+        }
+
+        .plugin-settings-toolbar-label {
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            white-space: nowrap;
+        }
+
+        .plugin-settings-toolbar-item select {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .plugin-settings-scope-info {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0 1rem 1rem 1rem;
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-small);
+        }
+
+        @media (max-width: 640px) {
+            .plugin-settings-toolbar-item {
+                flex-basis: 100%;
+                min-width: 0;
+            }
+        }
+
+        .plugin-settings-error {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--color-error, #e74c3c);
+            background: var(--color-error-bg, #fdecea);
+            border-radius: 4px;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.75rem;
+            font-size: var(--font-size-small);
+        }
+
+        .plugin-settings-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 2rem;
+            color: var(--color-text-secondary);
+        }
+
+        .plugin-settings-body {
+            min-height: 4rem;
+        }
+
+        .plugin-settings-footer {
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .plugin-settings-footer-nav {
+            flex: 1 1 22rem;
+            min-width: 18rem;
+        }
+
+        .plugin-settings-footer-nav-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            width: 100%;
+        }
+
+        .plugin-settings-footer-note {
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-small);
+            line-height: 1.4;
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .plugin-settings-footer-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-left: auto;
+        }
+
+        .spinning {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .plugin-settings-scope-section {
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            margin: 1rem;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .plugin-settings-scope-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--color-border);
+            background: var(--color-bg-secondary);
+        }
+
+        .plugin-settings-scope-header-copy {
+            min-width: 0;
+        }
+
+        .plugin-settings-scope-header-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-left: auto;
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        .plugin-settings-scope-title {
+            font-weight: 600;
+            font-size: var(--font-size-normal);
+            color: var(--color-text-primary);
+        }
+
+        .plugin-settings-scope-desc {
+            font-size: var(--font-size-small);
+            color: var(--color-text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .plugin-toggle-status-text {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            min-width: 2rem;
+        }
+
+        @media (max-width: 640px) {
+            .plugin-settings-scope-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .plugin-settings-scope-header-toggle {
+                margin-left: 0;
+                justify-content: flex-start;
+                white-space: normal;
+            }
+
+            .plugin-settings-footer-nav {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .plugin-settings-footer-nav-row {
+                flex-wrap: wrap;
+            }
+
+            .plugin-settings-footer-actions {
+                width: 100%;
+                justify-content: flex-end;
+                margin-left: 0;
+            }
+        }
+    </style>
+</body>
+</html>

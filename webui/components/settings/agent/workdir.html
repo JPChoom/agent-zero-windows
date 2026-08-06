@@ -1,0 +1,136 @@
+<html>
+  <head>
+    <title>Working directory</title>
+
+    <script type="module">
+      import { store } from "/components/settings/settings-store.js";
+      import { store as fileBrowserStore } from "/components/modals/file-browser/file-browser-store.js";
+    </script>
+  </head>
+
+  <body>
+    <div x-data>
+      <template x-if="$store.settings?.settings">
+        <div>
+          <div class="section-title">Default working directory</div>
+          <div class="section-description">
+            The fallback workspace for chats that are not attached to a project.
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Workdir path</div>
+              <div class="field-description">Use a Linux path inside the container, for example <code>/a0/usr/workdir</code>.</div>
+            </div>
+            <div class="field-control">
+              <input type="text" x-model="$store.settings.settings.workdir_path" />
+              <button class="btn btn-field settings-inline-button" @click="$store.fileBrowser.open($store.settings.settings.workdir_path)">Browse</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Remember last file browser location</div>
+              <div class="field-description">
+                Open the file browser at the most recently visited directory when no specific path is requested.
+              </div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="$store.settings.settings.file_browser_remember_last_directory" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Show workdir structure to the agent</div>
+              <div class="field-description">
+                Give the agent a compact map of the workspace at the start of a task.
+              </div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="$store.settings.settings.workdir_show" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+
+          <template x-if="$store.settings.settings.workdir_show">
+            <div class="settings-advanced-section" x-data="{ advOpen: false }">
+              <button type="button" class="settings-advanced-toggle" @click="advOpen = !advOpen">
+                <span class="material-symbols-outlined settings-advanced-toggle-icon"
+                      :style="advOpen ? 'transform:rotate(90deg)' : ''">chevron_right</span>
+                <span>Advanced Settings</span>
+              </button>
+
+              <div class="settings-advanced-body" x-show="advOpen" x-transition.opacity>
+                <div class="field">
+                  <div class="field-label">
+                    <div class="field-title">Depth limit</div>
+                    <div class="field-description">How many folder levels to include. Use 0 for no depth limit.</div>
+                  </div>
+                  <div class="field-control">
+                    <input type="number" x-model.number="$store.settings.settings.workdir_max_depth" min="0" step="1" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="field-label">
+                    <div class="field-title">Line budget</div>
+                    <div class="field-description">Maximum lines shown to the agent. Use 0 for no line limit.</div>
+                  </div>
+                  <div class="field-control">
+                    <input type="number" x-model.number="$store.settings.settings.workdir_max_lines" min="0" step="1" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="field-label">
+                    <div class="field-title">Folder limit</div>
+                    <div class="field-description">Maximum subfolders shown per folder. Use 0 for no folder limit.</div>
+                  </div>
+                  <div class="field-control">
+                    <input type="number" x-model.number="$store.settings.settings.workdir_max_folders" min="0" step="1" />
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="field-label">
+                    <div class="field-title">File limit</div>
+                    <div class="field-description">Maximum files shown per folder. Use 0 for no file limit.</div>
+                  </div>
+                  <div class="field-control">
+                    <input type="number" x-model.number="$store.settings.settings.workdir_max_files" min="0" step="1" />
+                  </div>
+                </div>
+
+                <div class="field field-full">
+                  <div class="field-label">
+                    <div class="field-title">Ignored files and folders</div>
+                    <div class="field-description">Gitignore-style patterns that should stay out of the agent’s workspace map.</div>
+                  </div>
+                  <div class="field-control">
+                    <textarea x-model="$store.settings.settings.workdir_gitignore" rows="5" placeholder="node_modules/&#10;.git/&#10;*.log"></textarea>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="field-label">
+                    <div class="field-title">Preview workspace map</div>
+                    <div class="field-description">See exactly what the agent will receive before saving the limits.</div>
+                  </div>
+                  <div class="field-control">
+                    <button class="btn btn-field" @click="$store.settings.testWorkdirFileStructure()">Preview</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>

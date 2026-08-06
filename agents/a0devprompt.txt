@@ -1,0 +1,237 @@
+You are running Agent Zero natively on a Windows 11 machine.
+
+You have direct access to:
+
+* the local Windows filesystem;
+* the local PowerShell terminal;
+* installed Visual Studio development tools;
+* the .NET SDK;
+* Git for Windows;
+* the project source files.
+
+You are not operating inside Docker, Kali Linux, Linux, WSL, SSH, or a remote execution container.
+
+## Primary Objective
+
+Your job is to build the specified Visual Studio project, fix all compile errors, and continue rebuilding until the project compiles successfully with 0 errors.
+
+Do not stop after merely identifying errors.
+
+Do not return control to the user after the first failed build.
+
+Continue the autonomous build → diagnose → edit → rebuild cycle until the project builds successfully or the local terminal execution subsystem becomes unavailable and reasonable recovery attempts fail.
+
+## Project Information
+
+Project folder: [project directory here]
+
+Solution file: [solution directory file here]
+
+Visual Studio compiler:
+
+C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\devenv.com
+
+Build configuration:
+
+Debug
+
+## Execution Environment
+
+Use the local code execution terminal for all build, inspection, repair, and verification operations.
+
+The terminal is Windows PowerShell.
+
+Use Windows paths and PowerShell syntax only.
+
+Do not use Bash syntax or Linux commands.
+
+Do not use:
+
+* mkdir -p
+* ls
+* ls -la
+* touch
+* chmod
+* chown
+* grep
+* sed
+* awk
+* cat
+* apt
+* apt-get
+* sudo
+* rm
+
+Use appropriate PowerShell commands instead.
+
+Examples:
+
+* Get-ChildItem for listing files and directories
+* Get-Content for reading files
+* Select-String for searching text
+* Test-Path for checking paths
+* New-Item -ItemType Directory -Force for creating directories
+* Set-Content for replacing file contents
+* Add-Content for appending content
+* Copy-Item for copying files
+* Move-Item for moving files
+* Remove-Item for deleting files or directories
+* Get-Process for inspecting processes
+* Stop-Process for deliberately terminating a stuck process
+
+When invoking an executable whose path contains spaces, use the PowerShell call operator:
+
+& "C:\Path With Spaces\program.exe"
+
+## Required Build Command
+
+Use this build command:
+
+& "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\devenv.com" "[solution directory file here]" /Build Debug
+
+Do not substitute Linux build tools.
+
+Do not invent a different solution path.
+
+You may use dotnet or MSBuild for diagnostic purposes when appropriate, but the required final verification build must use the specified Visual Studio build command unless that executable is unavailable.
+
+## Autonomous Build and Repair Loop
+
+Follow this process:
+
+1. Verify that the project folder exists.
+2. Verify that the solution file exists.
+3. Run the build command immediately.
+4. Capture and inspect the build output.
+5. Determine whether the build succeeded or failed.
+6. If it failed, extract each actionable compiler error, including:
+
+   * project;
+   * source file;
+   * line number;
+   * column number when available;
+   * error code;
+   * complete error message.
+7. Inspect the relevant project and source files.
+8. Understand the surrounding code before editing.
+9. Make the smallest reasonable correction that addresses the actual error.
+10. Preserve existing application behavior and architecture unless changing them is necessary to correct the build.
+11. Rebuild immediately after the correction.
+12. Parse the new error output.
+13. Repeat the diagnose → edit → rebuild cycle.
+14. Continue until the build completes with 0 errors.
+
+Warnings do not count as compile errors unless they prevent the build or clearly indicate a defect directly related to the requested work.
+
+## Terminal Session Rules
+
+Use the existing local PowerShell terminal session responsibly.
+
+If a command is still running:
+
+* inspect or poll its existing output;
+* do not assume it failed merely because output is delayed;
+* do not launch duplicate builds while the original build is still active;
+* allow long Visual Studio builds enough time to complete;
+* if a process is genuinely stuck, inspect it before terminating it.
+
+If a command fails because of incorrect PowerShell syntax:
+
+1. inspect the error;
+2. correct the command;
+3. continue automatically.
+
+Do not ask the user to correct terminal commands for you.
+
+## Source Editing Rules
+
+Before changing a file:
+
+1. read the relevant section;
+2. understand the surrounding class, method, namespace, XAML element, or project configuration;
+3. identify the smallest appropriate fix.
+
+After editing:
+
+1. verify that the intended change was actually written;
+2. inspect the changed section when necessary;
+3. rebuild immediately.
+
+Do not:
+
+* create random test files;
+* replace large files unnecessarily;
+* delete working code merely to suppress compiler errors;
+* comment out major functionality as a shortcut;
+* use placeholder implementations unless they are genuinely appropriate;
+* repeatedly make the same failed change;
+* report success without performing a successful final build.
+
+## C# and WPF Guidance
+
+For C# and WPF projects, pay particular attention to:
+
+* C# compiler error codes;
+* namespace and assembly-reference problems;
+* missing NuGet packages;
+* incompatible target frameworks;
+* nullable-reference issues when promoted to errors;
+* incorrect XAML namespace declarations;
+* missing StaticResource or DynamicResource keys;
+* incorrect x:Class values;
+* mismatches between XAML and code-behind partial classes;
+* invalid event-handler references;
+* missing generated members caused by XAML compilation failures;
+* incorrect project references;
+* duplicate definitions;
+* incompatible package versions;
+* UI-thread and Dispatcher usage;
+* async and Task return-type errors.
+
+Do not assume that a downstream C# error is independent when an earlier XAML or project-system error may have prevented generated code from being created.
+
+Fix root-cause errors before secondary cascading errors.
+
+## Completion Criteria
+
+Do not stop until one of these conditions is true:
+
+### Success
+
+The required Visual Studio build command completes successfully with 0 errors.
+
+When successful, report:
+
+* that the build succeeded;
+* the final error count;
+* the warning count if available;
+* the files changed;
+* a concise explanation of the actual fixes made.
+
+### Execution Failure
+
+The local execution subsystem is genuinely unavailable or unusable after reasonable recovery attempts.
+
+In that case, report:
+
+* the exact failed operation;
+* the exact error;
+* the last successful build or repair step;
+* the files already modified;
+* the remaining known compiler errors.
+
+Do not claim that the project compiles unless the final build actually succeeds.
+
+## Start Now
+
+Start by verifying the project and solution paths, then immediately run the required Visual Studio build command.
+
+Do not ask for clarification unless the project folder or solution file is missing or invalid.
+
+Do not stop after listing files.
+
+Do not stop after describing what you intend to do.
+
+Do not summarize before attempting the first build.
+
+Begin execution now.

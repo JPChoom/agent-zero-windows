@@ -1,0 +1,936 @@
+<html>
+<head>
+  <script type="module">
+    import { store } from "/plugins/_time_travel/webui/time-travel-store.js";
+  </script>
+</head>
+<body>
+  <div class="time-travel-panel" x-data x-create="$store.timeTravel.onMount($el, xAttrs($el) || {})" x-destroy="$store.timeTravel.cleanup()">
+    <template x-if="$store.timeTravel">
+      <div class="time-travel-shell">
+        <div class="time-travel-toolbar">
+          <div class="time-travel-workspace-picker" :title="$store.timeTravel.workspacePath || $store.timeTravel.workspaceOptionLabel($store.timeTravel.selectedWorkspace())">
+            <span class="material-symbols-outlined" aria-hidden="true">folder_open</span>
+            <select
+              aria-label="Workspace"
+              :value="$store.timeTravel.selectedWorkspaceId"
+              @change="$store.timeTravel.selectWorkspace($event.target.value)"
+              :disabled="$store.timeTravel.workspaceLoading || $store.timeTravel.loading || $store.timeTravel.busy"
+            >
+              <option value="" x-show="$store.timeTravel.workspaces.length === 0">Workspace</option>
+              <template x-for="workspace in $store.timeTravel.workspaces" :key="workspace.id">
+                <option
+                  :value="workspace.id"
+                  :selected="workspace.id === $store.timeTravel.selectedWorkspaceId"
+                  x-text="$store.timeTravel.workspaceOptionLabel(workspace)"
+                ></option>
+              </template>
+            </select>
+          </div>
+          <span class="time-travel-spacer"></span>
+          <button type="button" class="time-travel-icon-button" title="Snapshot" aria-label="Snapshot" @click="$store.timeTravel.manualSnapshot()" :disabled="$store.timeTravel.busy || $store.timeTravel.loading || $store.timeTravel.isLocked()">
+            <span class="material-symbols-outlined">add_a_photo</span>
+          </button>
+          <button type="button" class="time-travel-icon-button" title="Refresh" aria-label="Refresh" @click="$store.timeTravel.refresh({ keepSelection: true, reloadWorkspaces: true })" :disabled="$store.timeTravel.loading">
+            <span class="material-symbols-outlined" :class="{ spinning: $store.timeTravel.loading }">refresh</span>
+          </button>
+        </div>
+
+        <div class="time-travel-status" x-show="$store.timeTravel.loading || $store.timeTravel.error || $store.timeTravel.busy" style="display: none;">
+          <span class="material-symbols-outlined" :class="{ spinning: $store.timeTravel.loading || $store.timeTravel.busy }" x-text="$store.timeTravel.error ? 'error' : 'progress_activity'"></span>
+          <span x-text="$store.timeTravel.error || ($store.timeTravel.busy ? 'Working...' : 'Loading history...')"></span>
+        </div>
+
+        <template x-if="$store.timeTravel.isLocked() && !$store.timeTravel.loading">
+          <div class="time-travel-locked">
+            <span class="material-symbols-outlined">lock</span>
+            <strong>Unavailable</strong>
+            <span x-text="$store.timeTravel.payload?.workspace?.error || 'Time Travel is available only inside /a0/usr.'"></span>
+          </div>
+        </template>
+
+        <template x-if="!$store.timeTravel.isLocked()">
+          <div class="time-travel-body">
+            <aside class="time-travel-timeline">
+              <div class="time-travel-filter">
+                <span class="material-symbols-outlined">filter_list</span>
+                <input
+                  type="search"
+                  placeholder="Filter files"
+                  x-model="$store.timeTravel.fileFilter"
+                  @input="$store.timeTravel.scheduleFilterRefresh()"
+                />
+              </div>
+
+              <div class="time-travel-rows">
+                <template x-for="row in $store.timeTravel.timelineRows()" :key="row.key">
+                  <button
+                    type="button"
+                    class="time-travel-row"
+                    :class="{ 'is-active': $store.timeTravel.selectedHash === row.key, 'is-present': row.kind === 'present', 'is-current': row.is_current }"
+                    @click="$store.timeTravel.selectRow(row)"
+                    :title="row.message"
+                  >
+                    <span class="time-travel-row-mark">
+                      <span class="material-symbols-outlined" x-text="row.kind === 'present' ? (row.dirty ? 'edit_note' : 'check_circle') : (row.is_current ? 'radio_button_checked' : 'commit')"></span>
+                    </span>
+                    <span class="time-travel-row-main">
+                      <span class="time-travel-row-title" x-text="row.message"></span>
+                      <span class="time-travel-row-meta" x-text="$store.timeTravel.rowMeta(row)"></span>
+                    </span>
+                    <span class="time-travel-row-count" x-text="row.files?.length || 0"></span>
+                  </button>
+                </template>
+              </div>
+
+              <button type="button" class="time-travel-load-more" x-show="$store.timeTravel.payload?.has_more" style="display: none;" @click="$store.timeTravel.loadMore()" :disabled="$store.timeTravel.loading">
+                <span class="material-symbols-outlined">expand_more</span>
+                <span>More</span>
+              </button>
+            </aside>
+
+            <main class="time-travel-detail">
+              <div class="time-travel-detail-header">
+                <div class="time-travel-detail-title">
+                  <strong x-text="$store.timeTravel.selectedRow()?.message || 'History'"></strong>
+                  <span x-text="$store.timeTravel.rowMeta($store.timeTravel.selectedRow())"></span>
+                </div>
+                <div class="time-travel-actions" x-show="$store.timeTravel.selectedCommit()" style="display: none;">
+                  <button type="button" class="time-travel-tool-button" title="Travel" @click="$store.timeTravel.openPreview('travel')" :disabled="$store.timeTravel.selectedCommit()?.is_current || $store.timeTravel.busy">
+                    <span class="material-symbols-outlined">move_down</span>
+                    <span>Travel</span>
+                  </button>
+                  <button type="button" class="time-travel-tool-button" title="Revert" @click="$store.timeTravel.openPreview('revert')" :disabled="$store.timeTravel.busy">
+                    <span class="material-symbols-outlined">undo</span>
+                    <span>Revert</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="time-travel-detail-grid">
+                <section class="time-travel-files">
+                  <template x-if="$store.timeTravel.selectedFiles().length === 0">
+                    <div class="time-travel-empty">
+                      <span class="material-symbols-outlined">hourglass_empty</span>
+                      <span>No file changes</span>
+                    </div>
+                  </template>
+                  <template x-for="file in $store.timeTravel.selectedFiles()" :key="$store.timeTravel.fileKey(file)">
+                    <button
+                      type="button"
+                      class="time-travel-file-row"
+                      :class="{ 'is-active': $store.timeTravel.fileKey(file) === $store.timeTravel.selectedPath }"
+                      @click="$store.timeTravel.selectFile(file)"
+                      :title="$store.timeTravel.fileTitle(file)"
+                    >
+                      <span class="time-travel-file-name" x-text="$store.timeTravel.fileTitle(file)"></span>
+                      <span class="time-travel-file-status" x-text="$store.timeTravel.statusLabel(file)"></span>
+                      <span class="time-travel-file-counts">
+                        <span class="diff-add" x-text="$store.timeTravel.formatSigned(file.additions, '+')"></span>
+                        <span class="diff-del" x-text="$store.timeTravel.formatSigned(file.deletions, '-')"></span>
+                      </span>
+                    </button>
+                  </template>
+                </section>
+
+                <section class="time-travel-diff">
+                  <div class="time-travel-diff-toolbar">
+                    <span class="time-travel-diff-path" :title="$store.timeTravel.fileTitle($store.timeTravel.selectedFile())" x-text="$store.timeTravel.fileTitle($store.timeTravel.selectedFile()) || 'Diff'"></span>
+                    <span class="time-travel-spacer"></span>
+                    <button type="button" class="time-travel-icon-button is-small" title="Open containing folder" aria-label="Open containing folder" @click="$store.timeTravel.openContainingFolder($store.timeTravel.selectedFile())" :disabled="!$store.timeTravel.selectedFile()">
+                      <span class="material-symbols-outlined">folder_open</span>
+                    </button>
+                    <button type="button" class="time-travel-icon-button is-small" title="Copy path" aria-label="Copy path" @click="$store.timeTravel.copyPath($store.timeTravel.selectedFile())" :disabled="!$store.timeTravel.selectedFile()">
+                      <span class="material-symbols-outlined">content_copy</span>
+                    </button>
+                  </div>
+
+                  <div class="time-travel-diff-status" x-show="$store.timeTravel.diffLoading || $store.timeTravel.diffError" style="display: none;">
+                    <span class="material-symbols-outlined" :class="{ spinning: $store.timeTravel.diffLoading }" x-text="$store.timeTravel.diffError ? 'error' : 'progress_activity'"></span>
+                    <span x-text="$store.timeTravel.diffError || 'Loading diff...'"></span>
+                  </div>
+
+                  <template x-if="$store.timeTravel.selectedDiff?.binary">
+                    <div class="time-travel-empty">
+                      <span class="material-symbols-outlined">data_object</span>
+                      <span>Binary file changed</span>
+                    </div>
+                  </template>
+
+                  <template x-if="$store.timeTravel.selectedDiff?.too_large && !$store.timeTravel.selectedDiff?.binary">
+                    <div class="time-travel-empty">
+                      <span class="material-symbols-outlined">text_snippet</span>
+                      <span>Diff exceeds the 1 MB render limit</span>
+                    </div>
+                  </template>
+
+                  <template x-if="$store.timeTravel.selectedDiff?.patch && !$store.timeTravel.selectedDiff?.binary">
+                    <div class="time-travel-code" role="table" aria-label="Unified diff">
+                      <template x-for="line in $store.timeTravel.patchLines()" :key="line.id">
+                        <div class="time-travel-line" :class="`is-${line.type}`" role="row">
+                          <span class="time-travel-line-marker" x-text="line.type === 'add' ? '+' : (line.type === 'del' ? '-' : '')"></span>
+                          <code x-text="line.text"></code>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </section>
+              </div>
+            </main>
+          </div>
+        </template>
+
+        <div class="time-travel-preview-backdrop" x-show="$store.timeTravel.previewOpen" style="display: none;">
+          <section class="time-travel-preview" role="dialog" aria-modal="true" aria-label="Time Travel preview">
+            <header>
+              <span class="material-symbols-outlined" x-text="$store.timeTravel.preview?.operation === 'travel' ? 'move_down' : 'undo'"></span>
+              <strong x-text="$store.timeTravel.preview?.operation === 'travel' ? 'Travel Preview' : 'Revert Preview'"></strong>
+              <button type="button" class="time-travel-icon-button is-small" title="Close" aria-label="Close" @click="$store.timeTravel.closePreview()" :disabled="$store.timeTravel.busy">
+                <span class="material-symbols-outlined">close</span>
+              </button>
+            </header>
+            <div class="time-travel-preview-body">
+              <div class="time-travel-preview-status" x-show="$store.timeTravel.previewLoading || $store.timeTravel.previewError" style="display: none;">
+                <span class="material-symbols-outlined" :class="{ spinning: $store.timeTravel.previewLoading }" x-text="$store.timeTravel.previewError ? 'error' : 'progress_activity'"></span>
+                <span x-text="$store.timeTravel.previewError || 'Building preview...'"></span>
+              </div>
+              <div class="time-travel-preview-summary">
+                <span x-text="$store.timeTravel.preview?.short_hash || ''"></span>
+                <span class="time-travel-dot"></span>
+                <span x-text="`${$store.timeTravel.preview?.files?.length || 0} affected files`"></span>
+              </div>
+              <div class="time-travel-preview-files">
+                <template x-for="file in ($store.timeTravel.preview?.files || []).slice(0, 80)" :key="$store.timeTravel.fileKey(file)">
+                  <div class="time-travel-preview-file">
+                    <span x-text="$store.timeTravel.fileTitle(file)"></span>
+                    <span x-text="$store.timeTravel.statusLabel(file)"></span>
+                  </div>
+                </template>
+              </div>
+              <details x-show="$store.timeTravel.previewTechnicalDetails" style="display: none;">
+                <summary>Details</summary>
+                <pre x-text="$store.timeTravel.previewTechnicalDetails"></pre>
+              </details>
+            </div>
+            <footer>
+              <button type="button" class="time-travel-tool-button" @click="$store.timeTravel.closePreview()" :disabled="$store.timeTravel.busy">
+                <span class="material-symbols-outlined">close</span>
+                <span>Cancel</span>
+              </button>
+              <button type="button" class="time-travel-tool-button is-primary" @click="$store.timeTravel.confirmPreview()" :disabled="Boolean($store.timeTravel.busy || $store.timeTravel.previewLoading || $store.timeTravel.previewError)">
+                <span class="material-symbols-outlined" :class="{ spinning: $store.timeTravel.busy }" x-text="$store.timeTravel.busy ? 'progress_activity' : ($store.timeTravel.preview?.operation === 'travel' ? 'move_down' : 'undo')"></span>
+                <span x-text="$store.timeTravel.preview?.operation === 'travel' ? 'Travel' : 'Revert'"></span>
+              </button>
+            </footer>
+          </section>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .time-travel-panel,
+    .time-travel-shell {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      background: color-mix(in srgb, var(--color-background) 95%, #000 5%);
+      color: var(--color-text);
+    }
+
+    .time-travel-panel {
+      container-type: inline-size;
+    }
+
+    .modal-inner.time-travel-modal {
+      box-sizing: border-box;
+      container-type: inline-size;
+      width: min(86vw, 1240px);
+      height: min(88vh, 920px);
+      min-width: min(360px, calc(100vw - 16px));
+      min-height: min(520px, calc(100vh - 16px));
+      max-width: calc(100vw - 16px);
+      max-height: calc(100vh - 16px);
+      border: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+      border-radius: 7px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+      background: color-mix(in srgb, var(--color-background) 94%, #000 6%);
+    }
+
+    .modal-inner.time-travel-modal .modal-header {
+      min-height: 42px;
+      padding: 0.45rem 0.75rem 0.45rem 1rem;
+      background: color-mix(in srgb, var(--color-background) 92%, #000 8%);
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    }
+
+    .modal-inner.time-travel-modal .modal-scroll,
+    .modal-inner.time-travel-modal .modal-bd.time-travel-modal-body,
+    .modal-inner.time-travel-modal .modal-bd.time-travel-modal-body > x-component,
+    .modal-inner.time-travel-modal .modal-bd.time-travel-modal-body > div[x-data] {
+      display: flex;
+      flex: 1 1 auto;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .time-travel-toolbar,
+    .time-travel-status,
+    .time-travel-filter,
+    .time-travel-actions,
+    .time-travel-tool-button,
+    .time-travel-diff-toolbar,
+    .time-travel-diff-status,
+    .time-travel-file-counts,
+    .time-travel-preview header,
+    .time-travel-preview footer,
+    .time-travel-preview-status,
+    .time-travel-preview-summary {
+      display: flex;
+      align-items: center;
+    }
+
+    .time-travel-toolbar {
+      gap: 8px;
+      min-height: 44px;
+      padding: var(--spacing-xs) var(--spacing-md);
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 64%, transparent);
+      background: color-mix(in srgb, var(--color-background) 91%, #000 9%);
+    }
+
+    .time-travel-workspace-picker {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 1 520px;
+      min-width: 0;
+      max-width: 48%;
+      height: 32px;
+      padding: 0 8px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--color-panel) 70%, transparent);
+    }
+
+    .time-travel-workspace-picker .material-symbols-outlined {
+      flex: 0 0 auto;
+      color: var(--color-text-muted);
+      font-size: 17px;
+    }
+
+    .time-travel-workspace-picker select {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--color-text);
+      cursor: pointer;
+      font-size: 0.76rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time-travel-workspace-picker select:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
+
+    .time-travel-workspace-picker option {
+      background: var(--color-background);
+      color: var(--color-text);
+    }
+
+    .time-travel-spacer {
+      flex: 1 1 auto;
+      min-width: 8px;
+    }
+
+    .time-travel-icon-button,
+    .time-travel-tool-button,
+    .time-travel-load-more {
+      appearance: none;
+      border: 1px solid color-mix(in srgb, var(--color-border) 64%, transparent);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--color-panel) 80%, transparent);
+      color: var(--color-text);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .time-travel-icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      padding: 0;
+    }
+
+    .time-travel-icon-button.is-small {
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+    }
+
+    .time-travel-tool-button {
+      gap: 5px;
+      min-height: 30px;
+      padding: 4px 9px;
+      font-size: 0.76rem;
+    }
+
+    .time-travel-tool-button.is-primary {
+      border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+      background: color-mix(in srgb, var(--color-primary) 22%, var(--color-panel));
+    }
+
+    .time-travel-icon-button:hover:not(:disabled),
+    .time-travel-tool-button:hover:not(:disabled),
+    .time-travel-load-more:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--color-background-hover) 70%, transparent);
+      border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+    }
+
+    .time-travel-icon-button:disabled,
+    .time-travel-tool-button:disabled,
+    .time-travel-load-more:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    .time-travel-icon-button .material-symbols-outlined,
+    .time-travel-tool-button .material-symbols-outlined,
+    .time-travel-load-more .material-symbols-outlined {
+      font-size: 17px;
+    }
+
+    .time-travel-status,
+    .time-travel-diff-status,
+    .time-travel-preview-status {
+      gap: 8px;
+      min-height: 34px;
+      padding: 6px 11px;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 44%, transparent);
+      color: var(--color-text-muted);
+      font-size: 0.82rem;
+    }
+
+    .time-travel-body {
+      display: grid;
+      flex: 1 1 auto;
+      grid-template-columns: minmax(210px, 0.42fr) minmax(0, 1fr);
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .time-travel-timeline {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      border-right: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+      background: color-mix(in srgb, var(--color-panel) 48%, transparent);
+    }
+
+    .time-travel-filter {
+      gap: 6px;
+      min-height: 40px;
+      padding: 7px 9px;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 42%, transparent);
+    }
+
+    .time-travel-filter .material-symbols-outlined {
+      font-size: 17px;
+      color: var(--color-text-muted);
+    }
+
+    .time-travel-filter input {
+      width: 100%;
+      min-width: 0;
+      height: 28px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--color-background) 72%, transparent);
+      color: var(--color-text);
+      font-size: 0.78rem;
+      padding: 0 8px;
+    }
+
+    .time-travel-rows {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 7px;
+    }
+
+    .time-travel-row {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 7px;
+      width: 100%;
+      min-height: 50px;
+      padding: 6px 7px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--color-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .time-travel-row:hover,
+    .time-travel-row.is-active {
+      border-color: color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
+      background: color-mix(in srgb, var(--color-background-hover) 56%, transparent);
+    }
+
+    .time-travel-row-mark .material-symbols-outlined {
+      font-size: 18px;
+      color: var(--color-text-muted);
+    }
+
+    .time-travel-row.is-current .time-travel-row-mark .material-symbols-outlined {
+      color: var(--color-primary);
+    }
+
+    .time-travel-row-main {
+      display: grid;
+      min-width: 0;
+      gap: 2px;
+    }
+
+    .time-travel-row-title,
+    .time-travel-row-meta,
+    .time-travel-file-name,
+    .time-travel-diff-path {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time-travel-row-title {
+      font-size: 0.79rem;
+      font-weight: 650;
+    }
+
+    .time-travel-row-meta {
+      color: var(--color-text-muted);
+      font-family: var(--font-family-code);
+      font-size: 0.69rem;
+    }
+
+    .time-travel-row-count {
+      min-width: 24px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color-background) 70%, transparent);
+      color: var(--color-text-muted);
+      text-align: center;
+      font-size: 0.7rem;
+    }
+
+    .time-travel-load-more {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      min-height: 34px;
+      margin: 7px;
+      font-size: 0.76rem;
+    }
+
+    .time-travel-detail {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .time-travel-detail-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 48px;
+      padding: 8px 10px;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+    }
+
+    .time-travel-detail-title {
+      display: grid;
+      min-width: 0;
+      gap: 2px;
+    }
+
+    .time-travel-detail-title strong,
+    .time-travel-detail-title span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time-travel-detail-title strong {
+      font-size: 0.88rem;
+    }
+
+    .time-travel-detail-title span {
+      color: var(--color-text-muted);
+      font-size: 0.72rem;
+    }
+
+    .time-travel-actions {
+      gap: 6px;
+    }
+
+    .time-travel-detail-grid {
+      display: grid;
+      flex: 1 1 auto;
+      grid-template-columns: minmax(190px, 0.36fr) minmax(0, 1fr);
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .time-travel-files {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      border-right: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+    }
+
+    .time-travel-file-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4px 7px;
+      width: 100%;
+      min-height: 46px;
+      padding: 7px 9px;
+      border: 0;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 26%, transparent);
+      background: transparent;
+      color: var(--color-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .time-travel-file-row:hover,
+    .time-travel-file-row.is-active {
+      background: color-mix(in srgb, var(--color-background-hover) 54%, transparent);
+    }
+
+    .time-travel-file-name {
+      font-family: var(--font-family-code);
+      font-size: 0.74rem;
+      grid-column: 1 / -1;
+    }
+
+    .time-travel-file-status {
+      color: var(--color-text-muted);
+      font-size: 0.68rem;
+      text-transform: capitalize;
+    }
+
+    .time-travel-file-counts {
+      gap: 5px;
+      justify-content: end;
+      font-family: var(--font-family-code);
+      font-size: 0.7rem;
+    }
+
+    .time-travel-diff {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .time-travel-diff-toolbar {
+      gap: 6px;
+      min-height: 38px;
+      padding: 5px 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 42%, transparent);
+      background: color-mix(in srgb, var(--color-panel) 44%, transparent);
+    }
+
+    .time-travel-diff-path {
+      font-family: var(--font-family-code);
+      font-size: 0.74rem;
+      font-weight: 650;
+    }
+
+    .time-travel-code {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 4px 0;
+      background: color-mix(in srgb, var(--color-background) 91%, #000 9%);
+      font-family: var(--font-family-code);
+      font-size: 0.73rem;
+      line-height: 1.45;
+    }
+
+    .time-travel-line {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      min-width: max-content;
+    }
+
+    .time-travel-line-marker {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      min-height: 1.45em;
+      padding-right: 5px;
+      background: inherit;
+      color: var(--color-text-muted);
+      text-align: right;
+      user-select: none;
+    }
+
+    .time-travel-line code {
+      display: block;
+      min-height: 1.45em;
+      padding: 0 10px 0 6px;
+      color: inherit;
+      font: inherit;
+      white-space: pre;
+    }
+
+    .time-travel-line.is-add {
+      background: rgba(39, 174, 96, 0.16);
+      color: color-mix(in srgb, #8df0b0 78%, var(--color-text));
+    }
+
+    .time-travel-line.is-del {
+      background: rgba(231, 76, 60, 0.17);
+      color: color-mix(in srgb, #ffaaa2 78%, var(--color-text));
+    }
+
+    .time-travel-line.is-hunk {
+      background: rgba(99, 102, 241, 0.16);
+      color: color-mix(in srgb, #b9c3ff 80%, var(--color-text));
+    }
+
+    .time-travel-line.is-meta,
+    .time-travel-line.is-note {
+      color: var(--color-text-muted);
+    }
+
+    .time-travel-empty,
+    .time-travel-locked {
+      display: grid;
+      flex: 1 1 auto;
+      place-items: center;
+      align-content: center;
+      gap: 7px;
+      min-width: 0;
+      padding: 24px;
+      color: var(--color-text-muted);
+      text-align: center;
+    }
+
+    .time-travel-empty .material-symbols-outlined,
+    .time-travel-locked .material-symbols-outlined {
+      font-size: 28px;
+    }
+
+    .time-travel-locked span:last-child {
+      max-width: 520px;
+      overflow-wrap: anywhere;
+      font-size: 0.8rem;
+    }
+
+    .diff-add {
+      color: #31c48d;
+    }
+
+    .diff-del {
+      color: #f05252;
+    }
+
+    .time-travel-dot {
+      width: 4px;
+      height: 4px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color-text-muted) 50%, transparent);
+    }
+
+    .time-travel-preview-backdrop {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.34);
+    }
+
+    .time-travel-preview {
+      display: flex;
+      flex-direction: column;
+      width: min(640px, 100%);
+      max-height: min(680px, 100%);
+      min-height: 260px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--color-background) 95%, #000 5%);
+      box-shadow: 0 18px 46px rgba(0, 0, 0, 0.36);
+      overflow: hidden;
+    }
+
+    .time-travel-preview header,
+    .time-travel-preview footer {
+      gap: 8px;
+      min-height: 44px;
+      padding: 8px 10px;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 54%, transparent);
+    }
+
+    .time-travel-preview footer {
+      justify-content: flex-end;
+      border-top: 1px solid color-mix(in srgb, var(--color-border) 54%, transparent);
+      border-bottom: 0;
+    }
+
+    .time-travel-preview header strong {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 0.9rem;
+    }
+
+    .time-travel-preview-body {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .time-travel-preview-summary {
+      gap: 8px;
+      padding: 9px 11px;
+      color: var(--color-text-muted);
+      font-family: var(--font-family-code);
+      font-size: 0.74rem;
+    }
+
+    .time-travel-preview-files {
+      display: grid;
+      gap: 4px;
+      padding: 0 11px 11px;
+    }
+
+    .time-travel-preview-file {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      min-height: 30px;
+      align-items: center;
+      border: 1px solid color-mix(in srgb, var(--color-border) 34%, transparent);
+      border-radius: 7px;
+      padding: 4px 7px;
+      background: color-mix(in srgb, var(--color-panel) 62%, transparent);
+      font-size: 0.73rem;
+    }
+
+    .time-travel-preview-file span:first-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--font-family-code);
+    }
+
+    .time-travel-preview-file span:last-child {
+      color: var(--color-text-muted);
+      text-transform: capitalize;
+    }
+
+    .time-travel-preview details {
+      margin: 0 11px 11px;
+      color: var(--color-text-muted);
+      font-size: 0.76rem;
+    }
+
+    .time-travel-preview pre {
+      max-height: 160px;
+      overflow: auto;
+      padding: 8px;
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--color-background) 86%, #000 14%);
+      white-space: pre-wrap;
+    }
+
+    .time-travel-panel .spinning {
+      display: inline-block;
+      animation: time-travel-spin 0.8s linear infinite;
+    }
+
+    @keyframes time-travel-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @container (max-width: 720px) {
+      .time-travel-body,
+      .time-travel-detail-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .time-travel-timeline,
+      .time-travel-files {
+        max-height: 34vh;
+        border-right: 0;
+        border-bottom: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
+      }
+
+      .time-travel-detail-header {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .time-travel-actions {
+        justify-content: flex-start;
+      }
+
+      .time-travel-workspace-picker {
+        flex: 1 1 160px;
+        max-width: none;
+      }
+    }
+
+    @container (max-width: 520px) {
+      .time-travel-workspace-picker {
+        flex-basis: 120px;
+      }
+
+      .time-travel-tool-button span:last-child {
+        display: none;
+      }
+
+      .time-travel-row {
+        min-height: 46px;
+      }
+    }
+  </style>
+</body>
+</html>

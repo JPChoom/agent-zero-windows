@@ -1,0 +1,78 @@
+# Ignore common unwanted files globally
+**/.DS_Store
+**/.env
+**/__pycache__/
+*.py[cod]
+**/.conda/
+**/node_modules/
+
+#Ignore IDE files
+.cursor/
+.windsurf/
+
+# ignore test files in root dir
+/*.test.py
+
+# Ignore all contents of the virtual environment directory
+.venv/
+
+# obsolete folders
+/memory/
+/knowledge/custom/
+/instruments/
+
+# Handle logs directory
+logs/**
+!logs/**/
+
+# Handle tmp and usr directory
+tmp/**
+!tmp/**/
+
+# hack to keep .gitkeep but ignore nested repos
+# Ignore everything under usr
+usr/**
+# Ignore nested repos
+/usr/**/.git
+# Allow git to traverse directories
+!usr/**/
+# Re-ignore everything again
+usr/**/*
+# But allow .gitkeep files
+!usr/**/.gitkeep
+
+
+# Global rule to include .gitkeep files anywhere
+!**/.gitkeep
+
+# for browser-use
+agent_history.gif
+
+.agent/**
+.claude/**
+.playwright-cli/
+
+# Local runtime and secret data
+.venv/
+**/__pycache__/
+*.py[cod]
+logs/
+tmp/
+usr/.env
+usr/secrets.env
+usr/chats/
+usr/memory/
+usr/scheduler/
+usr/.time_travel/
+FIRST_RUN_CREDENTIALS.txt
+
+# Stray runtime logs at repo root (e.g. browser-viewer-error.log)
+*.log
+
+# Locally installed SearXNG service: its own venv, a full clone of the
+# upstream searxng source tree, generated logs, and a secret key file -
+# none of this is Agent Zero source, same treatment as .venv/
+searxng/
+
+# Debug console/terminal dumps, not source
+user-logs/

@@ -1,0 +1,57 @@
+<html>
+<head>
+    <script type="module">
+        import { store as chatNavStore } from "/components/chat/navigation/chat-navigation-store.js";
+    </script>
+</head>
+<body>
+    <div id="progress-bar-box" x-data>
+        <x-extension id="chat-input-progress-start"></x-extension>
+
+        <!-- Hidden legacy progress-bar element (keeps JS updater happy, not displayed) -->
+        <span id="progress-bar" style="display:none;"></span>
+
+        <div id="progress-bar-right">
+          <h4
+            id="progress-bar-stop-speech"
+            x-data="{
+              speaking: window.ttsService?.isSpeaking?.() || false,
+              _listener: null,
+              init() {
+                this._listener = (event) => {
+                  this.speaking = !!event?.detail?.isSpeaking;
+                };
+                window.ttsService?.addEventListener?.('statechange', this._listener);
+              },
+              cleanup() {
+                if (this._listener) {
+                  window.ttsService?.removeEventListener?.('statechange', this._listener);
+                }
+              },
+            }"
+            x-init="init()"
+            x-destroy="cleanup()"
+            x-cloak
+            x-show="speaking"
+          >
+              <span id="stop-speech" @click="window.ttsService?.stop?.()" style="cursor: pointer" title="Stop Speech" aria-label="Stop Speech">
+                  <span class="icon material-symbols-outlined">volume_off</span>
+              </span>
+          </h4>
+          <x-extension id="chat-nav-after"></x-extension>
+        </div>
+        <x-extension id="chat-input-progress-end"></x-extension>
+    </div>
+
+
+    <style>
+    #progress-bar-box { background-color: var(--color-panel); padding: var(--spacing-xs) var(--spacing-md) 0 var(--spacing-md); display: flex; flex-wrap: nowrap; justify-content: flex-start; align-items: center; z-index: 1001; gap: var(--spacing-sm); min-height: 0; }
+    #progress-bar-box > x-extension { display: contents; }
+    #progress-bar-box h4 { margin: 0; }
+    #progress-bar-right { display: flex; align-items: center; gap: var(--spacing-sm); flex-shrink: 0; margin-left: auto;}
+    #progress-bar-right > x-extension { display: contents; }
+    .shiny-text { background: linear-gradient(to right, var(--color-primary-dark) 20%, var(--color-text) 40%, var(--color-text) 60%, var(--color-primary-dark) 60%); background-size: 200% auto; color: transparent; -webkit-background-clip: text; background-clip: text; animation: shine 1s linear infinite; }
+    @keyframes shine { to { background-position: -200% center; } }
+    </style>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- Time Travel -->
+<div x-data>
+  <button
+    x-move-after="#sidebar-files-dropdown"
+    class="dropdown-item"
+    id="time-travel-dropdown"
+    title="Time Travel"
+    @click="$store.timeTravel?.onOpen?.(); ensureModalOpen('/plugins/_time_travel/webui/main.html'); $store.sidebar.menuClose()">
+    <span class="material-symbols-outlined">history</span>
+    <span>Time Travel</span>
+  </button>
+</div>

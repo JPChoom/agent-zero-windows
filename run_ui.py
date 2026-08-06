@@ -1,0 +1,93 @@
+import initialize
+from helpers import dotenv, extension, runtime
+from helpers.api import csrf_protect, requires_auth
+from helpers.print_style import PrintStyle
+from helpers.server_startup import run_uvicorn_with_retries
+from helpers.ui_server import UiServerRuntime, configure_process_environment
+
+
+def run():
+    configure_process_environment()
+    PrintStyle().print("Initializing Python framework...")
+    PrintStyle().print("Checking for data migration...")
+    run_migration_checks()
+
+    PrintStyle().print("Preparing web server runtime...")
+    server_runtime, host, port = prepare_web_runtime()
+
+    PrintStyle().print("Initializing Agent Zero components...")
+    init_a0()
+
+    PrintStyle().print("Starting UI/API server...")
+    start_web_server(server_runtime, host, port)
+
+
+def run_migration_checks() -> None:
+    initialize.initialize_migration()
+
+
+def prepare_web_runtime() -> tuple[UiServerRuntime, str, int]:
+    host = (
+        runtime.get_arg("host") or dotenv.get_dotenv_value("WEB_UI_HOST") or "localhost"
+    )
+    port = runtime.get_web_ui_port()
+    server_runtime = UiServerRuntime.create()
+    server_runtime.register_http_routes()
+    server_runtime.register_transport_handlers()
+
+    return server_runtime, host, port
+
+
+def start_web_server(server_runtime: UiServerRuntime, host: str, port: int) -> None:
+    run_uvicorn_with_retries(
+        host=host,
+        port=port,
+        build_asgi_app=server_runtime.build_asgi_app,
+        flush_callback=create_flush_callback(),
+        access_log=server_runtime.access_log_enabled(),
+        ws="wsproto",
+    )
+
+
+def create_flush_callback():
+    def flush_and_shutdown_callback() -> None:
+        """Persist mutable chat state and close process-level log output."""
+        from helpers import persist_chat
+
+        persist_chat.save_tmp_chats()
+
+        # PrintStyle already registers an atexit handler; explicitly close here so
+        # controlled Uvicorn shutdowns flush the current HTML log immediately.
+        close_log = getattr(PrintStyle, "_close_html_log", None)
+        if callable(close_log):
+            close_log()
+
+    flush_ran = False
+
+    def _run_flush(reason: str) -> None:
+        nonlocal flush_ran
+        if flush_ran:
+            return
+        flush_ran = True
+        try:
+            flush_and_shutdown_callback()
+        except Exception as e:
+            PrintStyle.warning(f"Shutdown flush failed ({reason}): {e}")
+
+    return _run_flush
+
+
+@extension.extensible
+def init_a0():
+    init_chats = initialize.initialize_chats()
+    init_chats.result_sync()
+
+    initialize.initialize_mcp()
+    initialize.initialize_job_loop()
+    initialize.initialize_preload()
+
+
+if __name__ == "__main__":
+    runtime.initialize()
+    dotenv.load_dotenv()
+    run()

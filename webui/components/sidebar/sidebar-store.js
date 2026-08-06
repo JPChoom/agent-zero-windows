@@ -1,0 +1,137 @@
+import { createStore } from "/js/AlpineStore.js";
+
+// This store manages the visibility and state of the main sidebar panel.
+const model = {
+  isOpen: true,
+  menuOpen: false,
+  _initialized: false,
+
+  // Centralized collapse state for all sidebar sections (persisted in localStorage)
+  sectionStates: {
+    tasks: false,       // default: collapsed
+    chatActions: false, // default: collapsed
+    preferences: false  // default: collapsed
+  },
+
+  // Initialize the store by setting up a resize listener
+  // Guard ensures this runs only once, even if called from multiple components
+  init() {
+    if (this._initialized) return;
+    this._initialized = true;
+
+    this.loadSectionStates();
+    this.handleResize();
+    this.resizeHandler = () => this.handleResize();
+    window.addEventListener("resize", this.resizeHandler);
+  },
+
+  // Load section collapse states from localStorage
+  loadSectionStates() {
+    try {
+      const stored = localStorage.getItem('sidebarSections');
+      if (stored) {
+        this.sectionStates = { ...this.sectionStates, ...JSON.parse(stored) };
+      }
+    } catch (e) {
+      console.error('Failed to load sidebar section states', e);
+    }
+  },
+
+  // Persist section states to localStorage
+  persistSectionStates() {
+    try {
+      localStorage.setItem('sidebarSections', JSON.stringify(this.sectionStates));
+    } catch (e) {
+      console.error('Failed to persist section states', e);
+    }
+  },
+
+  // Check if a section should be open (used by x-init in templates)
+  isSectionOpen(name) {
+    return this.sectionStates[name] === true;
+  },
+
+  // Toggle and persist a section's open state (drives Bootstrap programmatically via components)
+  toggleSection(name) {
+    if (!(name in this.sectionStates)) return;
+    this.sectionStates[name] = !this.sectionStates[name];
+    this.persistSectionStates();
+  },
+
+  // Cleanup method for lifecycle management
+  destroy() {
+    if (this.resizeHandler) {
+      window.removeEventListener("resize", this.resizeHandler);
+      this.resizeHandler = null;
+    }
+    this._initialized = false;
+  },
+
+  // Toggle the sidebar's visibility
+  toggle() {
+    this.isOpen = !this.isOpen;
+  },
+
+  // Close the sidebar, e.g., on overlay click on mobile
+  close() {
+    if (this.isMobile()) {
+      this.isOpen = false;
+    }
+  },
+
+  // Handle browser resize to show/hide sidebar based on viewport width
+  handleResize() {
+    if (this.isMobile()) {
+      this.isOpen = false;
+    }
+    this.menuClose();
+  },
+
+  // Check if the current viewport is mobile
+  isMobile() {
+    return window.innerWidth <= 768;
+  },
+
+  // Dropdown positioning for quick-actions (fixed position to escape overflow:hidden)
+  dropdownStyle: {},
+
+  headOpen() {
+    return this.isOpen || this.menuOpen;
+  },
+
+  menuToggle(triggerElement) {
+    this.menuOpen = !this.menuOpen;
+    if (this.menuOpen) {
+      this.menuPos(triggerElement);
+    }
+  },
+
+  menuClose() {
+    this.menuOpen = false;
+  },
+
+  menuClick(event, panelElement) {
+    if (!this.menuOpen || !panelElement) return;
+    if (!panelElement.contains(event.target)) {
+      this.menuClose();
+    }
+  },
+
+  menuPos(triggerElement) {
+    if (!triggerElement) return;
+    const rect = triggerElement.getBoundingClientRect();
+    const menuWidth = Math.max(rect.width, 180);
+    const viewportPadding = 8;
+    const maxLeft = Math.max(
+      viewportPadding,
+      window.innerWidth - menuWidth - viewportPadding,
+    );
+    this.dropdownStyle = {
+      top: `${rect.bottom + 8}px`,
+      left: `${Math.min(Math.max(rect.left, viewportPadding), maxLeft)}px`,
+      width: `${menuWidth}px`
+    };
+  },
+};
+
+export const store = createStore("sidebar", model);

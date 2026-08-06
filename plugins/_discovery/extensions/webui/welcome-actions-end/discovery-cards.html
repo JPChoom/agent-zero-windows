@@ -1,0 +1,557 @@
+<script type="module">
+    import { store } from "/plugins/_discovery/webui/discovery-store.js";
+</script>
+
+<div x-data>
+    <template x-if="$store.discoveryStore">
+        <div class="discovery-slot"
+             @modal-closed.window="$store.discoveryStore.refreshCards()"
+             x-create="$store.discoveryStore.refreshCards()"
+             x-show="$store.discoveryStore.featureCards.length > 0 || $store.discoveryStore.oauthAccountCards.length > 0 || $store.discoveryStore.hasDismissedCards">
+
+            <section class="discovery-features-panel" x-show="$store.discoveryStore.featureCards.length > 0">
+                <header class="discovery-panel-header">
+                    <div class="discovery-panel-copy">
+                        <h2>Connect Channels</h2>
+                        <p>Extend Agent Zero across your favorite platforms.</p>
+                    </div>
+                    <button class="discovery-dismiss discovery-panel-dismiss"
+                            type="button"
+                            x-show="$store.discoveryStore.featureCards.some(card => card.dismissible !== false)"
+                            @click.stop="$store.discoveryStore.dismissFeatureCards()"
+                            aria-label="Dismiss Connect Channels"
+                            title="Dismiss">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </header>
+
+                <div class="discovery-features">
+                    <template x-for="card in $store.discoveryStore.featureCards" :key="card.id">
+                        <button class="discovery-feature-card"
+                                type="button"
+                                @click="$store.discoveryStore.executeCta(card.cta_action)">
+                            <span class="discovery-feature-thumb">
+                                <template x-if="card.thumbnail">
+                                    <img :src="card.thumbnail" :alt="card.title" loading="lazy">
+                                </template>
+                                <template x-if="!card.thumbnail && card.icon">
+                                    <span class="material-symbols-outlined discovery-feature-icon" x-text="card.icon"></span>
+                                </template>
+                            </span>
+                            <span class="discovery-feature-title" x-text="`${card.cta_text || 'Connect'} ${card.title}`"></span>
+                        </button>
+                    </template>
+                </div>
+            </section>
+
+            <template x-for="card in $store.discoveryStore.oauthAccountCards" :key="card.id">
+                <article class="discovery-account-card">
+                    <button class="discovery-dismiss"
+                            type="button"
+                            x-show="card.dismissible"
+                            @click.stop="$store.discoveryStore.dismissCard(card.id)"
+                            :aria-label="`Dismiss ${card.title}`"
+                            title="Dismiss">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+
+                    <header class="discovery-account-header">
+                        <div class="discovery-account-copy">
+                            <h2 x-text="card.title"></h2>
+                            <p x-show="card.description" x-text="card.description"></p>
+                        </div>
+                        <button class="btn btn primary discovery-account-cta"
+                                type="button"
+                                @click="$store.discoveryStore.executeCta(card.cta_action)">
+                            <span x-text="card.cta_text"></span>
+                            <span class="material-symbols-outlined">arrow_forward</span>
+                        </button>
+                    </header>
+
+                    <div class="discovery-account-chips" x-show="(card.account_chips || []).length > 0">
+                        <template x-for="chip in card.account_chips || []" :key="chip.provider_id || chip.label">
+                            <span class="discovery-account-chip" :class="{ 'is-connected': chip.connected }">
+                                <span class="discovery-account-chip-dot" aria-hidden="true"></span>
+                                <span class="discovery-account-chip-label" x-text="chip.label"></span>
+                                <span class="discovery-account-chip-detail" x-show="chip.detail" x-text="chip.detail"></span>
+                            </span>
+                        </template>
+                    </div>
+
+                    <div class="discovery-account-usage" x-show="(card.usage_windows || []).length > 0">
+                        <template x-for="window in card.usage_windows || []" :key="window.key || window.title">
+                            <div class="discovery-account-usage-row">
+                                <div class="discovery-account-usage-label">
+                                    <span x-text="window.title"></span>
+                                    <small x-show="$store.discoveryStore.formatReset(window)"
+                                           x-text="`Resets in ${$store.discoveryStore.formatReset(window)}`"></small>
+                                </div>
+                                <div class="discovery-account-usage-meter">
+                                    <span class="discovery-account-usage-track">
+                                        <span class="discovery-account-usage-fill"
+                                              :style="`width: ${$store.discoveryStore.usageWidth(window)}`"></span>
+                                    </span>
+                                    <span class="discovery-account-usage-value"
+                                          x-text="$store.discoveryStore.formatRemainingPercent(window)"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                </article>
+            </template>
+
+            <div class="discovery-undismiss" x-show="$store.discoveryStore.hasDismissedCards">
+                <button type="button"
+                        class="discovery-undismiss-btn"
+                        @click="$store.discoveryStore.undismissCards()">
+                    <span class="material-symbols-outlined">undo</span>
+                    <span>Show dismissed suggestions</span>
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <style>
+        .discovery-slot {
+            display: grid;
+            gap: 1rem;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .discovery-features-panel,
+        .discovery-account-card {
+            border: 1px solid color-mix(in srgb, var(--color-border) 66%, transparent);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--color-panel) 78%, var(--color-background) 22%);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.026);
+            backdrop-filter: blur(18px);
+            text-align: left;
+        }
+
+        .discovery-features-panel {
+            min-height: 100%;
+            padding: 1.25rem 1.45rem;
+        }
+
+        .discovery-panel-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.7rem;
+            align-items: start;
+            margin-bottom: 1.28rem;
+        }
+
+        .discovery-panel-copy {
+            display: grid;
+            gap: 0.42rem;
+            min-width: 0;
+        }
+
+        .discovery-panel-header h2 {
+            margin: 0;
+            color: var(--color-text);
+            font-size: 1.05rem;
+            font-weight: 520;
+            line-height: 1.2;
+        }
+
+        .discovery-panel-header p {
+            margin: 0;
+            color: color-mix(in srgb, var(--color-text) 58%, transparent);
+            font-size: 0.92rem;
+            line-height: 1.35;
+        }
+
+        .discovery-features {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.65rem;
+        }
+
+        .discovery-feature-card {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-width: 0;
+            min-height: 3.1rem;
+            border: 1px solid color-mix(in srgb, var(--color-border) 52%, transparent);
+            border-radius: 8px;
+            padding: 0.56rem 0.58rem;
+            background: color-mix(in srgb, var(--color-background) 50%, transparent);
+            color: inherit;
+            cursor: pointer;
+            font-family: var(--font-family-main, "Rubik", Arial, Helvetica, sans-serif);
+            text-align: left;
+            transition:
+                border-color 0.18s ease,
+                background-color 0.18s ease;
+        }
+
+        .discovery-feature-thumb {
+            flex: 0 0 auto;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            overflow: hidden;
+            background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+            box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent);
+        }
+
+        .discovery-feature-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .discovery-feature-icon {
+            font-size: 1.45rem;
+            color: var(--color-highlight-dark);
+        }
+
+        .discovery-feature-title {
+            margin: 0;
+            flex: 1 1 auto;
+            min-width: 0;
+            color: var(--color-text);
+            font-size: 0.84rem;
+            font-weight: 520;
+            line-height: 1.25;
+        }
+
+        .discovery-feature-card:hover,
+        .discovery-feature-card:focus-visible {
+            border-color: color-mix(in srgb, var(--color-border) 88%, var(--color-text) 12%);
+            background: color-mix(in srgb, var(--color-panel) 86%, var(--color-background) 14%);
+            outline: none;
+        }
+
+        .discovery-dismiss {
+            position: absolute;
+            top: 0.65rem;
+            right: 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--color-secondary);
+            cursor: pointer;
+            opacity: 0;
+            transition:
+                opacity 0.2s ease,
+                background-color 0.2s ease,
+                color 0.2s ease;
+            z-index: 2;
+        }
+
+        .discovery-dismiss-small {
+            top: 0.55rem;
+            right: 0.55rem;
+            width: 26px;
+            height: 26px;
+        }
+
+        .discovery-panel-dismiss {
+            position: static;
+            opacity: 0.68;
+        }
+
+        .discovery-account-card > .discovery-dismiss {
+            opacity: 0.68;
+        }
+
+        .discovery-dismiss:hover,
+        .discovery-dismiss:focus-visible {
+            opacity: 1;
+            color: var(--color-text);
+            background: color-mix(in srgb, var(--color-border) 84%, transparent);
+            outline: none;
+        }
+
+        .discovery-dismiss .material-symbols-outlined {
+            font-size: 1rem;
+        }
+
+        .discovery-account-card {
+            position: relative;
+            display: grid;
+            gap: 1rem;
+            padding: 1.25rem 1.45rem 1.25rem;
+        }
+
+        .discovery-account-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.95rem;
+            align-items: center;
+            min-width: 0;
+            padding-right: 2.1rem;
+        }
+
+        .discovery-account-copy {
+            display: grid;
+            gap: 0.3rem;
+            min-width: 0;
+        }
+
+        .discovery-account-copy h2 {
+            margin: 0;
+            color: var(--color-text);
+            font-size: 1.05rem;
+            font-weight: 520;
+            line-height: 1.2;
+        }
+
+        .discovery-account-copy p {
+            margin: 0;
+            color: color-mix(in srgb, var(--color-text) 58%, transparent);
+            font-size: 0.9rem;
+            line-height: 1.42;
+        }
+
+        .discovery-account-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            min-width: 0;
+        }
+
+        .discovery-account-chip {
+            display: inline-grid;
+            grid-template-columns: auto auto minmax(0, auto);
+            align-items: center;
+            gap: 0.4rem;
+            max-width: 100%;
+            min-height: 2rem;
+            padding: 0.32rem 0.58rem;
+            border: 1px solid color-mix(in srgb, var(--color-border) 52%, transparent);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--color-background) 50%, transparent);
+            color: color-mix(in srgb, var(--color-text) 74%, transparent);
+            font-size: 0.8rem;
+            line-height: 1.2;
+        }
+
+        .discovery-account-chip-dot {
+            width: 0.44rem;
+            height: 0.44rem;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--color-text) 34%, transparent);
+        }
+
+        .discovery-account-chip.is-connected .discovery-account-chip-dot {
+            background: #22c55e;
+        }
+
+        .discovery-account-chip-label,
+        .discovery-account-chip-detail {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .discovery-account-chip-label {
+            color: var(--color-text);
+            font-weight: 500;
+        }
+
+        .discovery-account-chip-detail {
+            color: color-mix(in srgb, var(--color-text) 52%, transparent);
+        }
+
+        .discovery-account-usage {
+            display: grid;
+            gap: 0.74rem;
+            padding-top: 0.12rem;
+        }
+
+        .discovery-account-usage-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.82fr);
+            gap: 1rem;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .discovery-account-usage-label {
+            display: grid;
+            gap: 0.22rem;
+            min-width: 0;
+        }
+
+        .discovery-account-usage-label span,
+        .discovery-account-usage-label small {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .discovery-account-usage-label span {
+            color: color-mix(in srgb, var(--color-text) 74%, transparent);
+            font-size: 0.84rem;
+            line-height: 1.25;
+        }
+
+        .discovery-account-usage-label small {
+            color: color-mix(in srgb, var(--color-text) 44%, transparent);
+            font-size: 0.72rem;
+            line-height: 1.2;
+        }
+
+        .discovery-account-usage-meter {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.58rem;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .discovery-account-usage-track {
+            height: 0.52rem;
+            overflow: hidden;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--color-border) 70%, transparent);
+        }
+
+        .discovery-account-usage-fill {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: #22c55e;
+            transition: width 0.22s ease;
+        }
+
+        .discovery-account-usage-value {
+            color: color-mix(in srgb, var(--color-text) 70%, transparent);
+            font-family: var(--font-family-code, "Roboto Mono", monospace);
+            font-size: 0.74rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .discovery-account-cta {
+            justify-self: end;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.36rem;
+            min-height: 2.35rem;
+            min-width: 8.65rem;
+            border: 0;
+            border-radius: 8px;
+            padding: 0.55rem 0.9rem;
+            background-color: #4248f1;
+            color: #fff;
+            font-family: var(--font-family-main, "Rubik", Arial, Helvetica, sans-serif);
+            font-size: 0.88rem;
+            font-weight: 460;
+            white-space: nowrap;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .discovery-account-cta:hover,
+        .discovery-account-cta:focus-visible {
+            background-color: #353bc5;
+            filter: none;
+            outline: none;
+        }
+
+        .discovery-account-cta .material-symbols-outlined {
+            font-size: 1.05rem;
+        }
+
+        .discovery-undismiss {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .discovery-undismiss-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            border: none;
+            background: transparent;
+            padding: 0;
+            color: var(--color-secondary);
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+
+        .discovery-undismiss-btn:hover,
+        .discovery-undismiss-btn:focus-visible {
+            color: var(--color-primary);
+            outline: none;
+        }
+
+        .discovery-undismiss-btn .material-symbols-outlined {
+            font-size: 1rem;
+        }
+
+        @media (hover: none) {
+            .discovery-dismiss {
+                opacity: 0.68;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .discovery-features {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
+
+            .discovery-feature-card {
+                display: inline-flex;
+                min-height: 0;
+                padding: 0.62rem 0.7rem;
+            }
+
+            .discovery-feature-thumb {
+                width: 32px;
+                height: 32px;
+            }
+
+            .discovery-account-usage-row {
+                grid-template-columns: 1fr;
+                gap: 0.45rem;
+            }
+        }
+
+        @media (max-width: 520px) {
+            .discovery-slot {
+                margin-top: 0.15rem;
+            }
+
+            .discovery-feature-card {
+                padding-right: 0.7rem;
+            }
+
+            .discovery-account-card {
+                padding: 1.05rem;
+            }
+
+            .discovery-account-header {
+                grid-template-columns: 1fr;
+                padding-right: 2.2rem;
+            }
+
+            .discovery-account-cta {
+                grid-column: 1 / -1;
+                justify-self: start;
+            }
+
+        }
+    </style>
+</div>

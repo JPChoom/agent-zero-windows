@@ -1,0 +1,55 @@
+# Generic OAuth connection settings.
+codex:
+  enabled: true
+
+  # Empty stores credentials in Agent Zero's private OAuth directory.
+  # Never share a rotating refresh-token file with Codex CLI or another client.
+  auth_file_path: ""
+
+  issuer: "https://auth.openai.com"
+  token_url: "https://auth.openai.com/oauth/token"
+  client_id: "app_EMoamEEZ73f0CkXaXp7hrann"
+  scopes:
+    - openid
+    - profile
+    - email
+    - offline_access
+    - api.connectors.read
+    - api.connectors.invoke
+
+  open_browser_from_server: false
+  forced_workspace_id: ""
+
+  upstream_base_url: "https://chatgpt.com/backend-api/codex"
+  codex_version: ""
+  models: []
+  request_timeout_seconds: 120
+
+  # The OpenAI-compatible wrapper is mounted at /oauth/codex/v1.
+  # It is loopback-only by default and does not emit CORS headers.
+  proxy_base_path: "/oauth/codex"
+  callback_path: "/auth/callback"
+  require_proxy_token: false
+  proxy_token: ""
+
+github_copilot:
+  enabled: true
+  enterprise_domain: ""
+
+gemini_api:
+  enabled: true
+  client_id: ""
+  client_secret: ""
+  quota_project_id: ""
+  scopes:
+    - openid
+    - email
+    - profile
+    - https://www.googleapis.com/auth/cloud-platform
+    - https://www.googleapis.com/auth/generative-language.retriever
+  api_base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+  proxy_base_path: "/oauth/gemini-api"
+  callback_path: "/oauth/gemini-api/callback"
+
+xai_grok:
+  enabled: true

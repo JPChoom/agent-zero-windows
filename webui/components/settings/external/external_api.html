@@ -1,0 +1,33 @@
+<html>
+  <head>
+    <title>External API</title>
+  </head>
+
+  <body>
+    <div x-data>
+      <div>
+        <div class="section-title">External API</div>
+        <div class="section-description">
+          Let external applications send messages and attachments to Agent Zero through authenticated API endpoints.
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">API Examples</div>
+            <div class="field-description">
+              Open ready-to-adapt request examples for the external API.
+            </div>
+          </div>
+          <div class="field-control">
+            <button
+              class="btn btn-field"
+              @click="$store.settings.handleFieldButton({ id: 'external_api_examples' })"
+            >
+              Show API Examples
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

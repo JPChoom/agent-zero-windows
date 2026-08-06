@@ -1,0 +1,1012 @@
+<html>
+
+<head>
+    <title>Email Integration</title>
+    <script type="module">
+        import { store } from "/plugins/_email_integration/webui/email-config-store.js";
+    </script>
+</head>
+
+<body>
+    <div x-data x-init="$store.emailConfig.init(config, context)" x-destroy="$store.emailConfig.cleanup()">
+        <template x-if="config">
+            <div class="email-settings">
+                <div class="section-title">Email</div>
+
+                <template x-if="$store.emailConfig.didInit && $store.emailConfig.handlers.length === 0">
+                    <div class="email-empty">
+                        <div class="email-empty-title">Connect Agent Zero and your email account</div>
+                        <div class="email-empty-copy">
+                            Most people only need a provider, an email address, and an app password.
+                        </div>
+                        <button class="btn btn-field" @click="$store.emailConfig.addHandler()">
+                            Connect
+                        </button>
+                    </div>
+                </template>
+
+                <template x-for="(handler, idx) in $store.emailConfig.handlers" :key="idx">
+                    <div class="email-card">
+                        <div class="email-card-header" @click="$store.emailConfig.toggleEditing(idx)">
+                            <div class="email-card-heading">
+                                <div class="email-card-title" x-text="$store.emailConfig.handlerTitle(handler, idx)">
+                                </div>
+                                <div class="email-card-subtitle" x-text="$store.emailConfig.handlerSubtitle(handler)">
+                                </div>
+                            </div>
+                            <div class="email-card-actions">
+                                <span class="email-status-pill"
+                                    :class="'tone-' + $store.emailConfig.statusTone(handler)"
+                                    x-text="$store.emailConfig.statusLabel(handler)"></span>
+                                <button class="btn btn-action delete"
+                                    @click.stop="$confirmClick($event, () => $store.emailConfig.removeHandler(idx))"
+                                    title="Remove inbox">
+                                    <span class="material-symbols-outlined">delete</span>
+                                </button>
+                                <span class="material-symbols-outlined email-card-chevron"
+                                    :class="{ 'is-open': $store.emailConfig.editing === idx }">expand_more</span>
+                            </div>
+                        </div>
+
+                        <template x-if="$store.emailConfig.editing === idx">
+                            <div class="email-card-body">
+                                <div class="email-provider-panel"
+                                    :class="{ 'has-provider': $store.emailConfig.hasProvider(handler) }">
+                                    <div class="email-provider-topline">
+                                        <div class="email-provider-copy">
+                                            <div class="email-provider-title"
+                                                x-text="$store.emailConfig.hasProvider(handler) ? $store.emailConfig.providerLabel($store.emailConfig.providerValue(handler)) : 'Choose your email provider'">
+                                            </div>
+                                            <div class="email-provider-description"
+                                                x-text="$store.emailConfig.hasProvider(handler) ? $store.emailConfig.providerHint(handler) : 'Pick a provider and Agent Zero will prepare the usual incoming and outgoing mail settings.'">
+                                            </div>
+                                            <template x-if="$store.emailConfig.providerHelpUrl(handler)">
+                                                <a class="email-intro-link"
+                                                    :href="$store.emailConfig.providerHelpUrl(handler)"
+                                                    target="_blank"
+                                                    rel="noopener"
+                                                    x-text="$store.emailConfig.providerHelpLabel(handler)"></a>
+                                            </template>
+                                        </div>
+                                        <template x-if="$store.emailConfig.hasProvider(handler)">
+                                            <button type="button" class="btn btn-field email-change-provider"
+                                                @click.stop="$store.emailConfig.changeProvider(idx)"
+                                                x-text="$store.emailConfig.showProviderChoices(handler, idx) ? 'Done' : 'Change'">
+                                            </button>
+                                        </template>
+                                    </div>
+
+                                    <div class="email-provider-grid"
+                                        x-show="$store.emailConfig.showProviderChoices(handler, idx)">
+                                        <template x-for="provider in $store.emailConfig.providerOptions"
+                                            :key="provider.value">
+                                            <button type="button" class="email-provider-option"
+                                                :class="($store.emailConfig.providerValue(handler) === provider.value ? 'is-selected ' : '') + 'logo-' + provider.logo"
+                                                :aria-pressed="$store.emailConfig.providerValue(handler) === provider.value ? 'true' : 'false'"
+                                                :title="provider.label"
+                                                @click.stop="$store.emailConfig.selectProvider(handler, provider.value, idx)">
+                                                <span class="email-provider-logo" aria-hidden="true">
+                                                    <template x-if="provider.logo === 'microsoft365'">
+                                                        <span class="email-microsoft-mark">
+                                                            <span></span>
+                                                            <span></span>
+                                                            <span></span>
+                                                            <span></span>
+                                                        </span>
+                                                    </template>
+                                                    <template
+                                                        x-if="provider.logo !== 'microsoft365' && (provider.logo === 'icloud' || provider.logo === 'custom-imap')">
+                                                        <span class="material-symbols-outlined"
+                                                            x-text="provider.logoText"></span>
+                                                    </template>
+                                                    <template
+                                                        x-if="provider.logo !== 'microsoft365' && provider.logo !== 'icloud' && provider.logo !== 'custom-imap'">
+                                                        <span x-text="provider.logoText"></span>
+                                                    </template>
+                                                </span>
+                                                <span class="email-provider-name" x-text="provider.label"></span>
+                                                <span class="email-provider-hint" x-text="provider.hint"></span>
+                                            </button>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <div class="email-post-provider" x-show="$store.emailConfig.hasProvider(handler)">
+                                    <div class="field">
+                                        <div class="field-label">
+                                            <div class="field-title">Turn on this inbox</div>
+                                            <div class="field-description">Enable when you are ready for Agent Zero to
+                                                start checking mail.</div>
+                                        </div>
+                                        <div class="field-control">
+                                            <label class="toggle">
+                                                <input type="checkbox" x-model="handler.enabled" />
+                                                <span class="toggler"></span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="field">
+                                        <div class="field-label">
+                                            <div class="field-title">Email address</div>
+                                            <div class="field-description">Usually the full address for this inbox.</div>
+                                        </div>
+                                        <div class="field-control">
+                                            <input type="text" x-model="handler.username"
+                                                @input="$store.emailConfig.maybeAutoname(handler)"
+                                                placeholder="name@company.com" />
+                                        </div>
+                                    </div>
+
+                                    <div class="field">
+                                        <div class="field-label">
+                                            <div class="field-title">Password</div>
+                                            <div class="field-description">An app password is best. Many mail providers
+                                                block regular account passwords.</div>
+                                        </div>
+                                        <div class="field-control">
+                                            <input type="password" x-model="handler.password" />
+                                        </div>
+                                    </div>
+
+                                    <template x-if="$store.emailConfig.showExchangeServer(handler)">
+                                        <div>
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title"
+                                                        x-text="$store.emailConfig.incomingLabel(handler)"></div>
+                                                    <div class="field-description"
+                                                        x-text="$store.emailConfig.incomingDescription(handler)"></div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="text" x-model="handler.imap_server"
+                                                        :placeholder="$store.emailConfig.incomingPlaceholder(handler)" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <template x-if="$store.emailConfig.showManualServers(handler)">
+                                        <div class="email-grid">
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Incoming mail server</div>
+                                                    <div class="field-description">The IMAP server for this inbox.</div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="text" x-model="handler.imap_server"
+                                                        placeholder="imap.your-provider.com" />
+                                                </div>
+                                            </div>
+
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Incoming port</div>
+                                                    <div class="field-description">993 is the usual SSL port.</div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="number" x-model.number="handler.imap_port"
+                                                        placeholder="993" />
+                                                </div>
+                                            </div>
+
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Outgoing mail server</div>
+                                                    <div class="field-description">The SMTP server used for replies.
+                                                    </div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="text" x-model="handler.smtp_server"
+                                                        placeholder="smtp.your-provider.com" />
+                                                </div>
+                                            </div>
+
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Outgoing port</div>
+                                                    <div class="field-description">587 is the usual TLS port.</div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="number" x-model.number="handler.smtp_port"
+                                                        placeholder="587" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <template
+                                        x-if="!$store.emailConfig.showManualServers(handler) && !$store.emailConfig.showExchangeServer(handler) && $store.emailConfig.providerValue(handler)">
+                                        <div class="email-note">
+                                            Server settings are filled in for <span
+                                                x-text="$store.emailConfig.providerLabel($store.emailConfig.providerValue(handler))"></span>.
+                                            You can change them any time in Advanced.
+                                        </div>
+                                    </template>
+
+                                    <div class="email-missing"
+                                        x-show="$store.emailConfig.missingBits(handler).length > 0">
+                                        Still needed:
+                                        <span x-text="$store.emailConfig.missingBits(handler).join(', ')"></span>
+                                    </div>
+
+                                    <div class="field">
+                                        <div class="field-label">
+                                            <div class="field-title">Routing instructions</div>
+                                            <div class="field-description">Extra guidance for how incoming email should be
+                                                routed into chats.</div>
+                                        </div>
+                                        <div class="field-control">
+                                            <textarea x-model="handler.dispatcher_instructions" rows="3"
+                                                placeholder="Always start a new chat for invoices or billing questions."></textarea>
+                                        </div>
+                                    </div>
+
+                                    <div class="field">
+                                        <div class="field-label">
+                                            <div class="field-title">Reply instructions</div>
+                                            <div class="field-description">Extra guidance for the agent when it replies by
+                                                email.</div>
+                                        </div>
+                                        <div class="field-control">
+                                            <textarea x-model="handler.agent_instructions" rows="3"
+                                                placeholder="Reply in a calm, concise tone."></textarea>
+                                        </div>
+                                    </div>
+
+                                    <div class="email-test-panel">
+                                        <div class="email-test-copy">
+                                            <div class="email-test-title">Check the connection</div>
+                                            <div class="email-test-description"
+                                                x-text="$store.emailConfig.testIntro(handler)"></div>
+                                        </div>
+                                        <button class="btn btn-field" @click.stop="$store.emailConfig.testConnection(idx)"
+                                            :disabled="$store.emailConfig.testing === idx || !$store.emailConfig.canTest(handler)">
+                                            <span x-text="$store.emailConfig.testButtonLabel(handler, idx)"></span>
+                                        </button>
+                                    </div>
+
+                                    <template
+                                        x-if="$store.emailConfig.testResults && $store.emailConfig.testResultsFor === idx">
+                                        <div class="email-results"
+                                            :class="{ 'is-error': !$store.emailConfig.testResults.success }">
+                                            <template x-for="result in $store.emailConfig.testResults.results"
+                                                :key="result.test + result.message">
+                                                <div class="email-result-row">
+                                                    <span class="email-result-icon" x-text="result.ok ? '✓' : '✗'"></span>
+                                                    <div class="email-result-copy">
+                                                        <div class="email-result-title"
+                                                            x-text="$store.emailConfig.resultTitle(result)"></div>
+                                                        <div class="email-result-message"
+                                                            x-text="$store.emailConfig.resultMessage(result)"></div>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <details class="email-advanced" x-show="$store.emailConfig.hasProvider(handler)">
+                                    <summary>
+                                        <span>Advanced</span>
+                                        <span class="material-symbols-outlined email-advanced-chevron"
+                                            aria-hidden="true">keyboard_arrow_down</span>
+                                    </summary>
+                                    <div class="email-advanced-body">
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Inbox name</div>
+                                                <div class="field-description">A friendly internal label for this
+                                                    connection.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <input type="text" x-model="handler.name" placeholder="support" />
+                                            </div>
+                                        </div>
+
+                                        <div class="email-grid">
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Incoming mail server</div>
+                                                    <div class="field-description">Override the auto-filled incoming
+                                                        server if needed.</div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="text" x-model="handler.imap_server"
+                                                        placeholder="imap.your-provider.com" />
+                                                </div>
+                                            </div>
+
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Incoming port</div>
+                                                    <div class="field-description">993 is the common SSL port.</div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="number" x-model.number="handler.imap_port"
+                                                        placeholder="993" />
+                                                </div>
+                                            </div>
+
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Outgoing mail server</div>
+                                                    <div class="field-description">Override the auto-filled reply server
+                                                        if needed.</div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="text" x-model="handler.smtp_server"
+                                                        placeholder="smtp.your-provider.com" />
+                                                </div>
+                                            </div>
+
+                                            <div class="field">
+                                                <div class="field-label">
+                                                    <div class="field-title">Outgoing port</div>
+                                                    <div class="field-description">587 is the common TLS port.</div>
+                                                </div>
+                                                <div class="field-control">
+                                                    <input type="number" x-model.number="handler.smtp_port"
+                                                        placeholder="587" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Project</div>
+                                                <div class="field-description">Open email conversations inside a
+                                                    specific project.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <select :value="handler.project"
+                                                    @change="handler.project = $event.target.value">
+                                                    <option value="">No project</option>
+                                                    <template x-for="proj in $store.emailConfig.projects"
+                                                        :key="proj.name">
+                                                        <option :value="proj.name" x-text="proj.title || proj.name"
+                                                            :selected="handler.project === proj.name"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Allowed senders</div>
+                                                <div class="field-description">Leave empty to allow anyone. Wildcards
+                                                    like *@company.com work.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <input type="text" :value="$store.emailConfig.whitelistText(handler)"
+                                                    @input="$store.emailConfig.setWhitelist(handler, $event.target.value)"
+                                                    placeholder="*@company.com, founder@company.com" />
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Catch up on unread mail</div>
+                                                <div class="field-description">On startup, process unread mail from the
+                                                    last N days. Use 0 for brand-new mail only.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <input type="number" x-model.number="handler.process_unread_days"
+                                                    min="0" placeholder="0" />
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Check for new mail</div>
+                                                <div class="field-description"
+                                                    x-text="$store.emailConfig.frequencyHint(handler)"></div>
+                                            </div>
+                                            <div class="field-control">
+                                                <select :value="$store.emailConfig.frequencyValue(handler)"
+                                                    @change="$store.emailConfig.applyFrequency(handler, $event.target.value)">
+                                                    <option value="15">Every 15 seconds</option>
+                                                    <option value="30">Every 30 seconds</option>
+                                                    <option value="60">Every minute</option>
+                                                    <option value="300">Every 5 minutes</option>
+                                                    <option value="900">Every 15 minutes</option>
+                                                    <option value="custom">Custom schedule</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="field"
+                                            x-show="$store.emailConfig.frequencyValue(handler) === 'custom'">
+                                            <div class="field-label">
+                                                <div class="field-title">Scheduling mode</div>
+                                                <div class="field-description">Use seconds for a simple interval, or
+                                                    switch to cron for full control.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <select x-model="handler.poll_mode">
+                                                    <option value="seconds">Seconds</option>
+                                                    <option value="cron">Cron</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="field"
+                                            x-show="$store.emailConfig.frequencyValue(handler) === 'custom' && handler.poll_mode === 'seconds'">
+                                            <div class="field-label">
+                                                <div class="field-title">Poll interval (seconds)</div>
+                                                <div class="field-description">The exact delay between inbox checks.
+                                                </div>
+                                            </div>
+                                            <div class="field-control">
+                                                <input type="number" x-model.number="handler.poll_interval_seconds"
+                                                    min="5" placeholder="60" />
+                                            </div>
+                                        </div>
+
+                                        <div class="field"
+                                            x-show="$store.emailConfig.frequencyValue(handler) === 'custom' && handler.poll_mode === 'cron'">
+                                            <div class="field-label">
+                                                <div class="field-title">Cron expression</div>
+                                                <div class="field-description">For example, */2 * * * * checks every two
+                                                    minutes.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <input type="text" x-model="handler.poll_interval_cron"
+                                                    placeholder="*/2 * * * *" />
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Routing model</div>
+                                                <div class="field-description">Utility is faster. Chat is more capable
+                                                    when routing gets nuanced.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <select x-model="handler.dispatcher_model">
+                                                    <option value="utility">Utility</option>
+                                                    <option value="chat">Chat</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Conversation config</div>
+                                                <div class="field-description">Optional model preset for new chats created from this inbox.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <select x-model="handler.chat_model_preset">
+                                                    <option value="">Default</option>
+                                                    <template x-for="preset in $store.emailConfig.modelPresets" :key="preset.name">
+                                                        <option :value="preset.name" x-text="preset.name"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                </details>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <template x-if="$store.emailConfig.handlers.length > 0">
+                    <button class="btn btn-field email-add-another" @click="$store.emailConfig.addHandler()">
+                        Connect another inbox
+                    </button>
+                </template>
+            </div>
+        </template>
+    </div>
+
+    <style>
+        .email-settings {
+            display: flex;
+            flex-direction: column;
+            gap: 0.9rem;
+        }
+
+        .email-advanced summary {
+            cursor: pointer;
+            list-style: none;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .email-advanced summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .email-advanced summary {
+            padding: 0.95rem 1rem;
+        }
+
+        .email-advanced-chevron {
+            margin-left: auto;
+            flex: 0 0 auto;
+            transition: transform 0.18s ease, opacity 0.18s ease;
+            opacity: 0.72;
+        }
+
+        .email-advanced[open] .email-advanced-chevron {
+            transform: rotate(180deg);
+            opacity: 1;
+        }
+
+        .email-guide-card {
+            border: 1px solid color-mix(in srgb, var(--color-border) 80%, white 20%);
+            border-radius: 12px;
+            padding: 0.9rem 1rem;
+            background: color-mix(in srgb, var(--color-background) 88%, white 12%);
+        }
+
+        .email-guide-title {
+            font-weight: 700;
+            margin-bottom: 0.55rem;
+        }
+
+        .email-guide-list {
+            margin: 0;
+            padding-left: 1.1rem;
+            color: var(--color-text-secondary);
+            line-height: 1.55;
+        }
+
+        .email-empty {
+            border-radius: 0.5rem;
+            padding: 1rem;
+            background: color-mix(in srgb, var(--color-background) 94%, white 6%);
+        }
+
+        .email-empty-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+
+        .email-empty-copy {
+            margin-top: 0.35rem;
+            margin-bottom: 0.9rem;
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+        }
+
+        .email-card {
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        .email-card-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            align-items: flex-start;
+            padding: var(--spacing-sm) 0;
+            border-bottom: 1px solid var(--color-border);
+            cursor: pointer;
+        }
+
+        .email-card-heading {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .email-card-title {
+            font-weight: 700;
+            font-size: 1rem;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+
+        .email-card-subtitle {
+            margin-top: 0.3rem;
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-small);
+            line-height: 1.45;
+        }
+
+        .email-card-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            flex: 0 0 auto;
+        }
+
+        .email-card-chevron {
+            transition: transform 0.18s ease;
+            opacity: 0.7;
+        }
+
+        .email-card-chevron.is-open {
+            transform: rotate(180deg);
+        }
+
+        .email-provider-panel {
+            margin: 1rem 0;
+            padding: 0.95rem;
+            border: 1px solid color-mix(in srgb, var(--color-border) 86%, white 14%);
+            border-radius: 0.5rem;
+            background: color-mix(in srgb, var(--color-background) 92%, white 8%);
+        }
+
+        .email-provider-panel.has-provider {
+            background: color-mix(in srgb, var(--color-background) 88%, white 12%);
+        }
+
+        .email-provider-topline {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .email-provider-copy {
+            min-width: 0;
+        }
+
+        .email-provider-title {
+            font-size: 1rem;
+            font-weight: 800;
+            line-height: 1.35;
+        }
+
+        .email-provider-description {
+            margin-top: 0.35rem;
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+        }
+
+        .email-change-provider {
+            flex: 0 0 auto;
+        }
+
+        .email-provider-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.7rem;
+            margin-top: 0.95rem;
+        }
+
+        .email-provider-option {
+            appearance: none;
+            width: 100%;
+            min-height: 5.5rem;
+            border: 1px solid color-mix(in srgb, var(--color-border) 84%, white 16%);
+            border-radius: 0.5rem;
+            padding: 0.8rem;
+            background: color-mix(in srgb, var(--color-background) 96%, white 4%);
+            color: var(--color-text);
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            grid-template-rows: auto auto;
+            align-items: center;
+            column-gap: 0.75rem;
+            row-gap: 0.15rem;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+            transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+        }
+
+        .email-provider-option:hover,
+        .email-provider-option:focus-visible {
+            border-color: color-mix(in srgb, var(--color-highlight) 58%, var(--color-border) 42%);
+            background: color-mix(in srgb, var(--color-background) 88%, white 12%);
+            transform: translateY(-1px);
+            outline: none;
+        }
+
+        .email-provider-option.is-selected {
+            border-color: color-mix(in srgb, var(--color-highlight) 78%, white 22%);
+            background: color-mix(in srgb, var(--color-highlight) 10%, var(--color-background) 90%);
+        }
+
+        .email-provider-logo {
+            grid-row: 1 / span 2;
+            width: 2.7rem;
+            height: 2.7rem;
+            border-radius: 0.5rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            font-size: 1.1rem;
+            font-weight: 900;
+            letter-spacing: 0;
+        }
+
+        .email-provider-logo .material-symbols-outlined {
+            font-size: 1.45rem;
+        }
+
+        .logo-gmail .email-provider-logo {
+            background: #ffffff;
+            color: #ea4335;
+            border: 1px solid rgba(234, 67, 53, 0.45);
+        }
+
+        .logo-icloud .email-provider-logo {
+            background: linear-gradient(135deg, #e0f2fe, #ffffff);
+            color: #2563eb;
+        }
+
+        .logo-yahoo .email-provider-logo {
+            background: #6001d2;
+            color: #ffffff;
+        }
+
+        .logo-exchange .email-provider-logo {
+            background: #0078d4;
+            color: #ffffff;
+        }
+
+        .logo-custom-imap .email-provider-logo {
+            background: color-mix(in srgb, var(--color-background) 72%, white 28%);
+            color: var(--color-text-secondary);
+        }
+
+        .email-microsoft-mark {
+            width: 1.55rem;
+            height: 1.55rem;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.16rem;
+        }
+
+        .email-microsoft-mark span:nth-child(1) {
+            background: #f25022;
+        }
+
+        .email-microsoft-mark span:nth-child(2) {
+            background: #7fba00;
+        }
+
+        .email-microsoft-mark span:nth-child(3) {
+            background: #00a4ef;
+        }
+
+        .email-microsoft-mark span:nth-child(4) {
+            background: #ffb900;
+        }
+
+        .email-provider-name {
+            min-width: 0;
+            font-weight: 800;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+
+        .email-provider-hint {
+            min-width: 0;
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-small);
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+
+        .email-post-provider {
+            margin-top: 0.3rem;
+        }
+
+        .email-intro-copy {
+            margin: 1rem 0;
+            padding: 0.85rem 0.95rem;
+            border-radius: 12px;
+            background: color-mix(in srgb, #3b82f6 12%, var(--color-background) 88%);
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+        }
+
+        .email-intro-link {
+            display: inline-flex;
+            margin-top: 0.55rem;
+            color: var(--color-highlight);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .email-intro-link:hover {
+            text-decoration: underline;
+        }
+
+        .email-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.85rem;
+        }
+
+        .email-note,
+        .email-missing {
+            margin-top: 0.2rem;
+            margin-bottom: 0.85rem;
+            padding: 0.8rem 0.9rem;
+            border-radius: 12px;
+            font-size: var(--font-size-small);
+            line-height: 1.5;
+        }
+
+        .email-note {
+            background: color-mix(in srgb, var(--color-background) 82%, white 18%);
+            color: var(--color-text-secondary);
+        }
+
+        .email-missing {
+            background: color-mix(in srgb, #f59e0b 14%, var(--color-background) 86%);
+            color: var(--color-text-secondary);
+        }
+
+        .email-advanced {
+            margin-top: 0.95rem;
+            border: 1px solid color-mix(in srgb, var(--color-border) 88%, white 12%);
+            border-radius: 14px;
+            overflow: hidden;
+        }
+
+        .email-advanced summary {
+            padding: 0.9rem 1rem;
+            background: color-mix(in srgb, var(--color-background) 88%, white 12%);
+        }
+
+        .email-advanced-body {
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .email-test-panel {
+            margin-top: 1rem;
+            padding: var(--spacing-xs) 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .email-test-copy {
+            min-width: 0;
+        }
+
+        .email-test-title {
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .email-test-description {
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+            font-size: var(--font-size-small);
+        }
+
+        .email-results {
+            margin-top: 0.9rem;
+            border-radius: 14px;
+            border: 1px solid color-mix(in srgb, #22c55e 28%, var(--color-border) 72%);
+            background: color-mix(in srgb, #22c55e 8%, var(--color-background) 92%);
+            padding: 0.35rem 0.9rem;
+        }
+
+        .email-results.is-error {
+            border-color: color-mix(in srgb, #ef4444 28%, var(--color-border) 72%);
+            background: color-mix(in srgb, #ef4444 8%, var(--color-background) 92%);
+        }
+
+        .email-result-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.8rem;
+            padding: 0.7rem 0;
+        }
+
+        .email-result-row+.email-result-row {
+            border-top: 1px solid color-mix(in srgb, var(--color-border) 85%, white 15%);
+        }
+
+        .email-result-icon {
+            width: 1.25rem;
+            font-weight: 800;
+            line-height: 1.3;
+        }
+
+        .email-result-copy {
+            min-width: 0;
+        }
+
+        .email-result-title {
+            font-weight: 700;
+            margin-bottom: 0.18rem;
+        }
+
+        .email-result-message {
+            color: var(--color-text-secondary);
+            line-height: 1.5;
+            font-size: var(--font-size-small);
+            overflow-wrap: anywhere;
+        }
+
+        .email-status-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 5.25rem;
+            padding: 0.35rem 0.7rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .email-status-pill.tone-success {
+            background: rgba(34, 197, 94, 0.14);
+            color: #7ee7a4;
+        }
+
+        .email-status-pill.tone-ready {
+            background: rgba(59, 130, 246, 0.16);
+            color: #93c5fd;
+        }
+
+        .email-status-pill.tone-warning {
+            background: rgba(245, 158, 11, 0.16);
+            color: #fcd34d;
+        }
+
+        .email-status-pill.tone-muted {
+            background: rgba(148, 163, 184, 0.14);
+            color: #cbd5e1;
+        }
+
+        .email-add-another {
+            align-self: flex-start;
+        }
+
+        @media (max-width: 900px) {
+
+            .email-provider-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .email-guide-body,
+            .email-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+
+            .email-card-header,
+            .email-test-panel {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .email-card-actions {
+                justify-content: space-between;
+                width: 100%;
+            }
+
+            .email-provider-topline {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .email-provider-grid,
+            .email-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .email-change-provider {
+                align-self: flex-start;
+            }
+
+            .email-status-pill {
+                min-width: 0;
+            }
+        }
+    </style>
+</body>
+
+</html>

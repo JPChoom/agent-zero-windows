@@ -1,0 +1,188 @@
+<html class="settings-modal">
+<head>
+  <title>Settings</title>
+</head>
+
+<body>
+<script type="module">
+  import { store as settingsStore } from "/components/settings/settings-store.js";
+</script>
+
+<div x-data>
+  <template x-if="$store.settings">
+    <div x-init="$store.settings.onOpen()" x-destroy="$store.settings.cleanup()">
+
+      <!-- Loading state -->
+      <div x-show="$store.settings.isLoading && !$store.settings.settings" class="settings-loading">
+        <span class="material-symbols-outlined spinning">progress_activity</span>
+        <span>Loading settings...</span>
+      </div>
+
+      <!-- Error state -->
+      <div x-show="$store.settings.error && !$store.settings.settings" class="settings-error">
+        <span class="material-symbols-outlined">error</span>
+        <span x-text="$store.settings.error"></span>
+        <button class="btn btn-retry" @click="$store.settings.onOpen()">Retry</button>
+      </div>
+
+      <!-- Settings content -->
+      <div x-show="$store.settings.settings" class="settings-content">
+        <!-- Tab Navigation -->
+        <aside class="settings-tabs-container" aria-label="Settings categories">
+          <div class="settings-search" role="search">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+            <input
+              type="search"
+              x-model.debounce.100ms="$store.settings.searchQuery"
+              @keydown.enter.prevent="$store.settings.openFirstSearchResult()"
+              placeholder="Search"
+              aria-label="Search settings"
+              autocomplete="off"
+            />
+            <button
+              type="button"
+              class="settings-search-clear"
+              x-show="$store.settings.hasSearchQuery"
+              @click="$store.settings.clearSearch()"
+              aria-label="Clear search"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true">close</span>
+            </button>
+          </div>
+
+          <div class="settings-tabs no-scrollbar" role="tablist" aria-orientation="vertical">
+            <template x-for="item in $store.settings.filteredNavItems" :key="item.id">
+              <div class="settings-nav-group"
+                   :class="{
+                     'settings-nav-group-active': $store.settings.activeTab === item.id,
+                     'settings-nav-group-open': $store.settings.isNavGroupExpanded(item.id)
+                   }">
+                <button type="button"
+                        class="settings-tab settings-parent-tab"
+                        role="tab"
+                        :aria-selected="$store.settings.activeTab === item.id"
+                        :aria-expanded="$store.settings.isNavGroupExpanded(item.id)"
+                        :class="{
+                          'active': $store.settings.activeTab === item.id,
+                          'settings-tab-attention': $store.settings.navItemHasAttention(item)
+                        }"
+                        @click="$store.settings.toggleNavGroup(item.id)">
+                  <span class="material-symbols-outlined" aria-hidden="true" x-text="item.icon"></span>
+                  <span class="settings-tab-label" x-text="item.label"></span>
+                  <span class="settings-tab-meta">
+                    <span class="settings-attention-dot"
+                          x-show="$store.settings.navItemHasAttention(item)"
+                          aria-hidden="true"></span>
+                    <span class="material-symbols-outlined settings-tab-chevron"
+                          aria-hidden="true">expand_more</span>
+                  </span>
+                </button>
+
+                <div class="settings-section-list"
+                     x-show="$store.settings.isNavGroupExpanded(item.id)"
+                     x-transition.opacity.duration.120ms>
+                  <template x-for="section in item.sections" :key="section.id">
+                    <a class="settings-section-link"
+                       :class="{
+                         'active': $store.settings.activeSection === section.id,
+                         'settings-tab-attention': $store.settings.sectionItemHasAttention(section)
+                       }"
+                       :aria-current="$store.settings.activeSection === section.id ? 'true' : null"
+                       :href="`#${section.id}`"
+                       @click="$store.settings.scrollToSection(section.id, $event)">
+                      <span class="material-symbols-outlined" aria-hidden="true" x-text="section.icon"></span>
+                      <span class="settings-tab-label" x-text="section.label"></span>
+                      <span class="settings-attention-dot"
+                            x-show="$store.settings.sectionItemHasAttention(section)"
+                            aria-hidden="true"></span>
+                    </a>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <div class="settings-search-empty" x-show="$store.settings.hasSearchQuery && !$store.settings.filteredNavItems.length">
+              No settings found
+            </div>
+          </div>
+        </aside>
+
+        <!-- Settings sections for agent, external, developer, mcp, backup tabs -->
+        <main id="settings-sections" class="settings-pane">
+          <div class="settings-tab-panel" data-settings-tab="agent" x-show="$store.settings.activeTab === 'agent'">
+            <x-component path="settings/agent/agent-settings.html"></x-component>
+          </div>
+          <div class="settings-tab-panel" data-settings-tab="external" x-show="$store.settings.activeTab === 'external'">
+            <x-component path="settings/external/external-settings.html"></x-component>
+          </div>
+          <div class="settings-tab-panel" data-settings-tab="mcp" x-show="$store.settings.activeTab === 'mcp'">
+            <x-component path="settings/mcp/mcp-settings.html"></x-component>
+          </div>
+          <div class="settings-tab-panel" data-settings-tab="developer" x-show="$store.settings.activeTab === 'developer'">
+            <x-component path="settings/developer/developer-settings.html"></x-component>
+          </div>
+          <div class="settings-tab-panel" data-settings-tab="backup" x-show="$store.settings.activeTab === 'backup'">
+            <x-component path="settings/backup/backup-settings.html"></x-component>
+          </div>
+          <div class="settings-tab-panel" data-settings-tab="skills" x-show="$store.settings.activeTab === 'skills'">
+            <x-component path="settings/skills/skills-settings.html"></x-component>
+          </div>
+        </main>
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer" data-modal-footer x-show="$store.settings.settings">
+        <button class="btn btn-ok" 
+            @click="$store.settings.saveAndClose()"
+            :disabled="$store.settings?.isLoading">
+        Save
+        </button>
+        <button class="btn btn-cancel" 
+                @click="$store.settings.closeSettings()">
+          Cancel
+        </button>
+      </div>
+
+    </div>
+  </template>
+</div>
+</body>
+</html>
+
+<style>
+.settings-loading,
+.settings-error {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 0;
+  padding: 2rem;
+  color: var(--color-text-secondary, #999);
+  font-size: 1rem;
+}
+
+.settings-error {
+  flex-direction: column;
+  color: var(--color-error, #e74c3c);
+}
+
+.settings-error .material-symbols-outlined {
+  font-size: 2rem;
+}
+
+.settings-error .btn-retry {
+  margin-top: 1rem;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+</style>

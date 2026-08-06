@@ -1,0 +1,33 @@
+<html>
+  <head>
+    <title>API Keys</title>
+  </head>
+
+  <body>
+    <div x-data>
+      <template x-if="$store.settings.settings">
+        <div>
+          <div class="section-title">API Keys</div>
+          <div class="section-description">
+            Store provider credentials used by Agent Zero. Add multiple keys with commas when you want round-robin rotation.
+          </div>
+
+          <template x-for="provider in $store.settings.apiKeyProviders" :key="provider.value">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title" x-text="provider.label"></div>
+              </div>
+              <div class="field-control">
+                <input
+                  type="text"
+                  x-model="$store.settings.settings.api_keys[provider.value]"
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  </body>
+</html>

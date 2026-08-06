@@ -1,0 +1,11 @@
+<div
+  class="right-canvas-surface-panel browser-canvas-surface"
+  data-surface-id="browser"
+  :class="{
+    'is-active': $store.rightCanvas?.isSurfaceVisible('browser'),
+    'is-mounted': $store.rightCanvas?.isSurfaceRendered('browser')
+  }"
+  :aria-hidden="(!$store.rightCanvas?.isSurfaceVisible('browser')).toString()"
+>
+  <x-component path="/plugins/_browser/webui/browser-panel.html" mode="canvas"></x-component>
+</div>

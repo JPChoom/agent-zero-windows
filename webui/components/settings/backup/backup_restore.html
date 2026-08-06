@@ -1,0 +1,50 @@
+<html>
+  <head>
+    <title>Backup & Restore</title>
+  </head>
+
+  <body>
+    <div x-data>
+      <div>
+        <div class="section-title">Backup &amp; Restore</div>
+        <div class="section-description">
+          Preserve or restore Agent Zero data with pattern-based file selection.
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Create Backup</div>
+            <div class="field-description">
+              Package selected files and configuration into a backup archive.
+            </div>
+          </div>
+          <div class="field-control">
+            <button
+              class="btn btn-field"
+              @click="window.openModal('settings/backup/backup.html')"
+            >
+              Create Backup
+            </button>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <div class="field-title">Restore from Backup</div>
+            <div class="field-description">
+              Bring selected files back from an existing backup archive.
+            </div>
+          </div>
+          <div class="field-control">
+            <button
+              class="btn btn-field"
+              @click="window.openModal('settings/backup/restore.html')"
+            >
+              Restore Backup
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

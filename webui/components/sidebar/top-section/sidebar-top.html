@@ -1,0 +1,35 @@
+<html>
+<head>
+  <script type="module">
+    import { store } from "/components/sidebar/sidebar-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.sidebar">
+      <div class="sidebar-top-wrapper">
+        <x-extension id="sidebar-top-wrapper-start"></x-extension>
+        <!-- Quick Actions Buttons -->
+        <x-component path="sidebar/top-section/quick-actions.html"></x-component>
+        <x-extension id="sidebar-top-wrapper-end"></x-extension>
+      </div>
+    </template>
+  </div>
+
+
+  <style>
+    /* Sidebar top wrapper - ensures proper spacing and layout */
+    .sidebar-top-wrapper {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-top-wrapper > x-component,
+    .sidebar-top-wrapper > x-component > .quick-actions-surface-host {
+      display: contents;
+    }
+  </style>
+</body>
+</html>
+

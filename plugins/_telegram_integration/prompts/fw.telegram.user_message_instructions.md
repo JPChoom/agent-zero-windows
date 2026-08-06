@@ -1,0 +1,2 @@
+# Telegram custom rules
+{{instructions}}

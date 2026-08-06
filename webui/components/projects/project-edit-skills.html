@@ -1,0 +1,69 @@
+<html>
+<head>
+    <title>Project Skills</title>
+    <script type="module">
+        import { store } from "/components/projects/projects-store.js";
+        import { store as skillsStore } from "/components/settings/skills/skills-import-store.js";
+    </script>
+</head>
+<body>
+    <div x-data>
+        <template x-if="$store.projects && $store.projects.selectedProject">
+            <div class="project-skills-section">
+                <p class="skills-description">
+                    Add skills for this project only. Global skills are inherited automatically by every project.
+                </p>
+
+                <div class="skills-actions">
+                    <button type="button" class="button" @click="$store.projects.openSelectedProjectSkillsImport()">
+                        <span class="icon material-symbols-outlined">upload</span>
+                        Import Skills
+                    </button>
+                    <button type="button" class="button" @click="$store.projects.openSelectedProjectSkillsFolder()">
+                        <span class="icon material-symbols-outlined">folder_open</span>
+                        Open Folder
+                    </button>
+                </div>
+
+                <p class="skills-path">
+                    Project-only skills live in <code x-text="$store.projects.getSelectedProjectSkillsPath()"></code>
+                </p>
+            </div>
+        </template>
+    </div>
+
+    <style>
+        .project-skills-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .skills-description {
+            color: var(--color-text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.4;
+            margin: 0;
+        }
+
+        .skills-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .skills-path {
+            color: var(--color-text-secondary);
+            font-size: 0.85rem;
+            margin: 0;
+        }
+
+        .skills-path code {
+            background: var(--color-bg-tertiary);
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+    </style>
+</body>
+</html>

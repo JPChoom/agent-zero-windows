@@ -1,0 +1,578 @@
+// Import the component loader and page utilities
+import { importComponent } from "/js/components.js";
+import { callJsExtensions } from "/js/extensions.js";
+
+// Modal functionality
+const modalStack = [];
+const RESTORABLE_MODAL_STACK_KEY = "a0.modalStack.restorable";
+let restoringModalSession = false;
+let restoredModalSession = false;
+
+function sameModalPath(left = "", right = "") {
+  return String(left || "").replace(/^\/+/, "") === String(right || "").replace(/^\/+/, "");
+}
+
+function isReloadNavigation() {
+  const navigation = performance.getEntriesByType?.("navigation")?.[0];
+  if (navigation?.type) return navigation.type === "reload";
+  if (!performance.navigation) return false;
+  return performance.navigation?.type === performance.navigation?.TYPE_RELOAD;
+}
+
+function modalHasClass(modalOrElement, className) {
+  const element = modalOrElement?.element || modalOrElement;
+  return Boolean(
+    element?.classList?.contains(className)
+      || element?.querySelector?.(".modal-inner")?.classList?.contains(className)
+  );
+}
+
+function modalDatasetFlag(modalOrElement, name) {
+  const element = modalOrElement?.element || modalOrElement;
+  const inner = element?.querySelector?.(".modal-inner");
+  const value = element?.dataset?.[name] ?? inner?.dataset?.[name] ?? "";
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+function modalRequiresExplicitClose(modalOrElement) {
+  return modalHasClass(modalOrElement, "modal-explicit-close")
+    || modalDatasetFlag(modalOrElement, "modalExplicitClose");
+}
+
+function modalSuppressesBackdrop(modalOrElement) {
+  return modalHasClass(modalOrElement, "modal-no-backdrop")
+    || modalDatasetFlag(modalOrElement, "modalNoBackdrop");
+}
+
+function modalRestoreMode(modalOrElement) {
+  const element = modalOrElement?.element || modalOrElement;
+  const inner = element?.querySelector?.(".modal-inner");
+  return String(element?.dataset?.modalRestore || inner?.dataset?.modalRestore || "").trim();
+}
+
+function modalCanRestore(modalOrElement) {
+  return modalRestoreMode(modalOrElement) === "surface";
+}
+
+function restorableModalSnapshot() {
+  return modalStack
+    .filter((modal) => modalCanRestore(modal))
+    .map((modal) => ({ path: modal.path }));
+}
+
+export function persistRestorableModalStack(options = {}) {
+  if (restoringModalSession && options.force !== true) return;
+  try {
+    const modals = restorableModalSnapshot();
+    if (modals.length === 0) {
+      sessionStorage.removeItem(RESTORABLE_MODAL_STACK_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      RESTORABLE_MODAL_STACK_KEY,
+      JSON.stringify({
+        version: 1,
+        modals,
+      }),
+    );
+  } catch (error) {
+    console.warn("Could not persist restorable modals", error);
+  }
+}
+
+function dispatchModalEvent(name, modal, detail = {}) {
+  document.dispatchEvent(
+    new CustomEvent(name, {
+      detail: {
+        modalPath: modal?.path ?? null,
+        modal,
+        modalStack: getModalStack(),
+        ...detail,
+      },
+    }),
+  );
+}
+
+function activateModal(modal) {
+  if (!modal) return;
+  updateModalZIndexes();
+  restoreModalScrollSnapshot(modal);
+  dispatchModalEvent("modal-activated", modal);
+  persistRestorableModalStack();
+}
+
+function findModalIndexByPath(modalPath) {
+  return modalStack.findIndex((modal) => sameModalPath(modal.path, modalPath));
+}
+
+function focusModal(modalPath) {
+  const modalIndex = findModalIndexByPath(modalPath);
+  if (modalIndex === -1) return false;
+  const currentTopModal = modalStack[modalStack.length - 1];
+  if (currentTopModal) {
+    currentTopModal.savedScrollSnapshot = captureModalScrollSnapshot(currentTopModal);
+  }
+  const [modal] = modalStack.splice(modalIndex, 1);
+  modalStack.push(modal);
+  activateModal(modal);
+  return true;
+}
+
+function getModalScrollElement(modal) {
+  return modal?.element?.querySelector(".modal-scroll");
+}
+
+function captureModalScrollSnapshot(modal) {
+  const modalScroll = getModalScrollElement(modal);
+  if (!modalScroll) return null;
+  return {
+    scrollTop: modalScroll.scrollTop,
+    scrollLeft: modalScroll.scrollLeft,
+  };
+}
+
+function restoreModalScrollSnapshot(modal) {
+  const snapshot = modal?.savedScrollSnapshot;
+  if (!snapshot) return;
+
+  requestAnimationFrame(() => {
+    const modalScroll = getModalScrollElement(modal);
+    if (!modalScroll) return;
+    modalScroll.scrollTop = snapshot.scrollTop;
+    modalScroll.scrollLeft = snapshot.scrollLeft;
+    modal.savedScrollSnapshot = null;
+  });
+}
+
+// Create a single backdrop for all modals
+const backdrop = document.createElement("div");
+backdrop.className = "modal-backdrop";
+backdrop.style.display = "none";
+backdrop.style.backdropFilter = "blur(8px) saturate(112%)";
+document.body.appendChild(backdrop);
+
+// Function to update z-index for all modals and backdrop
+function updateModalZIndexes() {
+  // Base z-index for modals
+  const baseZIndex = 5000;
+
+  // Update z-index for all modals
+  modalStack.forEach((modal, index) => {
+    // For first modal, z-index is baseZIndex
+    // For second modal, z-index is baseZIndex + 20
+    // This leaves room for the backdrop between them
+    modal.element.style.zIndex = baseZIndex + index * 20;
+  });
+
+  const backdropModalStack = modalStack.filter((modal) => !modalSuppressesBackdrop(modal));
+
+  if (backdropModalStack.length === 0) {
+    backdrop.style.display = "none";
+    return;
+  }
+
+  backdrop.style.display = "block";
+  backdrop.style.backdropFilter = "blur(8px) saturate(112%)";
+  backdrop.style.backgroundColor = "";
+
+  if (backdropModalStack.length === modalStack.length && modalStack.length > 1) {
+    const topModalIndex = modalStack.length - 1;
+    backdrop.style.zIndex = baseZIndex + (topModalIndex - 1) * 20 + 10;
+  } else {
+    const topBackdropModal = backdropModalStack[backdropModalStack.length - 1];
+    const topBackdropModalIndex = modalStack.indexOf(topBackdropModal);
+    backdrop.style.zIndex = topBackdropModalIndex > 0
+      ? baseZIndex + (topBackdropModalIndex - 1) * 20 + 10
+      : baseZIndex - 1;
+  }
+}
+
+// Function to create a new modal element
+function createModalElement(path) {
+  // Create modal element
+  const newModal = document.createElement("div");
+  newModal.className = "modal";
+  newModal.path = path; // save name to the object
+  newModal.dataset.modalPath = path;
+
+  // Add click handlers to only close modal if both mousedown and mouseup are on the modal container
+  let mouseDownTarget = null;
+  newModal.addEventListener("mousedown", (event) => {
+    mouseDownTarget = event.target;
+  });
+  newModal.addEventListener("mouseup", (event) => {
+    if (
+      event.target === newModal
+      && mouseDownTarget === newModal
+      && !modalRequiresExplicitClose(newModal)
+    ) {
+      closeModal();
+    }
+    mouseDownTarget = null;
+  });
+
+
+  // Create modal structure
+  newModal.innerHTML = `
+    <div class="modal-inner" x-data>
+      <x-extension id="modal-shell-start"></x-extension>
+      <div class="modal-header">
+        <h2 class="modal-title"></h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-scroll">
+        <div class="modal-bd"></div>
+      </div>
+      <div class="modal-footer-slot" style="display: none;"></div>
+      <x-extension id="modal-shell-end"></x-extension>
+    </div>
+  `;
+
+  // Setup close button handler for this specific modal
+  const close_button = newModal.querySelector(".modal-close");
+  close_button.addEventListener("click", () => closeModal());
+
+
+  // Add modal to DOM
+  document.body.appendChild(newModal);
+
+  // Show the modal
+  newModal.classList.add("show");
+
+  // Update modal z-indexes
+  updateModalZIndexes();
+
+  return {
+    path: path,
+    element: newModal,
+    title: newModal.querySelector(".modal-title"),
+    header: newModal.querySelector(".modal-header"),
+    body: newModal.querySelector(".modal-bd"),
+    close: close_button,
+    footerSlot: newModal.querySelector(".modal-footer-slot"),
+    inner: newModal.querySelector(".modal-inner"),
+    styles: [],
+    scripts: [],
+    beforeClose: null,
+    savedScrollSnapshot: null,
+  };
+}
+
+// Function to open modal with content from URL
+export async function openModal(modalPath, beforeClose = null) {
+  const openCtx = { modalPath, modal: null, cancel: false };
+  await callJsExtensions("open_modal_before", openCtx);
+  if (openCtx.cancel) return;
+  modalPath = openCtx.modalPath;
+
+  return new Promise((resolve) => {
+    try {
+      const currentTopModal = modalStack[modalStack.length - 1];
+      if (currentTopModal) {
+        currentTopModal.savedScrollSnapshot = captureModalScrollSnapshot(currentTopModal);
+      }
+
+      // Create new modal instance
+      const modal = createModalElement(modalPath);
+      modal.beforeClose = beforeClose;
+      openCtx.modal = modal;
+
+      new MutationObserver(
+        (_, o) =>
+          !document.contains(modal.element) && (o.disconnect(), resolve())
+      ).observe(document.body, { childList: true, subtree: true });
+
+      // Set a loading state
+      modal.body.innerHTML = '<div class="loading">Loading...</div>';
+
+      // Already added to stack above
+
+      // Use importComponent to load the modal content
+      // This handles all HTML, styles, scripts and nested components
+      // Updated path to use the new folder structure with modal.html
+      const componentPath = modalPath; // `modals/${modalPath}/modal.html`;
+
+      // Use importComponent which now returns the parsed document
+      importComponent(componentPath, modal.body)
+        .then(async (doc) => {
+          // Set the title from the document
+          modal.title.innerHTML = doc.title || modalPath;
+          const htmlElement = doc.documentElement;
+          if (htmlElement && htmlElement.classList) {
+            const inner = modal.element.querySelector(".modal-inner");
+            if (inner) inner.classList.add(...htmlElement.classList);
+          }
+          if (doc.body && doc.body.classList) {
+            modal.body.classList.add(...doc.body.classList);
+          }
+          await callJsExtensions("modal_content_loaded", {
+            modalPath,
+            modal,
+            doc,
+          });
+          dispatchModalEvent("modal-content-loaded", modal, { doc });
+          refreshModalStack();
+          
+          // Some modals have a footer. Check if it exists and move it to footer slot
+          // Use requestAnimationFrame to let Alpine mount the component first
+          requestAnimationFrame(() => {
+            const componentFooter = modal.body.querySelector('[data-modal-footer]');
+            if (componentFooter && modal.footerSlot) {
+              // Move footer outside modal-scroll scrollable area
+              modal.footerSlot.appendChild(componentFooter);
+              modal.footerSlot.style.display = 'block';
+              modal.inner.classList.add('modal-with-footer');
+            }
+          });
+        })
+        .catch((error) => {
+          console.error("Error loading modal content:", error);
+          modal.body.innerHTML = `<div class="error">Failed to load modal content: ${error.message}</div>`;
+        });
+
+      // Add modal to stack and show it
+      // Add modal to stack
+      modal.path = modalPath;
+      modalStack.push(modal);
+      document.body.style.overflow = "hidden";
+
+      activateModal(modal);
+    } catch (error) {
+      console.error("Error loading modal content:", error);
+      resolve();
+    }
+  });
+}
+
+export function isModalOpen(modalPath) {
+  return findModalIndexByPath(modalPath) !== -1;
+}
+
+export function getModalStack() {
+  return modalStack.slice();
+}
+
+export function refreshModalStack() {
+  if (modalStack.length === 0) {
+    updateModalZIndexes();
+    persistRestorableModalStack();
+    return;
+  }
+  activateModal(modalStack[modalStack.length - 1]);
+}
+
+export function restoreRestorableModalStack() {
+  if (restoredModalSession) return;
+  if (!isReloadNavigation()) {
+    sessionStorage.removeItem(RESTORABLE_MODAL_STACK_KEY);
+    return;
+  }
+  restoredModalSession = true;
+
+  let saved;
+  try {
+    saved = JSON.parse(sessionStorage.getItem(RESTORABLE_MODAL_STACK_KEY) || "{}");
+  } catch (error) {
+    console.warn("Could not restore restorable modals", error);
+    sessionStorage.removeItem(RESTORABLE_MODAL_STACK_KEY);
+    return;
+  }
+
+  const paths = Array.isArray(saved?.modals)
+    ? saved.modals
+      .map((entry) => String(entry?.path || "").trim())
+      .filter(Boolean)
+    : [];
+  if (paths.length === 0) return;
+
+  restoringModalSession = true;
+  for (const path of paths) {
+    try {
+      const openPromise = ensureModalOpen(path);
+      openPromise?.catch?.((error) => console.error(`Failed to restore modal ${path}`, error));
+    } catch (error) {
+      console.error(`Failed to restore modal ${path}`, error);
+    }
+  }
+
+  globalThis.setTimeout?.(() => {
+    restoringModalSession = false;
+    persistRestorableModalStack({ force: true });
+  }, 1500);
+}
+
+export async function ensureModalOpen(modalPath, beforeClose = null) {
+  if (focusModal(modalPath)) return null;
+  return openModal(modalPath, beforeClose);
+}
+
+export async function toggleModal(modalPath, beforeClose = null) {
+  if (!isModalOpen(modalPath)) {
+    return openModal(modalPath, beforeClose);
+  }
+  while (isModalOpen(modalPath)) {
+    const closed = await closeModal(modalPath);
+    if (closed === false) return false;
+  }
+  return true;
+}
+
+// Function to close modal
+export async function closeModal(modalPath = null) {
+  if (modalStack.length === 0) return;
+
+  let modalIndex = modalStack.length - 1; // Default to last modal
+  let modal;
+
+  if (modalPath) {
+    // Find the modal with the specified name in the stack
+    modalIndex = findModalIndexByPath(modalPath);
+    if (modalIndex === -1) return; // Modal not found in stack
+
+    // Get the modal from stack at the found index
+    modal = modalStack[modalIndex];
+  } else {
+    // Just get the last modal (removal happens after beforeClose)
+    modal = modalStack[modalStack.length - 1];
+  }
+
+  const closeCtx = { modalPath: modalPath ?? null, modal, cancel: false };
+  await callJsExtensions("close_modal_before", closeCtx);
+  if (closeCtx.cancel) return false;
+
+  const canClose = async () => {
+    if (!modal.beforeClose) return true;
+    try {
+      const result = await Promise.resolve(modal.beforeClose());
+      return result !== false;
+    } catch (error) {
+      console.error("Error in beforeClose handler:", error);
+      return true;
+    }
+  };
+
+  return Promise.resolve(canClose()).then((shouldClose) => {
+    if (!shouldClose) return false;
+
+    if (modalPath) {
+      // Remove the modal from stack after beforeClose check
+      modalStack.splice(modalIndex, 1);
+    } else {
+      modalStack.pop();
+    }
+
+    // Remove modal-specific styles and scripts immediately
+    modal.styles.forEach((styleId) => {
+      document.querySelector(`[data-modal-style="${styleId}"]`)?.remove();
+    });
+    modal.scripts.forEach((scriptId) => {
+      document.querySelector(`[data-modal-script="${scriptId}"]`)?.remove();
+    });
+
+    // First remove the show class to trigger the transition
+    modal.element.classList.remove("show");
+
+  // commented out to prevent race conditions
+
+  // // Remove the modal element from DOM after animation
+  // modal.element.addEventListener(
+  //   "transitionend",
+  //   () => {
+  //     // Make sure the modal is completely removed from the DOM
+  //     if (modal.element.parentNode) {
+  //       modal.element.parentNode.removeChild(modal.element);
+  //     }
+  //   },
+  //   { once: true }
+  // );
+
+  // // Fallback in case the transition event doesn't fire
+  // setTimeout(() => {
+  //   if (modal.element.parentNode) {
+  //     modal.element.parentNode.removeChild(modal.element);
+  //   }
+  // }, 500); // 500ms should be enough for the transition to complete
+
+    // remove immediately
+    if (modal.element.parentNode) {
+      modal.element.parentNode.removeChild(modal.element);
+    }
+
+
+    // Handle backdrop visibility and body overflow
+    if (modalStack.length === 0) {
+      // Hide backdrop when no modals are left
+      backdrop.style.display = "none";
+      document.body.style.overflow = "";
+    } else {
+      activateModal(modalStack[modalStack.length - 1]);
+    }
+
+    document.dispatchEvent(
+      new CustomEvent("modal-closed", {
+        detail: {
+          modalPath: modal.path ?? null,
+          remainingModalCount: modalStack.length,
+        },
+      }),
+    );
+    persistRestorableModalStack();
+
+    return true;
+  });
+}
+
+// Function to scroll to element by ID within the last modal
+export function scrollModal(id) {
+  if (!id) return;
+
+  // Get the last modal in the stack
+  const lastModal = modalStack[modalStack.length - 1].element;
+  if (!lastModal) return;
+
+  // Find the modal container and target element
+  const modalContainer = lastModal.querySelector(".modal-scroll");
+  const targetElement = lastModal.querySelector(`#${id}`);
+
+  if (modalContainer && targetElement) {
+    modalContainer.scrollTo({
+      top: targetElement.offsetTop - 20, // 20px padding from top
+      behavior: "smooth",
+    });
+  }
+}
+
+// Make scrollModal globally available
+globalThis.scrollModal = scrollModal;
+
+// Handle modal content loading from clicks
+document.addEventListener("click", async (e) => {
+  const modalTrigger = e.target.closest("[data-modal-content]");
+  if (modalTrigger) {
+    e.preventDefault();
+    if (
+      modalTrigger.hasAttribute("disabled") ||
+      modalTrigger.classList.contains("disabled")
+    ) {
+      return;
+    }
+    const modalPath = modalTrigger.getAttribute("href");
+    await openModal(modalPath);
+  }
+});
+
+// Close modal on escape key (closes only the top modal)
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modalStack.length > 0) {
+    if (modalRequiresExplicitClose(modalStack[modalStack.length - 1])) return;
+    closeModal();
+  }
+});
+
+// also export as global function
+globalThis.openModal = openModal;
+globalThis.closeModal = closeModal;
+globalThis.scrollModal = scrollModal;
+globalThis.isModalOpen = isModalOpen;
+globalThis.ensureModalOpen = ensureModalOpen;
+globalThis.toggleModal = toggleModal;
