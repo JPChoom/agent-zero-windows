@@ -632,7 +632,7 @@ def fix_dev_path(path: str):
 def normalize_a0_path(path: str):
     "Convert absolute paths into /a0/... paths"
     if is_in_base_dir(path):
-        deabs = deabsolute_path(path)
+        deabs = deabsolute_path(path).replace("\\", "/")
         return "/a0/" + deabs
     return path
 

@@ -39,4 +39,11 @@ dialog_patterns: |
   :\s*$
   \?\s*$
 
+# Extra project folders the terminal is allowed to start a session in,
+# besides the default working directory (one absolute path per line).
+# Example: C:\Projects\MyApp
+# The agent requests one of these via the "cwd" tool arg; anything outside
+# this list (and outside the default working directory) is rejected.
+allowed_external_roots: ""
+
 

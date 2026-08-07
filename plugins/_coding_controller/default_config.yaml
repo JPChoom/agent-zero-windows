@@ -1,0 +1,22 @@
+# Master switch. When false, the automatic completion gate never blocks a
+# response - the manual "coding_gate" tool still works for on-demand checks.
+# Enable per project once you've confirmed the commands below work there.
+enforce_completion_gate: false
+
+# Maximum automatic repair attempts per project before giving up and
+# reporting the failure instead of blocking forever.
+max_repair_attempts: 3
+
+# Hard timeout (seconds) for any single gate command.
+command_timeout_seconds: 300
+
+# .NET (dotnet CLI) adapter
+dotnet_restore_first: true
+dotnet_build_args: "build --no-restore -nologo"
+
+# npm adapter
+npm_install_first: false
+npm_test_args: "test"
+
+# PowerShell adapter (PSScriptAnalyzer lint only; skipped if not installed)
+powershell_lint_enabled: true

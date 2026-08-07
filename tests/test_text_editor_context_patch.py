@@ -32,6 +32,17 @@ from plugins._text_editor.helpers.patch_state import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _use_tmp_path_as_workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """file_ops confines all access to the configured workdir root (see
+    file_ops.confine_to_workdir). Point that root at each test's own
+    tmp_path so these tests can keep writing fixture files anywhere under
+    it, without weakening the real containment check itself."""
+    from plugins._text_editor.helpers import file_ops
+
+    monkeypatch.setattr(file_ops, "get_workdir_root", lambda: tmp_path)
+
+
 def test_context_patch_chains_after_line_shift(tmp_path: Path) -> None:
     target = tmp_path / "sample.txt"
     target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
@@ -441,13 +452,45 @@ def _load_text_editor_tool(monkeypatch: pytest.MonkeyPatch):
     return module, calls
 
 
-def test_text_editor_patch_text_does_not_require_prior_read(
+def test_text_editor_patch_text_rejects_without_prior_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stale-read protection was extended to patch_text/replace modes (they
+    used to skip it, matching only edits mode); this is that behavior."""
+    module, _calls = _load_text_editor_tool(monkeypatch)
+    target = tmp_path / "sample.txt"
+    target.write_text("line-1\nline-2\nline-3\n", encoding="utf-8")
+    agent = _FakeAgent()
+    tool = module.TextEditor(agent, "text_editor", "patch", {}, "", None)
+
+    response = asyncio.run(
+        tool._patch(
+            path=str(target),
+            patch_text=(
+                "*** Begin Patch\n"
+                "*** Update File: sample.txt\n"
+                "@@ line-1\n"
+                "+inserted\n"
+                "*** End Patch"
+            ),
+        )
+    )
+
+    assert "must read" in response.message
+    assert target.read_text(encoding="utf-8") == "line-1\nline-2\nline-3\n"
+
+
+def test_text_editor_patch_text_succeeds_after_prior_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module, calls = _load_text_editor_tool(monkeypatch)
     target = tmp_path / "sample.txt"
     target.write_text("line-1\nline-2\nline-3\n", encoding="utf-8")
+    realpath = os.path.realpath(target)
     agent = _FakeAgent()
+    agent.data[module._MTIME_KEY] = {
+        realpath: {"mtime": os.path.getmtime(target), "total_lines": 3}
+    }
     tool = module.TextEditor(agent, "text_editor", "patch", {}, "", None)
 
     response = asyncio.run(
@@ -492,13 +535,40 @@ def test_text_editor_patch_text_does_not_require_prior_read(
     assert calls[1][1]["mode"] == "patch_text"
 
 
-def test_text_editor_exact_replace_does_not_require_prior_read(
+def test_text_editor_exact_replace_rejects_without_prior_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stale-read protection was extended to patch_text/replace modes (they
+    used to skip it, matching only edits mode); this is that behavior."""
+    module, _calls = _load_text_editor_tool(monkeypatch)
+    target = tmp_path / "sample.txt"
+    target.write_text("line-1\nstatus = draft\nline-3\n", encoding="utf-8")
+    agent = _FakeAgent()
+    tool = module.TextEditor(agent, "text_editor", "patch", {}, "", None)
+
+    response = asyncio.run(
+        tool._patch(
+            path=str(target),
+            old_text="status = draft",
+            new_text="status = ready",
+        )
+    )
+
+    assert "must read" in response.message
+    assert target.read_text(encoding="utf-8") == "line-1\nstatus = draft\nline-3\n"
+
+
+def test_text_editor_exact_replace_succeeds_after_prior_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module, calls = _load_text_editor_tool(monkeypatch)
     target = tmp_path / "sample.txt"
     target.write_text("line-1\nstatus = draft\nline-3\n", encoding="utf-8")
+    realpath = os.path.realpath(target)
     agent = _FakeAgent()
+    agent.data[module._MTIME_KEY] = {
+        realpath: {"mtime": os.path.getmtime(target), "total_lines": 3}
+    }
     tool = module.TextEditor(agent, "text_editor", "patch", {}, "", None)
 
     response = asyncio.run(

@@ -196,6 +196,24 @@
                         <textarea rows="4" x-model="config.dialog_patterns"></textarea>
                     </div>
                 </div>
+
+                <!-- External project roots -->
+                <div class="section-title">Allowed Project Folders</div>
+                <div class="section-description">
+                    By default the terminal only starts sessions inside the configured working directory. List extra folders here (one absolute path per line, e.g. <code>C:\Projects\MyApp</code>) to let the agent run commands like <code>dotnet build</code> or <code>npm test</code> directly against those projects. Anything outside this list is rejected.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Allowed external roots</div>
+                        <div class="field-description">
+                            One absolute folder path per line. The agent selects one via the "cwd" tool argument.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <textarea rows="4" x-model="config.allowed_external_roots" placeholder="C:\Projects\MyApp"></textarea>
+                    </div>
+                </div>
             </div>
         </template>
     </div>

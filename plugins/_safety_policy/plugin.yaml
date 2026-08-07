@@ -1,0 +1,9 @@
+name: _safety_policy
+title: Safety Policy
+description: Deterministically denies destructive/high-risk terminal commands (registry/persistence writes, credential dumping, obfuscated PowerShell, disk/reboot operations, firewall/Defender changes, privilege escalation) before they execute. Not a sandbox - defense-in-depth only.
+version: 1.0.0
+always_enabled: false
+settings_sections:
+  - agent
+per_project_config: true
+per_agent_config: true

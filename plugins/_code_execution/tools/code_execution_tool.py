@@ -6,7 +6,7 @@ import shlex
 import time
 
 from helpers.tool import Tool, Response
-from helpers import files, rfc_exchange, projects, runtime, secrets, settings
+from helpers import files, path_containment, rfc_exchange, projects, runtime, secrets, settings
 from helpers.print_style import PrintStyle
 from helpers.strings import truncate_text as truncate_text_string
 from helpers.messages import truncate_text as truncate_text_agent
@@ -60,31 +60,35 @@ class CodeExecution(Tool):
         session = int(self.args.get("session", 0))
         self.allow_running = bool(self.args.get("allow_running", False))
         reset = bool(self.args.get("reset", False) or runtime_arg == "reset")
+        self._requested_cwd = str(self.args.get("cwd", "") or "").strip()
 
         cfg = _get_config(self.agent)
 
-        if runtime_arg == "python":
-            response = await self.execute_python_code(
-                cfg, code=self.args["code"], session=session, reset=reset
-            )
-        elif runtime_arg == "nodejs":
-            response = await self.execute_nodejs_code(
-                cfg, code=self.args["code"], session=session, reset=reset
-            )
-        elif runtime_arg == "terminal":
-            response = await self.execute_terminal_command(
-                cfg, command=self.args["code"], session=session, reset=reset
-            )
-        elif runtime_arg == "output":
-            response = await self.get_terminal_output(
-                cfg, session=session, timeouts=cfg["output_timeouts"]
-            )
-        elif runtime_arg == "reset":
-            response = await self.reset_terminal(cfg, session=session)
-        else:
-            response = self.agent.read_prompt(
-                "fw.code.runtime_wrong.md", runtime=runtime_arg
-            )
+        try:
+            if runtime_arg == "python":
+                response = await self.execute_python_code(
+                    cfg, code=self.args["code"], session=session, reset=reset
+                )
+            elif runtime_arg == "nodejs":
+                response = await self.execute_nodejs_code(
+                    cfg, code=self.args["code"], session=session, reset=reset
+                )
+            elif runtime_arg == "terminal":
+                response = await self.execute_terminal_command(
+                    cfg, command=self.args["code"], session=session, reset=reset
+                )
+            elif runtime_arg == "output":
+                response = await self.get_terminal_output(
+                    cfg, session=session, timeouts=cfg["output_timeouts"]
+                )
+            elif runtime_arg == "reset":
+                response = await self.reset_terminal(cfg, session=session)
+            else:
+                response = self.agent.read_prompt(
+                    "fw.code.runtime_wrong.md", runtime=runtime_arg
+                )
+        except path_containment.PathNotAllowedError as exc:
+            response = self.agent.read_prompt("fw.code.info.md", info=str(exc))
 
         if not response:
             response = self.agent.read_prompt(
@@ -134,7 +138,7 @@ class CodeExecution(Tool):
 
         # initialize local or remote interactive shell interface for session if needed
         if session is not None and session not in shells:
-            cwd = await self.ensure_cwd()
+            cwd = await self.resolve_session_cwd(cfg)
             if ssh_enabled:
                 ssh_pass = await _resolve_ssh_pass(cfg["ssh_pass"])
                 shell = SSHInteractiveSession(
@@ -532,6 +536,27 @@ class CodeExecution(Tool):
         await runtime.call_development_function(make_dir, normalized)
         return normalized
 
+    async def resolve_session_cwd(self, cfg: dict) -> str | None:
+        """Resolve the cwd for a new session.
+
+        Without an explicit `cwd` tool arg, behavior is unchanged (active
+        project folder, else the default working directory). With one, it
+        must resolve inside the default working directory or one of the
+        configured allowed_external_roots - otherwise the session is
+        refused with a PathNotAllowedError.
+        """
+        requested = str(getattr(self, "_requested_cwd", "") or "").strip()
+        if not requested:
+            return await self.ensure_cwd()
+
+        workdir = str(settings.get_settings().get("workdir_path") or "")
+        roots = [r for r in ([workdir] + cfg["allowed_external_roots"]) if r]
+        resolved = path_containment.resolve_within_roots(
+            requested, roots, default_root=workdir or None
+        )
+        await runtime.call_development_function(make_dir, resolved)
+        return resolved
+
 
 # ------------------------------------------------------------------
 # Internal
@@ -569,6 +594,11 @@ def _parse_patterns(raw, flags=0) -> list[re.Pattern]:
     return [re.compile(p.strip(), flags) for p in lines if p.strip()]
 
 
+def _parse_roots(raw) -> list[str]:
+    lines = [str(p) for p in raw] if isinstance(raw, list) else str(raw).splitlines()
+    return [p.strip() for p in lines if p.strip()]
+
+
 _TIMEOUT_KEYS = ("first_output_timeout", "between_output_timeout", "max_exec_timeout", "dialog_timeout")
 
 
@@ -592,6 +622,7 @@ def _get_config(agent) -> dict:
         "output_timeouts": _parse_timeouts(cfg, "output", (120, 60, 600, 5)),
         "prompt_patterns": _parse_patterns(cfg.get("prompt_patterns", "")),
         "dialog_patterns": _parse_patterns(cfg.get("dialog_patterns", ""), re.IGNORECASE),
+        "allowed_external_roots": _parse_roots(cfg.get("allowed_external_roots", "")),
     }
 
 

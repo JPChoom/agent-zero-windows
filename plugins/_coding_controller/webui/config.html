@@ -1,0 +1,100 @@
+<html>
+<head>
+    <title>Coding Controller</title>
+</head>
+
+<body>
+    <div x-data>
+        <template x-if="config">
+            <div>
+                <div class="section-title">Coding Controller</div>
+                <div class="section-description">
+                    Runs lint/build/test quality gates after code edits and blocks a false "done" response until they pass, with a bounded automatic repair loop. The gate stays off until you enable it below for this project/agent scope.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Enforce completion gate</div>
+                        <div class="field-description">
+                            When on, the agent cannot finish a turn that touched a detected project (.NET, npm, or PowerShell) until its gate commands pass, or the repair attempt budget below is exhausted.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.enforce_completion_gate" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Max repair attempts</div>
+                        <div class="field-description">Automatic repair attempts allowed per project before giving up and reporting the failure.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="0" x-model.number="config.max_repair_attempts" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Command timeout (seconds)</div>
+                        <div class="field-description">Hard cap on any single gate command (restore/build/test/lint).</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="1" x-model.number="config.command_timeout_seconds" />
+                    </div>
+                </div>
+
+                <div class="section-title">.NET (dotnet)</div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Restore before build</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.dotnet_restore_first" />
+                    </div>
+                </div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Build arguments</div>
+                        <div class="field-description">Appended after "dotnet". The detected .sln/.csproj is appended automatically.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.dotnet_build_args" />
+                    </div>
+                </div>
+
+                <div class="section-title">npm</div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Install before test</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.npm_install_first" />
+                    </div>
+                </div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Test arguments</div>
+                        <div class="field-description">Appended after "npm".</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.npm_test_args" />
+                    </div>
+                </div>
+
+                <div class="section-title">PowerShell</div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Enable PSScriptAnalyzer lint</div>
+                        <div class="field-description">Skipped automatically if PSScriptAnalyzer is not installed.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.powershell_lint_enabled" />
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</body>
+
+</html>

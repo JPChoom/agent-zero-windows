@@ -1,0 +1,167 @@
+"""Blocks a false "done" response until quality gates pass, with a bounded
+automatic repair loop.
+
+Fires on tool_execute_after for the "response" tool - the one tool that
+ever sets Response.break_loop=True (see tools/response.py), i.e. the single
+point where the agent's turn actually ends. Raising RepairableException
+here prevents that from happening: monologue()'s exception handler
+(extensions/python/_functions/agent/Agent/handle_exception/end/
+_50_handle_repairable_exception.py) turns it into a warning fed back into
+the agent's own history and the loop continues - no core agent.py change
+needed.
+
+Only blocks on NEW failures, not pre-existing ones (baseline tracking): the
+first time a project is seen failing, that failure set becomes its
+baseline rather than being blocked on - the agent shouldn't be trapped
+trying to fix problems it wasn't asked to fix and didn't introduce. Only
+failures beyond the baseline (a real regression) block completion. This is
+necessarily captured post-first-edit, not pre-task - see session_state.py.
+"""
+
+from helpers.extension import Extension
+from helpers.errors import RepairableException
+from plugins._coding_controller.helpers import diagnostics, gate_controller, session_state
+from plugins._coding_controller.helpers.config import get_config
+
+
+class CodingCompletionGate(Extension):
+
+    async def execute(self, response=None, tool_name: str = "", **kwargs):
+        if tool_name != "response" or not self.agent or response is None:
+            return
+
+        cfg = get_config(self.agent)
+        if not cfg["enforce_completion_gate"]:
+            return
+
+        dirty = session_state.get_dirty_roots(self.agent)
+        if not dirty:
+            return  # nothing changed since the last pass - nothing to gate
+
+        failures = []  # (root, result, new_findings, current_fingerprint)
+        baseline_captured = []  # (root, result)
+        for root, kind in dirty.items():
+            result = await gate_controller.run_gate_for_root(root, kind, cfg)
+
+            if result.get("skipped"):
+                # Tool not installed / no adapter - can't verify, don't block
+                # on it, but drop it so it isn't re-checked every turn either.
+                session_state.clear_dirty(self.agent, root)
+                continue
+
+            if result["passed"]:
+                # Confirmed clean: any future failure here is unambiguously
+                # new, not pre-existing.
+                session_state.set_baseline(self.agent, root, {})
+                session_state.clear_dirty(self.agent, root)
+                continue
+
+            current_fp = _fingerprint_result(result)
+            baseline_fp = session_state.get_baseline(self.agent, root)
+
+            if baseline_fp is None:
+                # First time this project has been seen failing - can't yet
+                # tell pre-existing from introduced, so don't block; this
+                # failure set becomes the reference point going forward.
+                session_state.set_baseline(self.agent, root, current_fp)
+                session_state.clear_dirty(self.agent, root)
+                baseline_captured.append((root, result))
+                continue
+
+            new_findings = _new_findings(current_fp, baseline_fp)
+            if not new_findings:
+                # Still failing, but nothing beyond what was already known -
+                # not something this task introduced.
+                session_state.clear_dirty(self.agent, root)
+                continue
+
+            failures.append((root, result, new_findings, current_fp))
+
+        max_attempts = cfg["max_repair_attempts"]
+        repair_instructions = []
+        gave_up = []
+        for root, result, new_findings, current_fp in failures:
+            attempts = session_state.increment_repair_attempts(self.agent, root)
+            if attempts > max_attempts:
+                gave_up.append((root, attempts))
+                session_state.clear_dirty(self.agent, root)
+                # Accept the current state as the new baseline so this same
+                # unresolved regression isn't flagged again forever.
+                session_state.set_baseline(self.agent, root, current_fp)
+            else:
+                repair_instructions.append(
+                    _format_failure(root, result, new_findings, attempts, max_attempts)
+                )
+
+        notes = [_format_baseline_captured(root, result) for root, result in baseline_captured]
+        notes += [_format_gave_up(root, attempts) for root, attempts in gave_up]
+        if notes:
+            response.message = f"{response.message}\n\n" + "\n\n".join(notes)
+            response.message = response.message.strip()
+
+        if repair_instructions:
+            raise RepairableException("\n\n".join(repair_instructions))
+
+
+def _fingerprint_result(result: dict) -> dict:
+    fingerprints = {}
+    for stage in result.get("stages", []):
+        if stage.get("passed"):
+            continue
+        fingerprints[stage["name"]] = diagnostics.fingerprint_stage(stage)
+    return fingerprints
+
+
+def _new_findings(current: dict, baseline: dict) -> dict:
+    new = {}
+    for stage_name, fingerprints in current.items():
+        prior = baseline.get(stage_name, frozenset())
+        diff = fingerprints - prior
+        if diff:
+            new[stage_name] = diff
+    return new
+
+
+def _format_failure(root: str, result: dict, new_findings: dict, attempt: int, max_attempts: int) -> str:
+    lines = [f"Quality gate found NEW failures for project at {root} (repair attempt {attempt}/{max_attempts})."]
+    for stage in result.get("stages", []):
+        stage_new = new_findings.get(stage["name"])
+        if not stage_new:
+            continue
+        lines.append(f"- stage '{stage['name']}' exit_code={stage['exit_code']} timed_out={stage['timed_out']}")
+        stage_diagnostics = stage.get("diagnostics") or []
+        shown = [
+            d for d in stage_diagnostics
+            if (d["file"], d["code"], d["message"]) in stage_new
+        ]
+        for diag in shown[:20]:
+            lines.append(
+                f"  {diag['severity']} {diag['code']} {diag['file']}({diag['line']},{diag['column']}): {diag['message']}"
+            )
+        if not shown:
+            tail = (stage.get("stderr_tail") or stage.get("stdout_tail") or "").strip()
+            if tail:
+                lines.append(f"  output tail:\n{tail[-1500:]}")
+    lines.append(
+        "This project already had other pre-existing failures that are not listed above and do not need "
+        "fixing here. Fix the smallest possible cause of the NEW failure(s) listed. Do not weaken tests, "
+        "disable warnings, or claim the task is done until this gate passes."
+    )
+    return "\n".join(lines)
+
+
+def _format_baseline_captured(root: str, result: dict) -> str:
+    failing_stages = ", ".join(s["name"] for s in result.get("stages", []) if not s.get("passed"))
+    return (
+        f"[coding_controller] Note: the quality gate for {root} already had failing stage(s) "
+        f"({failing_stages}) before this task's changes. That pre-existing state is now the baseline - "
+        "it will not block completion, but a NEW failure introduced beyond it will."
+    )
+
+
+def _format_gave_up(root: str, attempts: int) -> str:
+    return (
+        f"[coding_controller] The quality gate for {root} still has a new, unresolved failure after "
+        f"{attempts} automatic repair attempts. Reporting this as an unresolved failure rather than a "
+        "false success claim; manual review is likely needed."
+    )

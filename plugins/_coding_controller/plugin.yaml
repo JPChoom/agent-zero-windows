@@ -1,0 +1,9 @@
+name: _coding_controller
+title: Coding Controller
+description: Runs lint/build/test quality gates after code edits and blocks false "done" claims until they pass, with a bounded auto-repair loop. Off by default per project - enable it in this plugin's settings once you've verified the gate commands for that project.
+version: 1.0.0
+always_enabled: false
+settings_sections:
+  - agent
+per_project_config: true
+per_agent_config: true

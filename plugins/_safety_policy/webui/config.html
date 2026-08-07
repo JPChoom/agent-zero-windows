@@ -1,0 +1,43 @@
+<html>
+<head>
+    <title>Safety Policy</title>
+</head>
+
+<body>
+    <div x-data>
+        <template x-if="config">
+            <div>
+                <div class="section-title">Safety Policy</div>
+                <div class="section-description">
+                    Deterministically denies destructive/high-risk terminal commands (registry/persistence writes, credential dumping, obfuscated PowerShell, disk/reboot operations, firewall/Defender changes, privilege escalation, account changes) before they execute. This is defense-in-depth, not a sandbox - see this plugin's README for scope and limitations.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Enforce policy</div>
+                        <div class="field-description">
+                            When off, no commands are blocked by this plugin. The built-in deny categories cannot be individually disabled - use this switch to turn the whole gate off instead.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.enforce_policy" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Custom deny patterns</div>
+                        <div class="field-description">
+                            Extra regular expressions (one per line, case-insensitive) to deny beyond the built-in categories.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <textarea rows="4" x-model="config.custom_deny_patterns"></textarea>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</body>
+
+</html>

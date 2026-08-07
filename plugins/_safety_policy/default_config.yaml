@@ -1,0 +1,10 @@
+# Master switch. When false, no commands are blocked by this plugin.
+# Enabled by default: unlike the coding controller's completion gate, this
+# only ever intervenes on commands no legitimate coding workflow needs.
+enforce_policy: true
+
+# Extra deny patterns beyond the built-in categories (one regex per line,
+# case-insensitive). Use this to tighten the policy further; the built-in
+# categories below cannot be individually disabled here - use
+# enforce_policy: false to turn the whole gate off instead.
+custom_deny_patterns: ""
