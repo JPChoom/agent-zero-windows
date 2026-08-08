@@ -69,18 +69,36 @@ class PolicyDecision:
     pattern: str = ""
     matched_text: str = ""
     custom: bool = False
+    tier: str = "deny"  # "deny" or "approve" - meaningless when allowed=True
 
 
-def _match_builtin_categories(text: str) -> PolicyDecision:
+# Categories that require human approval rather than an unconditional deny,
+# by default. These are context-dependent enough that a blanket deny would
+# block real, occasionally-legitimate coding tasks (e.g. a project that
+# genuinely needs a local test-only firewall rule) - unlike the categories
+# left out of this set, which have no realistic legitimate use in a coding
+# workflow (credential dumping, obfuscated PowerShell, disk formatting,
+# registry/scheduled-task persistence) and stay hard-denied regardless of
+# configuration intent, since a rushed Approve click under time pressure is
+# a worse failure mode than just refusing outright. Overridable via the
+# approval_categories argument (sourced from plugin config).
+_APPROVAL_TIER_DEFAULT_CATEGORIES: frozenset[str] = frozenset(
+    {"firewall_and_defender", "privilege_escalation", "account_changes"}
+)
+
+
+def _match_builtin_categories(text: str, approval_categories) -> PolicyDecision:
     for category, patterns in _DENY_CATEGORIES.items():
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
+                tier = "approve" if category in approval_categories else "deny"
                 return PolicyDecision(
                     allowed=False,
                     category=category,
                     pattern=pattern,
                     matched_text=match.group(0),
+                    tier=tier,
                 )
     return PolicyDecision(allowed=True)
 
@@ -105,14 +123,24 @@ def _match_custom_patterns(text: str, custom_patterns: list[str] | None) -> Poli
     return PolicyDecision(allowed=True)
 
 
-def classify_command(code: str, custom_patterns: list[str] | None = None) -> PolicyDecision:
+def classify_command(
+    code: str,
+    custom_patterns: list[str] | None = None,
+    approval_categories=None,
+) -> PolicyDecision:
     """Classify a terminal command. Returns allowed=False on the first
-    matching deny pattern (built-in categories checked before custom ones)."""
+    matching deny pattern (built-in categories checked before custom
+    ones); `decision.tier` is "approve" for categories in
+    `approval_categories` (default: _APPROVAL_TIER_DEFAULT_CATEGORIES),
+    "deny" for everything else including all custom-pattern matches."""
     text = str(code or "")
     if not text.strip():
         return PolicyDecision(allowed=True)
 
-    decision = _match_builtin_categories(text)
+    categories = (
+        _APPROVAL_TIER_DEFAULT_CATEGORIES if approval_categories is None else approval_categories
+    )
+    decision = _match_builtin_categories(text, categories)
     if not decision.allowed:
         return decision
 
@@ -149,11 +177,16 @@ _SOURCE_LIST_ARG_DENY_PATTERN = re.compile(
 )
 
 
-def classify_source_code(code: str, custom_patterns: list[str] | None = None) -> PolicyDecision:
+def classify_source_code(
+    code: str,
+    custom_patterns: list[str] | None = None,
+    approval_categories=None,
+) -> PolicyDecision:
     """Classify Python/Node.js source for the same command-line intents
     classify_command() denies for the terminal runtime, when they appear
     inside an actual shell-out call (os.system, subprocess.*,
-    child_process.exec*/spawn*).
+    child_process.exec*/spawn*). `decision.tier` follows the same rule as
+    classify_command()'s.
 
     Deliberately does NOT scan the whole source with classify_command()'s
     patterns directly - several of them are common English/programming
@@ -173,8 +206,12 @@ def classify_source_code(code: str, custom_patterns: list[str] | None = None) ->
     if not text.strip():
         return PolicyDecision(allowed=True)
 
+    categories = (
+        _APPROVAL_TIER_DEFAULT_CATEGORIES if approval_categories is None else approval_categories
+    )
+
     for call_match in _SHELLOUT_CALL_PATTERN.finditer(text):
-        decision = _match_builtin_categories(call_match.group(1))
+        decision = _match_builtin_categories(call_match.group(1), categories)
         if not decision.allowed:
             return decision
 
@@ -185,6 +222,7 @@ def classify_source_code(code: str, custom_patterns: list[str] | None = None) ->
             category="shell_out_list_args",
             pattern=_SOURCE_LIST_ARG_DENY_PATTERN.pattern,
             matched_text=list_match.group(0),
+            tier="deny",
         )
 
     return _match_custom_patterns(text, custom_patterns)

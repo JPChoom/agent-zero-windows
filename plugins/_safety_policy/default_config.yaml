@@ -4,7 +4,25 @@
 enforce_policy: true
 
 # Extra deny patterns beyond the built-in categories (one regex per line,
-# case-insensitive). Use this to tighten the policy further; the built-in
-# categories below cannot be individually disabled here - use
-# enforce_policy: false to turn the whole gate off instead.
+# case-insensitive). Use this to tighten the policy further. Custom
+# patterns always hard-deny - the approval tier below only applies to the
+# built-in categories.
 custom_deny_patterns: ""
+
+# Per-category tier: "deny" (blocked outright) or "approve" (blocked until
+# the user clicks Approve in the chat, see approval_timeout_seconds).
+# Categories with no realistic legitimate use in a coding workflow default
+# to a hard deny; more context-dependent ones default to approve-required.
+tier_downloader: "deny"
+tier_persistence: "deny"
+tier_credential_access: "deny"
+tier_obfuscation: "deny"
+tier_destructive_delete: "deny"
+tier_disk_and_reboot: "deny"
+tier_firewall_and_defender: "approve"
+tier_privilege_escalation: "approve"
+tier_account_changes: "approve"
+
+# How long an approve-tier command waits for a human Approve/Deny click
+# before it's treated as denied.
+approval_timeout_seconds: 300

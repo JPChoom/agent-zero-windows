@@ -1,17 +1,30 @@
 # Safety Policy
 
-Deterministically denies destructive/high-risk terminal commands before
-`code_execution_tool` runs them, regardless of the agent's stated intent.
+Deterministically denies or holds-for-approval destructive/high-risk
+terminal commands before `code_execution_tool` runs them, regardless of
+the agent's stated intent.
 
 ## How it works
 
 `tool_execute_before` fires with the literal command text before
 `code_execution_tool.execute()` does anything (before multiline grouping,
 before secrets are substituted in). If the command matches one of the
-built-in deny categories (or a custom pattern you've added), it's rejected
-with a `RepairableException` - the tool never runs, and the agent gets a
-warning explaining why instead of the command executing. Every denial is
-logged to `usr/safety_policy_audit.jsonl`.
+built-in deny categories (or a custom pattern you've added), the outcome
+depends on that category's configured tier:
+
+- **Deny** (the default for most categories): rejected immediately with a
+  `RepairableException` - the tool never runs, the agent gets a warning
+  explaining why instead of the command executing.
+- **Require approval** (the default for `firewall_and_defender`,
+  `privilege_escalation`, `account_changes`): the tool call is held, a chat
+  message appears with Approve/Deny buttons, and the command only runs if
+  you click Approve within `approval_timeout_seconds` (default 300s) - an
+  unanswered request, a Deny click, or the timeout all deny the command the
+  same way a hard deny would. `custom_deny_patterns` always hard-deny; the
+  approval tier only applies to the built-in categories.
+
+Every denial, pending approval, and resolved approval/deny is logged to
+`usr/safety_policy_audit.jsonl`.
 
 ## Enabled by default
 
@@ -21,7 +34,8 @@ credential dumping, obfuscated PowerShell, destructive deletes outside the
 workdir, disk/reboot operations, firewall/Defender changes, privilege
 escalation, and account changes. Turn it off entirely via `enforce_policy`
 in this plugin's settings if needed; add more patterns via
-`custom_deny_patterns`.
+`custom_deny_patterns`; adjust which categories deny vs. require approval,
+and the approval timeout, via this plugin's settings.
 
 ## Scope and limitations - read before relying on this
 
@@ -52,25 +66,29 @@ helper function, base64-decoding it first. Policing arbitrary Python/JS
 for equivalent intent in full generality is a much larger undertaking than
 pattern-matching command lines, and out of scope for this pass.
 
-**No approval flow.** The hand-off vision for this kind of gate includes a
-three-way ALLOW / REQUIRE_APPROVAL / DENY decision. This fork has no
-primitive for "pause this specific action and wait for an explicit human
-approve/deny reply" (confirmed - only a coarse, global `/pause`/`/resume`
-exists). So this plugin is two-way: ALLOW or DENY. Anything not on the
-deny list is allowed and unaudited (only denials are logged).
+**The approval flow is a same-process wait, not a durable job queue.** A
+pending approval is an in-memory `asyncio.Future`
+(`helpers/approval_registry.py`) - it does not survive an app restart.
+Timeout, deny, and an unanswered request are all indistinguishable to the
+agent (all raise the same kind of `RepairableException`); only the audit
+log and the chat UI distinguish which one actually happened.
 
 **`_coding_controller`'s adapters are not affected.** They run
 `dotnet build`/`npm test` via direct subprocess, not through
 `code_execution_tool`, so they never pass through this gate.
 
+**Anything not on the deny/approval list is allowed and unaudited** - only
+denials, pending approvals, and resolved approval/deny decisions are
+logged, not routine allowed commands.
+
 ## Not yet implemented
 
 Real PowerShell/Python/JS AST-based analysis (the hand-off's own
 recommended long-term approach - regex is explicitly called out there as
-insufficient); an approval-required tier; audited/logged ALLOW decisions,
-not just denials; tamper-evident/hash-chained audit log; catching
-native-API persistence/destruction in `python`/`nodejs` that never shells
-out (`winreg`, `fs.rmSync`, `ctypes`, ...); a restricted execution broker
+insufficient); audited/logged ALLOW decisions, not just denials/approvals;
+tamper-evident/hash-chained audit log; catching native-API
+persistence/destruction in `python`/`nodejs` that never shells out
+(`winreg`, `fs.rmSync`, `ctypes`, ...); a restricted execution broker
 running commands under a reduced-privilege token (this is inherently an
 OS-level component, not something a Python plugin can provide - the
 hand-off itself suggests a separate C#/.NET process for this).

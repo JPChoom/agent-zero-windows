@@ -28,11 +28,137 @@
                     <div class="field-label">
                         <div class="field-title">Custom deny patterns</div>
                         <div class="field-description">
-                            Extra regular expressions (one per line, case-insensitive) to deny beyond the built-in categories.
+                            Extra regular expressions (one per line, case-insensitive) to deny beyond the built-in categories. Custom patterns always hard-deny - the approval tier below only applies to the built-in categories.
                         </div>
                     </div>
                     <div class="field-control">
                         <textarea rows="4" x-model="config.custom_deny_patterns"></textarea>
+                    </div>
+                </div>
+
+                <!-- Approval tier -->
+                <div class="section-title">Category Tiers</div>
+                <div class="section-description">
+                    Each category is either denied outright, or held for your Approve/Deny decision in chat. Categories with no realistic legitimate use in a coding workflow default to a hard deny; more context-dependent ones default to approval-required.
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Downloader (curl/wget/Invoke-WebRequest/BITS)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_downloader">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Persistence (registry Run keys, scheduled tasks)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_persistence">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Credential access (mimikatz, procdump)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_credential_access">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Obfuscation (encoded/expression commands)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_obfuscation">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Destructive delete (Windows/AppData paths)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_destructive_delete">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Disk & reboot (format, shutdown, vssadmin delete)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_disk_and_reboot">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Firewall & Defender changes</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_firewall_and_defender">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Privilege escalation (runas)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_privilege_escalation">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Account changes (net user/localgroup)</div>
+                    </div>
+                    <div class="field-control">
+                        <select x-model="config.tier_account_changes">
+                            <option value="deny">Deny</option>
+                            <option value="approve">Require approval</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Approval timeout (seconds)</div>
+                        <div class="field-description">
+                            How long an approval-required command waits for your Approve/Deny click before it's treated as denied.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="number" min="1" x-model.number="config.approval_timeout_seconds" />
                     </div>
                 </div>
             </div>
