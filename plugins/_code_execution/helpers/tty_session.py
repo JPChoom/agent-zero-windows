@@ -1,4 +1,4 @@
-import asyncio, os, sys, platform, errno, signal
+import asyncio, os, sys, platform, errno, signal, threading, time
 
 _IS_WIN = platform.system() == "Windows"
 if _IS_WIN:
@@ -350,21 +350,46 @@ async def _spawn_winpty(cmd, cwd, env, echo):
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader()
 
-    async def _on_data():
-        while child.isalive():
+    # winpty's read() has no timeout - it can block forever waiting for data
+    # (this is normal for a persistent shell between commands, not a bug by
+    # itself). Running it via loop.run_in_executor() uses the loop's default
+    # ThreadPoolExecutor, whose worker threads are NOT daemon threads -
+    # Python's own atexit hook joins them before the interpreter can exit,
+    # so a read that's still blocked when the session is torn down hangs
+    # the whole process, not just this session. A dedicated daemon thread
+    # doesn't have that problem: if it's still stuck in a blocking read when
+    # the process exits, the OS reclaims it along with everything else
+    # instead of the interpreter waiting on it.
+    stop_reading = threading.Event()
+
+    def _safe_call_soon(fn, *args):
+        # The event loop may already be closed by the time this fires - e.g.
+        # the thread was blocked in child.read() when the session closed and
+        # only wakes up afterwards. That's expected, not an error.
+        try:
+            loop.call_soon_threadsafe(fn, *args)
+        except RuntimeError:
+            pass
+
+    def _reader_thread():
+        while not stop_reading.is_set():
             try:
-                # Run blocking read in executor to not block event loop
-                data = await loop.run_in_executor(None, child.read, 1 << 16)
-                if data:
-                    reader.feed_data(data.encode('utf-8') if isinstance(data, str) else data)
+                data = child.read(1 << 16)
             except EOFError:
                 break
             except Exception:
-                await asyncio.sleep(0.01)
-        reader.feed_eof()
+                if stop_reading.is_set():
+                    break
+                time.sleep(0.01)
+                continue
+            if data:
+                encoded = data.encode("utf-8") if isinstance(data, str) else data
+                _safe_call_soon(reader.feed_data, encoded)
+            elif not child.isalive():
+                break
+        _safe_call_soon(reader.feed_eof)
 
-    # Start pumping output in background
-    asyncio.create_task(_on_data())
+    threading.Thread(target=_reader_thread, daemon=True, name="tty-reader").start()
 
     class _Stdin:
         def write(self, d):
@@ -393,10 +418,12 @@ async def _spawn_winpty(cmd, cwd, env, echo):
             return 0
 
         def terminate(self):
+            stop_reading.set()
             if child.isalive():
                 child.terminate()
 
         def kill(self):
+            stop_reading.set()
             if child.isalive():
                 child.kill()
 

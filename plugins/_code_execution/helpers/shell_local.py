@@ -1,4 +1,5 @@
-﻿import os
+﻿import asyncio
+import os
 import platform
 import select
 import subprocess
@@ -45,6 +46,28 @@ class LocalInteractiveSession:
             env=disable_pagers_in_env(),
         )
         await self.session.start()
+        if runtime.is_windows():
+            # PSReadLine (PowerShell's interactive line editor) redraws the
+            # input buffer with cursor-repositioning escape sequences as it
+            # applies syntax highlighting. Those redraws get stripped as
+            # generic ANSI codes without being interpreted (no real terminal
+            # emulation here), so each redraw's fragment just concatenates
+            # onto the last - producing a noisy, growing "d, do, dot,
+            # dotn..." echo in captured output. Commands here always arrive
+            # as complete strings, never typed interactively, so PSReadLine
+            # has no upside for this session; removing it drops PowerShell
+            # back to its simpler legacy line input, whose output our
+            # cleanup already handles correctly.
+            await self.session.sendline(
+                "Remove-Module -Name PSReadLine -ErrorAction SilentlyContinue"
+            )
+            # PSReadLine's removal needs real wall-clock settle time that
+            # isn't reflected in the terminal's visible output at all: a
+            # command written too soon after (even once the new prompt has
+            # already reappeared on screen) can be silently dropped and
+            # never reach PowerShell. Confirmed empirically against raw
+            # winpty I/O - 1s is unreliable, 1.5s+ is consistently safe.
+            await asyncio.sleep(2.5)
         await self.session.read_full_until_idle(idle_timeout=1, total_timeout=1)
 
     async def close(self):

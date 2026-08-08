@@ -254,8 +254,16 @@ class SSHInteractiveSession:
         return data
 
 def clean_string(input_string):
-    # Remove ANSI escape codes
-    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    # Remove ANSI escape codes. OSC sequences (ESC ] ... BEL-or-ST, used for
+    # window-title/progress-state reporting) are matched before the generic
+    # Fe-escape branch: that branch alone would match just "ESC ]" (']' falls
+    # in its \-_ range) and leave the OSC payload/terminator behind as plain
+    # text - e.g. a PowerShell progress-state sequence leaking through as a
+    # literal "9;4;3;" in captured output.
+    ansi_escape = re.compile(
+        r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)"
+        r"|\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
+    )
     cleaned = ansi_escape.sub("", input_string)
 
     # remove null bytes
