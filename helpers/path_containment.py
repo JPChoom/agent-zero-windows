@@ -50,3 +50,30 @@ def resolve_within_roots(
     raise PathNotAllowedError(
         f"path '{path}' is outside the allowed working directories ({allowed})"
     )
+
+
+def resolve_with_tier(
+    path: str, tier: str, roots: list[str], *, default_root: str | None = None
+) -> str:
+    """Like `resolve_within_roots`, but honors a tiered-access setting.
+
+    `tier == "unrestricted"` bypasses containment entirely - the path is
+    still expanded/resolved (so relative paths and `~` work the same way),
+    just not checked against `roots`. Any other tier delegates unchanged to
+    `resolve_within_roots`, which is also the fail-safe default: an unknown
+    or unset tier value should behave like the strictest setting, not the
+    most permissive one.
+    """
+    if tier == "unrestricted":
+        expanded = os.path.expanduser(str(path or ""))
+        candidate = Path(expanded)
+        if not candidate.is_absolute():
+            base = (
+                Path(default_root).resolve(strict=False)
+                if default_root
+                else Path(roots[0]).resolve(strict=False) if roots else Path.cwd()
+            )
+            candidate = base / candidate
+        return str(candidate.resolve(strict=False))
+
+    return resolve_within_roots(path, roots, default_root=default_root)

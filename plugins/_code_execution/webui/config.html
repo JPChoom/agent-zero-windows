@@ -1,6 +1,9 @@
 <html>
 <head>
     <title>Code Execution</title>
+    <script type="module">
+        import { store } from "/plugins/_code_execution/webui/access-tier-store.js";
+    </script>
 </head>
 
 <body>
@@ -197,23 +200,57 @@
                     </div>
                 </div>
 
-                <!-- External project roots -->
-                <div class="section-title">Allowed Project Folders</div>
+                <!-- Filesystem access tier -->
+                <div class="section-title">Filesystem Access</div>
                 <div class="section-description">
-                    By default the terminal only starts sessions inside the configured working directory. List extra folders here (one absolute path per line, e.g. <code>C:\Projects\MyApp</code>) to let the agent run commands like <code>dotnet build</code> or <code>npm test</code> directly against those projects. Anything outside this list is rejected.
+                    Controls where the terminal and text editor tools may read/write beyond the default working directory. This applies to both the terminal's "cwd" argument and direct file reads/edits, so an agent that can run a command against a project can also fix the files that command depends on.
                 </div>
 
                 <div class="field">
                     <div class="field-label">
-                        <div class="field-title">Allowed external roots</div>
+                        <div class="field-title">Access tier</div>
                         <div class="field-description">
-                            One absolute folder path per line. The agent selects one via the "cwd" tool argument.
+                            <b>Working directory only</b>: the default, most restrictive.
+                            <b>Allowed folders</b>: working directory plus specific folders you list below.
+                            <b>Unrestricted</b>: any folder on this PC.
                         </div>
                     </div>
                     <div class="field-control">
-                        <textarea rows="4" x-model="config.allowed_external_roots" placeholder="C:\Projects\MyApp"></textarea>
+                        <select x-model="config.access_tier">
+                            <option value="workdir_only">Working directory only</option>
+                            <option value="allowlist">Working directory + allowed folders</option>
+                            <option value="unrestricted">Unrestricted (any folder on this PC)</option>
+                        </select>
                     </div>
                 </div>
+
+                <template x-if="config.access_tier === 'unrestricted'">
+                    <div class="field-description" style="color: var(--color-accent, #e05252); font-weight: 500;">
+                        The agent can read and write any file it can reach on this PC, not just this project. Only use this if you understand and accept that risk.
+                    </div>
+                </template>
+
+                <template x-if="config.access_tier === 'allowlist'">
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Allowed external roots</div>
+                            <div class="field-description">
+                                One absolute folder path per line, e.g. <code>C:\Projects\MyApp</code>. The agent selects one via the terminal's "cwd" tool argument; text_editor reads/writes follow the same list.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <textarea rows="4" x-model="config.allowed_external_roots" placeholder="C:\Projects\MyApp"></textarea>
+                            <button
+                                type="button"
+                                class="btn btn-secondary"
+                                style="margin-top: 6px;"
+                                @click="$store.codeExecutionAccessTier.browseForExternalRoot(config)"
+                            >
+                                Browse...
+                            </button>
+                        </div>
+                    </div>
+                </template>
             </div>
         </template>
     </div>

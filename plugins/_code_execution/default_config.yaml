@@ -39,9 +39,18 @@ dialog_patterns: |
   :\s*$
   \?\s*$
 
+# Filesystem access tier - controls where the terminal/text_editor may
+# read/write beyond the default working directory:
+#   workdir_only  - default working directory only (allowed_external_roots
+#                    below is ignored even if populated)
+#   allowlist     - working directory + allowed_external_roots below
+#   unrestricted  - anywhere on the machine (no containment check at all)
+# An unrecognized value falls back to workdir_only.
+access_tier: "workdir_only"
+
 # Extra project folders the terminal is allowed to start a session in,
 # besides the default working directory (one absolute path per line).
-# Example: C:\Projects\MyApp
+# Only applies when access_tier is "allowlist". Example: C:\Projects\MyApp
 # The agent requests one of these via the "cwd" tool arg; anything outside
 # this list (and outside the default working directory) is rejected.
 allowed_external_roots: ""

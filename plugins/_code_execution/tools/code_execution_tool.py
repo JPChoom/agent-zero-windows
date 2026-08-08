@@ -540,19 +540,25 @@ class CodeExecution(Tool):
         """Resolve the cwd for a new session.
 
         Without an explicit `cwd` tool arg, behavior is unchanged (active
-        project folder, else the default working directory). With one, it
-        must resolve inside the default working directory or one of the
-        configured allowed_external_roots - otherwise the session is
-        refused with a PathNotAllowedError.
+        project folder, else the default working directory). With one,
+        where it's allowed to resolve depends on the configured
+        access_tier: "workdir_only" restricts to the default working
+        directory (ignoring allowed_external_roots even if populated -
+        the tier gates it, not just adds to it), "allowlist" is today's
+        behavior (working directory + allowed_external_roots), and
+        "unrestricted" allows any path on the machine. Anything outside
+        what the active tier allows is refused with a PathNotAllowedError.
         """
         requested = str(getattr(self, "_requested_cwd", "") or "").strip()
         if not requested:
             return await self.ensure_cwd()
 
         workdir = str(settings.get_settings().get("workdir_path") or "")
-        roots = [r for r in ([workdir] + cfg["allowed_external_roots"]) if r]
-        resolved = path_containment.resolve_within_roots(
-            requested, roots, default_root=workdir or None
+        tier = cfg["access_tier"]
+        extra_roots = cfg["allowed_external_roots"] if tier == "allowlist" else []
+        roots = [r for r in ([workdir] + extra_roots) if r]
+        resolved = path_containment.resolve_with_tier(
+            requested, tier, roots, default_root=workdir or None
         )
         await runtime.call_development_function(make_dir, resolved)
         return resolved
@@ -599,6 +605,17 @@ def _parse_roots(raw) -> list[str]:
     return [p.strip() for p in lines if p.strip()]
 
 
+_ACCESS_TIERS = ("workdir_only", "allowlist", "unrestricted")
+
+
+def _resolve_access_tier(raw) -> str:
+    # An unrecognized/unset value falls back to the strictest tier, not the
+    # most permissive - a typo or a stale/blank setting must never silently
+    # widen filesystem access.
+    value = str(raw or "").strip().lower()
+    return value if value in _ACCESS_TIERS else "workdir_only"
+
+
 _TIMEOUT_KEYS = ("first_output_timeout", "between_output_timeout", "max_exec_timeout", "dialog_timeout")
 
 
@@ -623,6 +640,7 @@ def _get_config(agent) -> dict:
         "prompt_patterns": _parse_patterns(cfg.get("prompt_patterns", "")),
         "dialog_patterns": _parse_patterns(cfg.get("dialog_patterns", ""), re.IGNORECASE),
         "allowed_external_roots": _parse_roots(cfg.get("allowed_external_roots", "")),
+        "access_tier": _resolve_access_tier(cfg.get("access_tier", "workdir_only")),
     }
 
 

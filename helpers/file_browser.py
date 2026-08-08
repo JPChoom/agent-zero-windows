@@ -341,3 +341,74 @@ class FileBrowser:
         return 'unknown'
 
 
+def list_directory_absolute(path: str = "") -> Dict:
+    """List a directory's subfolders by absolute path, with no workdir
+    containment check.
+
+    For user-initiated (Settings-page) folder browsing outside the
+    workdir - e.g. picking an external project root for the tiered
+    filesystem-access setting. This is a deliberately separate, folder-
+    only, unrestricted function rather than a mode on `FileBrowser`
+    (whose whole model is paths relative to a single `base_dir`, which
+    doesn't fit "start from any drive root and go anywhere"). Not wired
+    into any agent-facing endpoint - see `get_work_dir_files.py`'s API
+    for the workdir-restricted equivalent the agent actually uses.
+
+    An empty path lists available drive roots on Windows (there is no
+    single filesystem root to start from), or "/" on POSIX.
+    """
+    path = str(path or "").strip()
+    if not path:
+        if os.name == "nt":
+            import string
+
+            drives = [
+                f"{letter}:\\"
+                for letter in string.ascii_uppercase
+                if os.path.exists(f"{letter}:\\")
+            ]
+            entries = [
+                {"name": drive, "path": drive, "type": "folder", "size": 0, "is_dir": True}
+                for drive in drives
+            ]
+            return {"entries": entries, "current_path": "", "parent_path": ""}
+        path = "/"
+
+    try:
+        full_path = Path(path).resolve(strict=False)
+        if not full_path.exists():
+            raise FileNotFoundError("Directory not found")
+        if not full_path.is_dir():
+            raise NotADirectoryError("Path is not a directory")
+
+        folders: List[Dict[str, Any]] = []
+        with os.scandir(full_path) as iterator:
+            for entry in iterator:
+                try:
+                    if not entry.is_dir(follow_symlinks=True):
+                        continue  # folder picker only needs directories
+                except OSError:
+                    continue
+                folders.append(
+                    {
+                        "name": entry.name,
+                        "path": str(Path(entry.path).resolve(strict=False)),
+                        "type": "folder",
+                        "size": 0,
+                        "is_dir": True,
+                    }
+                )
+        folders.sort(key=lambda item: item["name"].lower())
+
+        parent = str(full_path.parent)
+        # Going up from a drive root ("C:\") would otherwise return itself
+        # as its own parent - route back to the drive list instead.
+        if parent.rstrip("\\/") == str(full_path).rstrip("\\/"):
+            parent = ""
+
+        return {"entries": folders, "current_path": str(full_path), "parent_path": parent}
+    except Exception as e:
+        PrintStyle.error(f"Error reading directory: {e}")
+        return {"entries": [], "current_path": path, "parent_path": "", "error": str(e)}
+
+

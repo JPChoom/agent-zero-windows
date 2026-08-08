@@ -1,6 +1,7 @@
 """Tests for _text_editor's path containment (file_ops.confine_to_workdir):
 workdir-only confinement, traversal/absolute-path rejection, and the
-allowed_external_roots integration with _code_execution's config.
+access_tier/allowed_external_roots integration with _code_execution's
+config.
 
 This containment was previously only verified through manual live-UI
 testing (see git history) - this file closes that gap with an automated
@@ -27,10 +28,14 @@ def _use_tmp_path_as_workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 @pytest.fixture(autouse=True)
 def _no_external_roots_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Most tests shouldn't need _code_execution's config at all; default
-    it to empty so a missing/misconfigured plugin config doesn't leak
-    into unrelated test outcomes. Tests that need external roots override
-    this explicitly with their own mock.patch."""
-    monkeypatch.setattr(plugins, "get_plugin_config", lambda *a, **k: {"allowed_external_roots": ""})
+    it to the strictest tier so a missing/misconfigured plugin config
+    doesn't leak into unrelated test outcomes. Tests that need external
+    roots override this explicitly with their own mock.patch."""
+    monkeypatch.setattr(
+        plugins,
+        "get_plugin_config",
+        lambda *a, **k: {"access_tier": "workdir_only", "allowed_external_roots": ""},
+    )
 
 
 def test_relative_path_resolves_inside_workdir(tmp_path: Path):
@@ -77,7 +82,9 @@ def test_external_root_configured_allows_access(tmp_path_factory, monkeypatch: p
     target.write_text("using System;\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        plugins, "get_plugin_config", lambda *a, **k: {"allowed_external_roots": str(external)}
+        plugins,
+        "get_plugin_config",
+        lambda *a, **k: {"access_tier": "allowlist", "allowed_external_roots": str(external)},
     )
 
     result = file_ops.read_file(str(target))
@@ -91,7 +98,32 @@ def test_external_root_not_configured_still_rejected(tmp_path_factory, monkeypat
     target = external / "Program.cs"
     target.write_text("using System;\n", encoding="utf-8")
 
-    monkeypatch.setattr(plugins, "get_plugin_config", lambda *a, **k: {"allowed_external_roots": ""})
+    monkeypatch.setattr(
+        plugins,
+        "get_plugin_config",
+        lambda *a, **k: {"access_tier": "allowlist", "allowed_external_roots": ""},
+    )
+
+    result = file_ops.read_file(str(target))
+
+    assert result["error"]
+    assert "outside the allowed working director" in result["error"]
+
+
+def test_allowlist_configured_but_tier_still_workdir_only_is_rejected(
+    tmp_path_factory, monkeypatch: pytest.MonkeyPatch
+):
+    """The tier gates allowed_external_roots, it doesn't just add to it -
+    a populated allowlist has no effect while the tier is workdir_only."""
+    external = tmp_path_factory.mktemp("SafetyTestApp")
+    target = external / "Program.cs"
+    target.write_text("using System;\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        plugins,
+        "get_plugin_config",
+        lambda *a, **k: {"access_tier": "workdir_only", "allowed_external_roots": str(external)},
+    )
 
     result = file_ops.read_file(str(target))
 
@@ -105,7 +137,9 @@ def test_write_file_succeeds_inside_configured_external_root(tmp_path_factory, m
     target.write_text("using System;\n", encoding="utf-8")
 
     monkeypatch.setattr(
-        plugins, "get_plugin_config", lambda *a, **k: {"allowed_external_roots": str(external)}
+        plugins,
+        "get_plugin_config",
+        lambda *a, **k: {"access_tier": "allowlist", "allowed_external_roots": str(external)},
     )
 
     result = file_ops.write_file(str(target), "using System;\nConsole.WriteLine(1);\n")
@@ -123,7 +157,7 @@ def test_multiple_external_roots_one_line_each(tmp_path_factory, monkeypatch: py
     monkeypatch.setattr(
         plugins,
         "get_plugin_config",
-        lambda *a, **k: {"allowed_external_roots": f"{root_a}\n{root_b}"},
+        lambda *a, **k: {"access_tier": "allowlist", "allowed_external_roots": f"{root_a}\n{root_b}"},
     )
 
     result_a = file_ops.read_file(str(root_a / "x.txt"))
@@ -131,6 +165,41 @@ def test_multiple_external_roots_one_line_each(tmp_path_factory, monkeypatch: py
 
     assert not result_a["error"]
     assert not result_b["error"]
+
+
+def test_unrestricted_tier_allows_any_path(tmp_path_factory, monkeypatch: pytest.MonkeyPatch):
+    anywhere = tmp_path_factory.mktemp("AnywhereOnDisk")
+    target = anywhere / "notes.txt"
+    target.write_text("hello", encoding="utf-8")
+
+    monkeypatch.setattr(
+        plugins,
+        "get_plugin_config",
+        lambda *a, **k: {"access_tier": "unrestricted", "allowed_external_roots": ""},
+    )
+
+    result = file_ops.read_file(str(target))
+
+    assert not result["error"]
+    assert "hello" in result["content"]
+
+
+def test_unrecognized_tier_value_falls_back_to_workdir_only(
+    tmp_path_factory, monkeypatch: pytest.MonkeyPatch
+):
+    external = tmp_path_factory.mktemp("SomeApp")
+    target = external / "x.txt"
+    target.write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(
+        plugins,
+        "get_plugin_config",
+        lambda *a, **k: {"access_tier": "not-a-real-tier", "allowed_external_roots": str(external)},
+    )
+
+    result = file_ops.read_file(str(target))
+
+    assert result["error"]
 
 
 def test_get_plugin_config_failure_falls_back_to_workdir_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

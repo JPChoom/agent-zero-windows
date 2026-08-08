@@ -1,0 +1,126 @@
+<html>
+<head>
+  <title>Select Folder</title>
+  <script type="module">
+    import { store } from "/components/modals/folder-picker/folder-picker-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.folderPicker">
+      <div class="folder-picker-root">
+        <div class="folder-picker-path-row">
+          <button
+            class="btn-icon-action"
+            title="Up one level"
+            @click="$store.folderPicker.navigateUp()"
+            :disabled="$store.folderPicker.isLoading || !$store.folderPicker.currentPath"
+          >
+            <span class="material-symbols-outlined">arrow_upward</span>
+          </button>
+          <span
+            class="folder-picker-current-path"
+            x-text="$store.folderPicker.currentPath || 'Select a drive'"
+          ></span>
+        </div>
+
+        <template x-if="$store.folderPicker.error">
+          <p class="folder-picker-error" x-text="$store.folderPicker.error"></p>
+        </template>
+
+        <div class="folder-picker-list" @click="$store.folderPicker.onEntryClick($event)">
+          <template x-if="$store.folderPicker.isLoading">
+            <p class="folder-picker-hint">Loading...</p>
+          </template>
+          <template x-if="!$store.folderPicker.isLoading && !$store.folderPicker.entries.length && !$store.folderPicker.error">
+            <p class="folder-picker-hint">No subfolders here.</p>
+          </template>
+          <div x-html="$store.folderPicker.entriesHtml"></div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <template x-if="$store.folderPicker">
+    <div class="modal-footer" data-modal-footer>
+      <button
+        class="btn btn-ok"
+        @click="$store.folderPicker.confirm()"
+        :disabled="!$store.folderPicker.canConfirm()"
+      >
+        Select This Folder
+      </button>
+      <button class="btn btn-cancel" @click="$store.folderPicker.cancel()">Cancel</button>
+    </div>
+  </template>
+
+  <style>
+    .folder-picker-root {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-sm);
+      width: 100%;
+      margin: 1rem;
+    }
+
+    .folder-picker-path-row {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .folder-picker-current-path {
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: var(--color-text);
+      word-break: break-all;
+    }
+
+    .folder-picker-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 320px;
+      overflow-y: auto;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 4px;
+    }
+
+    .folder-picker-entry {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      padding: 8px 10px;
+      border: none;
+      background: transparent;
+      color: var(--color-text);
+      text-align: left;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .folder-picker-entry:hover:not(:disabled) {
+      background: var(--color-background-hover);
+    }
+
+    .folder-picker-entry:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .folder-picker-hint {
+      margin: 0.5rem;
+      color: var(--color-text-secondary);
+      font-size: 0.85rem;
+    }
+
+    .folder-picker-error {
+      margin: 0;
+      color: var(--color-accent);
+      font-weight: 500;
+      font-size: 0.85rem;
+    }
+  </style>
+</body>
+</html>

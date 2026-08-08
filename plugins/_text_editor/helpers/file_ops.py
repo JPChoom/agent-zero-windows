@@ -44,8 +44,9 @@ def get_workdir_root() -> Path:
     return Path(settings.get_settings()["workdir_path"]).resolve(strict=False)
 
 
-def _get_external_roots() -> list[str]:
-    """_code_execution's allowed_external_roots, global scope only.
+def _get_access_config() -> tuple[str, list[str]]:
+    """_code_execution's access_tier + allowed_external_roots, global scope
+    only.
 
     This module is deliberately agent/tool-agnostic (see module
     docstring), so it has no agent/project context to resolve a
@@ -59,28 +60,40 @@ def _get_external_roots() -> list[str]:
 
         cfg = plugins_helper.get_plugin_config("_code_execution") or {}
     except Exception:
-        return []
+        return "workdir_only", []
+    tier = str(cfg.get("access_tier", "workdir_only") or "workdir_only").strip().lower()
+    if tier not in ("workdir_only", "allowlist", "unrestricted"):
+        tier = "workdir_only"
     raw = cfg.get("allowed_external_roots", "")
     lines = raw.splitlines() if isinstance(raw, str) else (raw or [])
-    return [str(line).strip() for line in lines if str(line or "").strip()]
+    roots = [str(line).strip() for line in lines if str(line or "").strip()]
+    return tier, roots
 
 
 def confine_to_workdir(path: str) -> str:
-    """Resolve `path` and enforce containment to the workdir root plus any
-    _code_execution allowed_external_roots.
+    """Resolve `path` and enforce containment according to
+    _code_execution's access_tier: workdir root only ("workdir_only",
+    the default), workdir root plus allowed_external_roots ("allowlist"),
+    or no containment at all ("unrestricted") - kept in lockstep with
+    _code_execution's own cwd resolution so an agent that can `cd` a
+    terminal into a folder can also read/patch the files in it.
 
     Relative paths resolve against the workdir root specifically (not the
     process cwd, and not any external root). Absolute paths are allowed
     only if they resolve (after following symlinks/junctions) inside one
-    of the allowed roots. Returns the resolved absolute path as a string;
-    raises PathNotAllowedError otherwise.
+    of the allowed roots, unless the tier is unrestricted. Returns the
+    resolved absolute path as a string; raises PathNotAllowedError
+    otherwise.
     """
     from helpers import path_containment
 
     workdir = get_workdir_root()
-    roots = [str(workdir)] + _get_external_roots()
+    tier, external_roots = _get_access_config()
+    roots = [str(workdir)] + (external_roots if tier == "allowlist" else [])
     try:
-        return path_containment.resolve_within_roots(path, roots, default_root=str(workdir))
+        return path_containment.resolve_with_tier(
+            path, tier, roots, default_root=str(workdir)
+        )
     except path_containment.PathNotAllowedError as exc:
         raise PathNotAllowedError(str(exc)) from exc
 
