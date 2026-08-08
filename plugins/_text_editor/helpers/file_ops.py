@@ -22,15 +22,20 @@ _BINARY_PEEK = 8192
 # Path containment
 #
 # All text_editor file access is confined to the configured workdir root
-# (settings["workdir_path"], defaults to usr/workdir). This mirrors the
-# containment already used by helpers/file_browser.py, but with a real
-# path-boundary check (Path.relative_to) instead of a string-prefix
-# comparison, and it also resolves symlinks/junctions before the boundary
-# check so an escape can't hide behind a reparse point.
+# (settings["workdir_path"], defaults to usr/workdir) plus any external
+# project folders _code_execution's terminal is also allowed into
+# (allowed_external_roots) - otherwise the agent could `dotnet build` an
+# external project via the terminal's "cwd" arg but never be able to
+# actually read/patch the files that build depends on, which defeats the
+# point of allowing that project at all. Uses the same boundary-check
+# logic (helpers/path_containment.py) as _code_execution's cwd validation,
+# with a real path-boundary check (Path.relative_to) instead of a
+# string-prefix comparison, resolving symlinks/junctions before the
+# boundary check so an escape can't hide behind a reparse point.
 # ------------------------------------------------------------------
 
 class PathNotAllowedError(PermissionError):
-    """Raised when a path resolves outside the allowed workdir root."""
+    """Raised when a path resolves outside every allowed root."""
 
 
 def get_workdir_root() -> Path:
@@ -39,27 +44,45 @@ def get_workdir_root() -> Path:
     return Path(settings.get_settings()["workdir_path"]).resolve(strict=False)
 
 
-def confine_to_workdir(path: str) -> str:
-    """Resolve `path` against the workdir root and enforce containment.
+def _get_external_roots() -> list[str]:
+    """_code_execution's allowed_external_roots, global scope only.
 
-    Relative paths are resolved against the workdir root (not the process
-    cwd). Absolute paths are allowed only if they resolve (after following
-    symlinks/junctions) inside the workdir root. Returns the resolved
-    absolute path as a string; raises PathNotAllowedError otherwise.
+    This module is deliberately agent/tool-agnostic (see module
+    docstring), so it has no agent/project context to resolve a
+    per-project override of this setting through - only the global
+    config is visible here. A per-project-aware version would need
+    file_ops's read/write/patch functions to accept an agent parameter,
+    which is a larger change than this fix warrants.
     """
-    root = get_workdir_root()
-    expanded = os.path.expanduser(str(path or ""))
-    candidate = Path(expanded)
-    target = candidate if candidate.is_absolute() else root / candidate
-    resolved = target.resolve(strict=False)
-
     try:
-        resolved.relative_to(root)
-    except ValueError:
-        raise PathNotAllowedError(
-            f"path '{path}' is outside the allowed working directory ({root})"
-        )
-    return str(resolved)
+        from helpers import plugins as plugins_helper
+
+        cfg = plugins_helper.get_plugin_config("_code_execution") or {}
+    except Exception:
+        return []
+    raw = cfg.get("allowed_external_roots", "")
+    lines = raw.splitlines() if isinstance(raw, str) else (raw or [])
+    return [str(line).strip() for line in lines if str(line or "").strip()]
+
+
+def confine_to_workdir(path: str) -> str:
+    """Resolve `path` and enforce containment to the workdir root plus any
+    _code_execution allowed_external_roots.
+
+    Relative paths resolve against the workdir root specifically (not the
+    process cwd, and not any external root). Absolute paths are allowed
+    only if they resolve (after following symlinks/junctions) inside one
+    of the allowed roots. Returns the resolved absolute path as a string;
+    raises PathNotAllowedError otherwise.
+    """
+    from helpers import path_containment
+
+    workdir = get_workdir_root()
+    roots = [str(workdir)] + _get_external_roots()
+    try:
+        return path_containment.resolve_within_roots(path, roots, default_root=str(workdir))
+    except path_containment.PathNotAllowedError as exc:
+        raise PathNotAllowedError(str(exc)) from exc
 
 
 # ------------------------------------------------------------------
