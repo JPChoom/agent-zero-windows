@@ -71,13 +71,7 @@ class PolicyDecision:
     custom: bool = False
 
 
-def classify_command(code: str, custom_patterns: list[str] | None = None) -> PolicyDecision:
-    """Classify a terminal command. Returns allowed=False on the first
-    matching deny pattern (built-in categories checked before custom ones)."""
-    text = str(code or "")
-    if not text.strip():
-        return PolicyDecision(allowed=True)
-
+def _match_builtin_categories(text: str) -> PolicyDecision:
     for category, patterns in _DENY_CATEGORIES.items():
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -88,7 +82,10 @@ def classify_command(code: str, custom_patterns: list[str] | None = None) -> Pol
                     pattern=pattern,
                     matched_text=match.group(0),
                 )
+    return PolicyDecision(allowed=True)
 
+
+def _match_custom_patterns(text: str, custom_patterns: list[str] | None) -> PolicyDecision:
     for pattern in custom_patterns or []:
         pattern = str(pattern or "").strip()
         if not pattern:
@@ -105,5 +102,89 @@ def classify_command(code: str, custom_patterns: list[str] | None = None) -> Pol
                 matched_text=match.group(0),
                 custom=True,
             )
-
     return PolicyDecision(allowed=True)
+
+
+def classify_command(code: str, custom_patterns: list[str] | None = None) -> PolicyDecision:
+    """Classify a terminal command. Returns allowed=False on the first
+    matching deny pattern (built-in categories checked before custom ones)."""
+    text = str(code or "")
+    if not text.strip():
+        return PolicyDecision(allowed=True)
+
+    decision = _match_builtin_categories(text)
+    if not decision.allowed:
+        return decision
+
+    return _match_custom_patterns(text, custom_patterns)
+
+
+# Names of shell-out functions Python/Node.js code uses to run an external
+# command - matched both fully-qualified (os.system(...),
+# subprocess.run(...), child_process.execSync(...)) and bare (execSync(...)),
+# since destructuring the import ("const { execSync } = require(...)") is at
+# least as common in real Node.js code as the qualified form, and would
+# otherwise evade a prefix-anchored pattern entirely.
+_SHELLOUT_CALL_PATTERN = re.compile(
+    r"\b(?:os\.system|os\.popen"
+    r"|subprocess\.(?:run|call|check_call|check_output|Popen)"
+    r"|(?:child_process\.)?(?:exec|execSync|spawn|spawnSync|execFile|execFileSync))"
+    r"\s*\((.{0,400}?)\)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# A dangerous executable passed as the first argument to a shell-out call in
+# Python's list-args form (subprocess.run(["reg", "add", ...])) or Node's
+# (command, argsArray) form (spawn("reg", ["add", ...])) never appears as
+# one contiguous "reg add" string the way classify_command()'s patterns
+# expect - each token is a separate, quote-delimited list element. Matched
+# directly against the full source (not just captured call args) since it's
+# already anchored to a real call site immediately before the token.
+_SOURCE_LIST_ARG_DENY_PATTERN = re.compile(
+    r"\b(?:subprocess\.(?:run|call|check_call|check_output|Popen)"
+    r"|(?:child_process\.)?(?:spawn|spawnSync|execFile|execFileSync))"
+    r"\s*\(\s*\[?\s*['\"](?:reg|schtasks|sc|vssadmin|netsh|runas|shutdown|format|diskpart"
+    r"|bcdedit|net|mimikatz|procdump|certutil|bitsadmin)(?:\.exe)?['\"]",
+    re.IGNORECASE,
+)
+
+
+def classify_source_code(code: str, custom_patterns: list[str] | None = None) -> PolicyDecision:
+    """Classify Python/Node.js source for the same command-line intents
+    classify_command() denies for the terminal runtime, when they appear
+    inside an actual shell-out call (os.system, subprocess.*,
+    child_process.exec*/spawn*).
+
+    Deliberately does NOT scan the whole source with classify_command()'s
+    patterns directly - several of them are common English/programming
+    words (format, credential) that would false-positive constantly on
+    ordinary code (str.format(), a "credentials" variable, ...). Scoping to
+    the text passed to a real shell-out call keeps that risk low without
+    losing the coverage that matters: an agent asked to do something
+    destructive most naturally reaches for the same command syntax it
+    already knows from the terminal runtime.
+
+    Still not a static analyzer: indirection (building the command string
+    from variables, string concatenation, base64, calling a shell-out
+    function through an alias/wrapper) evades this the same way it evades
+    classify_command() for literal terminal commands. See README.md.
+    """
+    text = str(code or "")
+    if not text.strip():
+        return PolicyDecision(allowed=True)
+
+    for call_match in _SHELLOUT_CALL_PATTERN.finditer(text):
+        decision = _match_builtin_categories(call_match.group(1))
+        if not decision.allowed:
+            return decision
+
+    list_match = _SOURCE_LIST_ARG_DENY_PATTERN.search(text)
+    if list_match:
+        return PolicyDecision(
+            allowed=False,
+            category="shell_out_list_args",
+            pattern=_SOURCE_LIST_ARG_DENY_PATTERN.pattern,
+            matched_text=list_match.group(0),
+        )
+
+    return _match_custom_patterns(text, custom_patterns)

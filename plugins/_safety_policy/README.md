@@ -33,13 +33,24 @@ operation across multiple otherwise-innocuous commands. The existing
 `usr/plugins/terminal_access` plugin's own README says the same thing about
 its (smaller) denylist, and it's just as true here.
 
-**Only the `terminal` runtime is covered.** `code_execution_tool`'s
-`python` and `nodejs` runtimes can express the same dangerous intents in
-Python/JS source (e.g. `subprocess.run(["reg", "add", ...])`,
-`winreg.CreateKey(...)`) that these regexes are not designed to catch. This
-is a real, known gap, not an oversight - policing arbitrary Python/JS
-source for equivalent intent is a much larger undertaking than pattern-
-matching PowerShell/cmd command lines, and out of scope for this pass.
+**`python`/`nodejs` coverage is narrower than `terminal`'s.** These
+runtimes are scanned only for the same dangerous command lines reached
+through a shell-out call - `os.system(...)`, `subprocess.run/call/
+check_call/check_output/Popen(...)`, `child_process.exec/execSync/spawn/
+spawnSync/execFile/execFileSync(...)` (qualified or bare, e.g. after
+`const { execSync } = require('child_process')`), in both string form
+(`os.system("reg add ...")`) and list/args form (`subprocess.run(["reg",
+"add", ...])`, `spawn("reg", ["add", ...])`). Matching is deliberately
+scoped to text passed to those calls, not the whole file: several deny
+patterns are ordinary English/programming words (`format`, `credential`)
+that would false-positive constantly if scanned against arbitrary source
+(`str.format()`, a `credentials` variable, ...). What this does **not**
+catch: native APIs with no shell-out at all (`winreg.CreateKey(...)`,
+`fs.rmSync(...)`, `ctypes.windll...`), and any indirection - building the
+command from variables/concatenation, wrapping the shell-out call in a
+helper function, base64-decoding it first. Policing arbitrary Python/JS
+for equivalent intent in full generality is a much larger undertaking than
+pattern-matching command lines, and out of scope for this pass.
 
 **No approval flow.** The hand-off vision for this kind of gate includes a
 three-way ALLOW / REQUIRE_APPROVAL / DENY decision. This fork has no
@@ -54,11 +65,12 @@ deny list is allowed and unaudited (only denials are logged).
 
 ## Not yet implemented
 
-Real PowerShell AST-based analysis (the hand-off's own recommended
-long-term approach - regex is explicitly called out there as insufficient);
-an approval-required tier; audited/logged ALLOW decisions, not just denials;
-tamper-evident/hash-chained audit log; policing the `python`/`nodejs`
-runtimes; a restricted execution broker running commands under a reduced-
-privilege token (this is inherently an OS-level component, not something a
-Python plugin can provide - the hand-off itself suggests a separate C#/.NET
-process for this).
+Real PowerShell/Python/JS AST-based analysis (the hand-off's own
+recommended long-term approach - regex is explicitly called out there as
+insufficient); an approval-required tier; audited/logged ALLOW decisions,
+not just denials; tamper-evident/hash-chained audit log; catching
+native-API persistence/destruction in `python`/`nodejs` that never shells
+out (`winreg`, `fs.rmSync`, `ctypes`, ...); a restricted execution broker
+running commands under a reduced-privilege token (this is inherently an
+OS-level component, not something a Python plugin can provide - the
+hand-off itself suggests a separate C#/.NET process for this).

@@ -1,6 +1,7 @@
-"""Tests for the _safety_policy plugin: per-category command classification,
+"""Tests for the _safety_policy plugin: per-category command classification
+for the terminal runtime, shell-out detection for python/nodejs source,
 custom deny patterns, the tool_execute_before extension end-to-end, and the
-explicit terminal-only scope limit.
+documented residual scope limits (native APIs, indirection).
 """
 
 import asyncio
@@ -105,6 +106,82 @@ def test_classify_command_builtin_categories_checked_before_custom():
 
     assert decision.category == "persistence"
     assert decision.custom is False
+
+
+# ------------------------------------------------------------------
+# policy.classify_source_code - python/nodejs shell-out detection
+# ------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "language,code",
+    [
+        ("python-string", "import os\nos.system('reg add HKLM\\\\Software\\\\Evil /v x')"),
+        ("python-subprocess-shell", "subprocess.run('vssadmin delete shadows /all /quiet', shell=True)"),
+        ("python-list-args", "subprocess.run(['reg', 'add', 'HKLM\\\\x'])"),
+        ("python-Popen-list-args", "subprocess.Popen(['schtasks', '/create', '/tn', 'evil'])"),
+        ("node-execSync-string", "execSync('vssadmin delete shadows /all /quiet')"),
+        ("node-qualified-exec", "child_process.exec('shutdown /r /t 0')"),
+        ("node-spawn-list-args", "spawn('reg', ['add', 'HKLM\\\\x'])"),
+        ("node-execFileSync-list-args", "execFileSync('netsh', ['advfirewall', 'set', 'allprofiles', 'state', 'off'])"),
+    ],
+)
+def test_classify_source_code_denies_shellout_variants(language: str, code: str):
+    decision = policy.classify_source_code(code)
+
+    assert decision.allowed is False, f"expected {language} to be denied: {code!r}"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # "credential"/"format" are ordinary programming words - must not
+        # trip the terminal-tuned deny patterns just for existing in a file.
+        "creds = load_credentials()\nmsg = '{}: {}'.format(creds.name, creds.status)",
+        "class CredentialStore:\n    def get_credential(self, name): ...",
+        "def format_report(data):\n    return data.format()",
+        "subprocess.run(['dotnet', 'build'], check=True)",
+        "subprocess.run(['npm', 'test'])",
+        "execSync('npm test')",
+        "spawn('git', ['status'])",
+        "import pandas as pd\ndf = pd.DataFrame()",
+        "console.log('hello world')",
+        "",
+    ],
+)
+def test_classify_source_code_allows_benign_code(code: str):
+    decision = policy.classify_source_code(code)
+
+    assert decision.allowed is True
+
+
+def test_classify_source_code_scopes_matching_to_shellout_call_args():
+    """A dangerous-looking word sitting right next to, but not inside, a
+    shell-out call's arguments must not trigger - only text actually passed
+    to the call is scanned."""
+    code = "# reminder: don't forget to shutdown gracefully\nsubprocess.run(['dotnet', 'build'])"
+
+    decision = policy.classify_source_code(code)
+
+    assert decision.allowed is True
+
+
+def test_classify_source_code_respects_custom_patterns():
+    decision = policy.classify_source_code(
+        "requests.get('https://internal/api', headers={'X-Secret': get_secret()})",
+        custom_patterns=["get_secret"],
+    )
+
+    assert decision.allowed is False
+    assert decision.category == "custom"
+
+
+def test_classify_source_code_does_not_catch_native_winreg_call():
+    """Documents the remaining gap: no shell-out call site to anchor on."""
+    decision = policy.classify_source_code(
+        "import winreg\nwinreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'Software\\Evil')"
+    )
+
+    assert decision.allowed is True
 
 
 # ------------------------------------------------------------------
@@ -251,9 +328,41 @@ async def test_extension_ignores_non_code_execution_tools(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_extension_does_not_gate_python_runtime(monkeypatch):
-    """Documents the stated scope limit: python/nodejs payloads are not
-    covered, even when they express the same dangerous intent."""
+async def test_extension_gates_python_list_arg_shellout(monkeypatch):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    with pytest.raises(RepairableException):
+        await ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "python", "code": "import subprocess; subprocess.run(['reg', 'add', 'HKLM\\\\x'])"},
+        )
+
+    assert len(agent.context.log.entries) == 1
+
+
+@pytest.mark.asyncio
+async def test_extension_gates_nodejs_string_shellout(monkeypatch):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    with pytest.raises(RepairableException):
+        await ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "nodejs", "code": "require('child_process').execSync('reg add HKLM\\\\x')"},
+        )
+
+    assert len(agent.context.log.entries) == 1
+
+
+@pytest.mark.asyncio
+async def test_extension_allows_benign_python_code(monkeypatch):
     import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
 
     _patch_config(monkeypatch, module, enforce_policy=True)
@@ -262,14 +371,22 @@ async def test_extension_does_not_gate_python_runtime(monkeypatch):
 
     await ext.execute(
         tool_name="code_execution_tool",
-        tool_args={"runtime": "python", "code": "import subprocess; subprocess.run(['reg', 'add', 'HKLM\\\\x'])"},
-    )  # not blocked - python runtime is out of scope for v1
+        tool_args={
+            "runtime": "python",
+            "code": (
+                "import subprocess\n"
+                "creds = load_credentials()\n"
+                "msg = '{}: {}'.format(creds.name, creds.status)\n"
+                "subprocess.run(['dotnet', 'build'], check=True)\n"
+            ),
+        },
+    )  # must not raise - "credential"/"format" are common source-code words,
 
     assert agent.context.log.entries == []
 
 
 @pytest.mark.asyncio
-async def test_extension_does_not_gate_nodejs_runtime(monkeypatch):
+async def test_extension_allows_benign_nodejs_code(monkeypatch):
     import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
 
     _patch_config(monkeypatch, module, enforce_policy=True)
@@ -278,8 +395,32 @@ async def test_extension_does_not_gate_nodejs_runtime(monkeypatch):
 
     await ext.execute(
         tool_name="code_execution_tool",
-        tool_args={"runtime": "nodejs", "code": "require('child_process').execSync('reg add HKLM\\\\x')"},
-    )
+        tool_args={
+            "runtime": "nodejs",
+            "code": "const { execSync } = require('child_process'); execSync('npm test');",
+        },
+    )  # must not raise
+
+    assert agent.context.log.entries == []
+
+
+@pytest.mark.asyncio
+async def test_extension_still_does_not_catch_native_winreg_persistence(monkeypatch):
+    """Documents the remaining, stated gap: native APIs that never shell
+    out (winreg, fs.rmSync, ctypes, ...) are not covered."""
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    await ext.execute(
+        tool_name="code_execution_tool",
+        tool_args={
+            "runtime": "python",
+            "code": "import winreg; winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'Software\\Evil')",
+        },
+    )  # not blocked - no shell-out call site for this heuristic to anchor on
 
     assert agent.context.log.entries == []
 
