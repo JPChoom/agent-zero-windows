@@ -379,7 +379,7 @@ async def test_run_gate_for_root_uses_selected_adapter(monkeypatch, tmp_path: Pa
 
 @pytest.mark.asyncio
 async def test_run_gate_for_root_unknown_kind_is_skipped(tmp_path: Path):
-    result = await gate_controller.run_gate_for_root(str(tmp_path), "rust", {})
+    result = await gate_controller.run_gate_for_root(str(tmp_path), "cobol", {})
 
     assert result["skipped"] is True
     assert result["passed"] is True

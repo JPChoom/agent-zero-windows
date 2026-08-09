@@ -92,6 +92,64 @@
                         <input type="checkbox" x-model="config.powershell_lint_enabled" />
                     </div>
                 </div>
+
+                <div class="section-title">Python</div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">pytest arguments</div>
+                        <div class="field-description">Appended after "pytest". ruff check/format run automatically if ruff is installed; gate is skipped only if neither ruff nor pytest is found.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.python_test_args" />
+                    </div>
+                </div>
+
+                <div class="section-title">Go</div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">go test arguments</div>
+                        <div class="field-description">Appended after "go test". gofmt/go vet/go build run automatically.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.go_test_args" />
+                    </div>
+                </div>
+
+                <div class="section-title">Rust</div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">cargo build arguments</div>
+                        <div class="field-description">Appended after "cargo". cargo fmt --check/clippy/test run automatically.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.rust_build_args" />
+                    </div>
+                </div>
+
+                <div class="section-title">Java / Kotlin</div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Maven test arguments</div>
+                        <div class="field-description">Appended after "mvn" (or the project's own mvnw) when pom.xml is found.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.java_maven_test_args" />
+                    </div>
+                </div>
+                <div class="field">
+                    <div class="field-label">
+                        <div class="field-title">Gradle test arguments</div>
+                        <div class="field-description">Appended after "gradle" (or the project's own gradlew) when build.gradle(.kts) is found.</div>
+                    </div>
+                    <div class="field-control">
+                        <input type="text" x-model="config.java_gradle_test_args" />
+                    </div>
+                </div>
+
+                <div class="section-title">C / C++</div>
+                <div class="section-description">
+                    CMake configure + build, ctest if configured. clang-format/clang-tidy run automatically only if found on PATH. No tunable arguments here - commands are structural (build directory, compile commands database) rather than a single argument string.
+                </div>
             </div>
         </template>
     </div>

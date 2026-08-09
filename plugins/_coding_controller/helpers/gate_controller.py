@@ -4,12 +4,17 @@ coding_gate tool.
 """
 
 from plugins._coding_controller.helpers import project_detector
-from plugins._coding_controller.helpers.adapters import dotnet, npm, powershell
+from plugins._coding_controller.helpers.adapters import cpp, dotnet, go, java, npm, powershell, python, rust
 
 _ADAPTERS = {
     "dotnet": dotnet.run_gate,
     "npm": npm.run_gate,
     "powershell": powershell.run_gate,
+    "python": python.run_gate,
+    "go": go.run_gate,
+    "rust": rust.run_gate,
+    "java": java.run_gate,
+    "cpp": cpp.run_gate,
 }
 
 
@@ -34,7 +39,11 @@ async def run_gate_for_path(path: str, cfg: dict) -> dict:
     if info is None:
         return {
             "passed": True, "skipped": True,
-            "reason": "no supported project (.sln/.csproj/package.json/.ps1) found",
+            "reason": (
+                "no supported project (.sln/.csproj, package.json, pom.xml/build.gradle, "
+                "go.mod, Cargo.toml, CMakeLists.txt, pyproject.toml/setup.py/requirements.txt, "
+                "or .ps1) found"
+            ),
             "kind": "", "root": "", "stages": [],
         }
     return await run_gate_for_root(info.root, info.kind, cfg)
