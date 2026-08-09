@@ -23,6 +23,7 @@ from helpers.print_style import PrintStyle
 from plugins._browser.helpers.config import (
     DEFAULT_HOMEPAGE_KEY,
     DEFAULT_MAX_OPEN_TABS,
+    DEFAULT_USER_AGENT,
     MAX_OPEN_TABS_KEY,
     build_browser_launch_config,
     get_browser_config,
@@ -792,6 +793,8 @@ class _BrowserRuntimeCore:
             "screen": DEFAULT_VIEWPORT,
             "no_viewport": False,
             "args": launch_config["args"],
+            "user_agent": DEFAULT_USER_AGENT,
+            "locale": "en-US",
         }
         if launch_config["channel"]:
             launch_kwargs["channel"] = launch_config["channel"]

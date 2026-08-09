@@ -26,7 +26,17 @@ BASE_BROWSER_ARGS = [
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
+    # Without this, Chromium leaves navigator.webdriver=true and other
+    # automation tells in place, which is what triggers bot-detection
+    # challenge walls (e.g. reddit.com) on ordinary page loads that a
+    # ToS-compliant, non-adversarial browsing session shouldn't be
+    # flagged for in the first place.
+    "--disable-blink-features=AutomationControlled",
 ]
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+)
 
 
 def _normalize_extension_paths(value: Any) -> list[str]:
