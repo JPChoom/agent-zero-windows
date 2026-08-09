@@ -14,6 +14,8 @@ def get_config(agent) -> dict:
         "npm_install_first": _as_bool(cfg.get("npm_install_first", False)),
         "npm_test_args": str(cfg.get("npm_test_args", "test")),
         "powershell_lint_enabled": _as_bool(cfg.get("powershell_lint_enabled", True)),
+        "enable_independent_review": _as_bool(cfg.get("enable_independent_review", False)),
+        "review_blocking_severity": str(cfg.get("review_blocking_severity", "high")),
     }
 
 

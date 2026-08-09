@@ -20,3 +20,16 @@ npm_test_args: "test"
 
 # PowerShell adapter (PSScriptAnalyzer lint only; skipped if not installed)
 powershell_lint_enabled: true
+
+# Independent diff review: once the full gate passes cleanly, spawn a
+# fresh, read-only "coding-reviewer" sub-agent to inspect the diff before
+# letting the response through. Off by default like the completion gate
+# itself - enable per project once verified. A spawn/parse failure never
+# blocks completion (treated as UNABLE_TO_VERIFY, logged, not blocking).
+enable_independent_review: false
+
+# NOTE: not yet enforced as a deterministic threshold - the reviewer's own
+# per-finding "blocking" flag is what currently gates completion. This
+# field is reserved for a follow-up that makes severity >= this value the
+# actual (deterministic) blocking rule instead. See reviewer.py.
+review_blocking_severity: "high"

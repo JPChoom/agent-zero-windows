@@ -20,7 +20,7 @@ necessarily captured post-first-edit, not pre-task - see session_state.py.
 
 from helpers.extension import Extension
 from helpers.errors import RepairableException
-from plugins._coding_controller.helpers import diagnostics, gate_controller, session_state
+from plugins._coding_controller.helpers import diagnostics, gate_controller, git_state, reviewer, session_state
 from plugins._coding_controller.helpers.config import get_config
 
 
@@ -40,6 +40,7 @@ class CodingCompletionGate(Extension):
 
         failures = []  # (root, result, new_findings, current_fingerprint)
         baseline_captured = []  # (root, result)
+        passed_clean = []  # (root, result) - passed this turn, eligible for review
         for root, kind in dirty.items():
             result = await gate_controller.run_gate_for_root(root, kind, cfg)
 
@@ -54,6 +55,7 @@ class CodingCompletionGate(Extension):
                 # new, not pre-existing.
                 session_state.set_baseline(self.agent, root, {})
                 session_state.clear_dirty(self.agent, root)
+                passed_clean.append((root, result))
                 continue
 
             current_fp = _fingerprint_result(result)
@@ -101,6 +103,52 @@ class CodingCompletionGate(Extension):
 
         if repair_instructions:
             raise RepairableException("\n\n".join(repair_instructions))
+
+        # Independent review only runs once the gate is genuinely clean this
+        # turn (no repair_instructions above) - a reviewer can't rescue a
+        # failing gate, and reviewing mid-repair would waste a review call
+        # on code that's about to change again anyway.
+        if cfg["enable_independent_review"] and passed_clean:
+            review_notes = []
+            for root, result in passed_clean:
+                review_result = await _run_review_for_root(self.agent, root, result)
+                if review_result.parse_error:
+                    review_notes.append(
+                        f"[coding_controller] Independent review for {root} could not be completed "
+                        f"({review_result.parse_error}) - treated as UNABLE_TO_VERIFY, not blocking."
+                    )
+                    continue
+                if review_result.has_blocking_findings:
+                    raise RepairableException(_format_review_blocking(root, review_result))
+                review_notes.append(_format_review_note(root, review_result))
+            if review_notes:
+                response.message = f"{response.message}\n\n" + "\n\n".join(review_notes)
+                response.message = response.message.strip()
+
+
+async def _run_review_for_root(agent, root: str, result: dict):
+    diff = await git_state.get_git_diff(root)
+    changed_files = await git_state.get_changed_files(root)
+    gate_evidence = "\n".join(
+        f"- {s['name']}: {'passed' if s['passed'] else 'FAILED'} (exit_code={s['exit_code']})"
+        for s in result.get("stages", [])
+    )
+    conversation_tail = ""
+    try:
+        conversation_tail = agent.history.output_text()[-3000:]
+    except Exception:
+        pass
+    packet = reviewer.build_review_packet(
+        original_request=conversation_tail,
+        acceptance_criteria=[],
+        changed_files=changed_files,
+        diff=diff,
+        baseline_summary="",
+        gate_evidence=gate_evidence,
+        project_instructions="",
+        project_root=root,
+    )
+    return await reviewer.run_review(agent, packet)
 
 
 def _fingerprint_result(result: dict) -> dict:
@@ -165,3 +213,31 @@ def _format_gave_up(root: str, attempts: int) -> str:
         f"{attempts} automatic repair attempts. Reporting this as an unresolved failure rather than a "
         "false success claim; manual review is likely needed."
     )
+
+
+def _format_review_blocking(root: str, review_result) -> str:
+    lines = [
+        f"Independent review of {root} found blocking issue(s) - decision: {review_result.decision}."
+    ]
+    for f in review_result.findings:
+        if not f.blocking:
+            continue
+        loc = f"{f.file}:{f.line}" if f.line else f.file
+        lines.append(f"- [{f.severity}/{f.category}] {loc}: {f.finding}")
+        if f.impact:
+            lines.append(f"  impact: {f.impact}")
+        if f.recommended_action:
+            lines.append(f"  recommended action: {f.recommended_action}")
+    lines.append(
+        "Address the blocking finding(s) above with the smallest valid fix. "
+        "Do not weaken tests or suppress the underlying issue to make the finding go away."
+    )
+    return "\n".join(lines)
+
+
+def _format_review_note(root: str, review_result) -> str:
+    nonblocking = [f for f in review_result.findings if not f.blocking]
+    summary = f"[coding_controller] Independent review of {root}: {review_result.decision}."
+    if nonblocking:
+        summary += f" {len(nonblocking)} nonblocking finding(s) noted (not required to fix)."
+    return summary
