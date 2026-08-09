@@ -37,6 +37,13 @@ from plugins._safety_policy.helpers.config import get_config
 _SOURCE_RUNTIMES = {"python", "nodejs"}
 
 
+def _format_network_destination_note(decision) -> str:
+    if not decision.network_destination:
+        return ""
+    known = "on the configured allowlist" if decision.network_destination_allowed else "not on the configured allowlist"
+    return f" Destination host: {decision.network_destination} ({known})."
+
+
 class SafetyCommandPolicy(Extension):
 
     async def execute(self, tool_name: str = "", tool_args: dict | None = None, **kwargs):
@@ -61,11 +68,15 @@ class SafetyCommandPolicy(Extension):
         code = str(tool_args.get("code", ""))
         if runtime == "terminal":
             decision = policy.classify_command(
-                code, cfg["custom_deny_patterns"], cfg["approval_tier_categories"]
+                code, cfg["custom_deny_patterns"], cfg["approval_tier_categories"],
+                enable_network_allowlist=cfg["enable_network_destination_allowlist"],
+                network_allowlist=cfg["network_destination_allowlist"],
             )
         else:
             decision = policy.classify_source_code(
-                code, cfg["custom_deny_patterns"], cfg["approval_tier_categories"]
+                code, cfg["custom_deny_patterns"], cfg["approval_tier_categories"],
+                enable_network_allowlist=cfg["enable_network_destination_allowlist"],
+                network_allowlist=cfg["network_destination_allowlist"],
             )
         if decision.allowed:
             return
@@ -96,6 +107,8 @@ class SafetyCommandPolicy(Extension):
                 "matched_text": decision.matched_text,
                 "command": code,
                 "outcome": "denied",
+                "network_destination": decision.network_destination,
+                "network_destination_allowed": decision.network_destination_allowed,
             }
         )
 
@@ -104,6 +117,7 @@ class SafetyCommandPolicy(Extension):
             f"deny category (matched '{decision.matched_text}'). This kind of operation is blocked "
             "regardless of intent - it is not something a normal coding task needs. If this was "
             "legitimate, the user can run it themselves, or add an exception in this plugin's settings."
+            f"{_format_network_destination_note(decision)}"
         )
         self._log_warning(message)
         raise RepairableException(message)
@@ -123,6 +137,8 @@ class SafetyCommandPolicy(Extension):
                 "command": code,
                 "outcome": "pending_approval",
                 "approval_id": approval_id,
+                "network_destination": decision.network_destination,
+                "network_destination_allowed": decision.network_destination_allowed,
             }
         )
 
@@ -130,6 +146,7 @@ class SafetyCommandPolicy(Extension):
             f"[safety_policy] Approval required: this {subject} matches the '{decision.category}' "
             f"category (matched '{decision.matched_text}'). Waiting up to {timeout}s for the user "
             "to Approve or Deny."
+            f"{_format_network_destination_note(decision)}"
         )
         log_item = None
         try:
@@ -143,6 +160,7 @@ class SafetyCommandPolicy(Extension):
                     "command": code,
                     "runtime": runtime,
                     "resolved": False,
+                    "network_destination": decision.network_destination,
                 },
             )
         except Exception:

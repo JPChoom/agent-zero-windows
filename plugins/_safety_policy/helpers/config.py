@@ -19,6 +19,9 @@ _CATEGORY_KEYS = (
 )
 
 
+_DEFAULT_NETWORK_ALLOWLIST = ("nuget.org", "npmjs.org", "pypi.org", "github.com", "localhost", "127.0.0.1")
+
+
 def get_config(agent) -> dict:
     cfg = plugins.get_plugin_config("_safety_policy", agent=agent) or {}
     return {
@@ -26,6 +29,10 @@ def get_config(agent) -> dict:
         "custom_deny_patterns": _parse_patterns(cfg.get("custom_deny_patterns", "")),
         "approval_tier_categories": _resolve_approval_categories(cfg),
         "approval_timeout_seconds": _as_int(cfg.get("approval_timeout_seconds", 300), default=300),
+        "enable_network_destination_allowlist": _as_bool(cfg.get("enable_network_destination_allowlist", False)),
+        "network_destination_allowlist": _parse_patterns(
+            cfg.get("network_destination_allowlist", list(_DEFAULT_NETWORK_ALLOWLIST))
+        ),
     }
 
 

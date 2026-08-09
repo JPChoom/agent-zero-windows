@@ -56,6 +56,30 @@
 
                 <div class="field">
                     <div class="field-label">
+                        <div class="field-title">Auto-allow known-safe download destinations</div>
+                        <div class="field-description">
+                            When on, a downloader command whose URL host matches the allowlist below (or a subdomain of one) skips the tier above entirely and is allowed outright - a curl/wget to a known package registry doesn't need a deny/approve decision. This is a command-text heuristic, not real network enforcement: the host is extracted from the literal command text and can be evaded the same way any other pattern in this plugin can (indirection, variables, string concatenation). See README.md.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.enable_network_destination_allowlist" />
+                    </div>
+                </div>
+
+                <div class="field" x-show="config.enable_network_destination_allowlist">
+                    <div class="field-label">
+                        <div class="field-title">Allowed download hosts</div>
+                        <div class="field-description">
+                            One host per line. A subdomain of an allowlisted host also matches (e.g. "api.github.com" for "github.com").
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <textarea rows="4" x-model="config.network_destination_allowlist"></textarea>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
                         <div class="field-title">Persistence (registry Run keys, scheduled tasks)</div>
                     </div>
                     <div class="field-control">

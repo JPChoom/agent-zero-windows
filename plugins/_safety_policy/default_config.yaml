@@ -26,3 +26,20 @@ tier_account_changes: "approve"
 # How long an approve-tier command waits for a human Approve/Deny click
 # before it's treated as denied.
 approval_timeout_seconds: 300
+
+# Advisory network-destination allowlist: when enabled, a "downloader"
+# command (curl/wget/Invoke-WebRequest/etc.) whose URL host matches an
+# entry below (or a subdomain of one) is allowed outright, skipping
+# tier_downloader entirely. Off by default - the host is extracted from
+# the literal command text (not real network enforcement) and this
+# changes existing behavior for a category that's hard-denied by
+# default, so it's opt-in rather than silently loosening it. See
+# README.md.
+enable_network_destination_allowlist: false
+network_destination_allowlist:
+  - "nuget.org"
+  - "npmjs.org"
+  - "pypi.org"
+  - "github.com"
+  - "localhost"
+  - "127.0.0.1"

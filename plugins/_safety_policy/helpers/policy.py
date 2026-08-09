@@ -16,6 +16,7 @@ concatenation, variable indirection, alternate aliases). See README.md.
 
 import re
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 # Each category maps to a list of patterns. All patterns are compiled
 # case-insensitive. Keep category names short and stable - they show up in
@@ -70,6 +71,13 @@ class PolicyDecision:
     matched_text: str = ""
     custom: bool = False
     tier: str = "deny"  # "deny" or "approve" - meaningless when allowed=True
+    # Populated whenever a "downloader"-category command was inspected,
+    # regardless of the final allowed/denied outcome - advisory evidence
+    # for the approval UI and audit trail, not itself a gate. See
+    # classify_network_destination()'s docstring for what this can and
+    # can't actually guarantee.
+    network_destination: str = ""
+    network_destination_allowed: bool | None = None
 
 
 # Categories that require human approval rather than an unconditional deny,
@@ -87,11 +95,83 @@ _APPROVAL_TIER_DEFAULT_CATEGORIES: frozenset[str] = frozenset(
 )
 
 
-def _match_builtin_categories(text: str, approval_categories) -> PolicyDecision:
+# First http(s) URL literal in the command text - not a real argument
+# parser, just enough to find *a* URL regardless of which flag/position
+# the different downloader tools put it in (curl/wget take it bare,
+# Invoke-WebRequest/iwr use -Uri, Start-BitsTransfer uses -Source,
+# certutil/bitsadmin take it as a positional arg after their own flags).
+_URL_PATTERN = re.compile(r"https?://[^\s\"'<>|&;]+", re.IGNORECASE)
+
+
+def extract_network_destination(text: str) -> str:
+    """Best-effort host extraction from the first http(s) URL literal in
+    `text`, or "" if none is found or it doesn't parse. Purely textual -
+    a URL built from a variable, string concatenation, or base64 evades
+    this exactly like every other pattern in this file evades a
+    determined adversarial payload. See README.md."""
+    match = _URL_PATTERN.search(text)
+    if not match:
+        return ""
+    try:
+        host = urlparse(match.group(0)).hostname or ""
+    except ValueError:
+        return ""
+    return host.lower()
+
+
+def is_allowed_network_destination(host: str, allowlist) -> bool:
+    """True if `host` is exactly an allowlisted entry, or a subdomain of
+    one (api.github.com counts for an allowlisted github.com - the
+    common CDN/API-subdomain pattern for these package registries)."""
+    if not host:
+        return False
+    host = host.lower()
+    normalized = {str(h).strip().lower() for h in (allowlist or []) if str(h).strip()}
+    return any(host == d or host.endswith("." + d) for d in normalized)
+
+
+def _match_builtin_categories(
+    text: str,
+    approval_categories,
+    *,
+    enable_network_allowlist: bool = False,
+    network_allowlist=None,
+) -> PolicyDecision:
     for category, patterns in _DENY_CATEGORIES.items():
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
+                if category == "downloader":
+                    destination = extract_network_destination(text)
+                    if destination:
+                        dest_allowed = is_allowed_network_destination(destination, network_allowlist)
+                        if enable_network_allowlist and dest_allowed:
+                            # A command-text heuristic, not real network
+                            # enforcement (see extract_network_destination's
+                            # docstring) - but a fetch to a well-known
+                            # package registry is common enough in normal
+                            # coding work that treating it as a known-safe
+                            # destination, rather than every curl/wget
+                            # invocation needing a deny/approve decision
+                            # regardless of where it points, is the actual
+                            # point of having a configurable allowlist here.
+                            return PolicyDecision(
+                                allowed=True,
+                                category=category,
+                                network_destination=destination,
+                                network_destination_allowed=True,
+                            )
+                        tier = "approve" if category in approval_categories else "deny"
+                        return PolicyDecision(
+                            allowed=False,
+                            category=category,
+                            pattern=pattern,
+                            matched_text=match.group(0),
+                            tier=tier,
+                            network_destination=destination,
+                            network_destination_allowed=dest_allowed,
+                        )
+
                 tier = "approve" if category in approval_categories else "deny"
                 return PolicyDecision(
                     allowed=False,
@@ -127,12 +207,22 @@ def classify_command(
     code: str,
     custom_patterns: list[str] | None = None,
     approval_categories=None,
+    *,
+    enable_network_allowlist: bool = False,
+    network_allowlist=None,
 ) -> PolicyDecision:
     """Classify a terminal command. Returns allowed=False on the first
     matching deny pattern (built-in categories checked before custom
     ones); `decision.tier` is "approve" for categories in
     `approval_categories` (default: _APPROVAL_TIER_DEFAULT_CATEGORIES),
-    "deny" for everything else including all custom-pattern matches."""
+    "deny" for everything else including all custom-pattern matches.
+
+    When a "downloader"-category command's URL resolves to a host on
+    `network_allowlist` and `enable_network_allowlist` is set, the
+    command is allowed outright instead of following the category's
+    normal deny/approve tier - see _match_builtin_categories() and
+    extract_network_destination()'s docstrings for what this check can
+    and can't actually guarantee."""
     text = str(code or "")
     if not text.strip():
         return PolicyDecision(allowed=True)
@@ -140,8 +230,17 @@ def classify_command(
     categories = (
         _APPROVAL_TIER_DEFAULT_CATEGORIES if approval_categories is None else approval_categories
     )
-    decision = _match_builtin_categories(text, categories)
-    if not decision.allowed:
+    decision = _match_builtin_categories(
+        text, categories,
+        enable_network_allowlist=enable_network_allowlist,
+        network_allowlist=network_allowlist,
+    )
+    # decision.category truthy means a builtin category matched, even if
+    # the network-allowlist auto-allow above turned that into
+    # allowed=True - that decision (and its network_destination info)
+    # must still be returned, not discarded in favor of a fresh
+    # "nothing matched" custom-pattern check.
+    if decision.category or not decision.allowed:
         return decision
 
     return _match_custom_patterns(text, custom_patterns)
@@ -181,6 +280,9 @@ def classify_source_code(
     code: str,
     custom_patterns: list[str] | None = None,
     approval_categories=None,
+    *,
+    enable_network_allowlist: bool = False,
+    network_allowlist=None,
 ) -> PolicyDecision:
     """Classify Python/Node.js source for the same command-line intents
     classify_command() denies for the terminal runtime, when they appear
@@ -211,8 +313,16 @@ def classify_source_code(
     )
 
     for call_match in _SHELLOUT_CALL_PATTERN.finditer(text):
-        decision = _match_builtin_categories(call_match.group(1), categories)
-        if not decision.allowed:
+        decision = _match_builtin_categories(
+            call_match.group(1), categories,
+            enable_network_allowlist=enable_network_allowlist,
+            network_allowlist=network_allowlist,
+        )
+        # See classify_command()'s identical check: a builtin category
+        # match that became allowed=True via the network-allowlist
+        # auto-allow still needs to be returned, not treated the same as
+        # "this call site matched nothing, keep scanning."
+        if decision.category or not decision.allowed:
             return decision
 
     list_match = _SOURCE_LIST_ARG_DENY_PATTERN.search(text)

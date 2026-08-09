@@ -37,6 +37,35 @@ in this plugin's settings if needed; add more patterns via
 `custom_deny_patterns`; adjust which categories deny vs. require approval,
 and the approval timeout, via this plugin's settings.
 
+## Advisory network-destination allowlist (opt-in)
+
+Off by default. `tier_downloader` hard-denies every `curl`/`wget`/
+`Invoke-WebRequest`/BITS command regardless of where it points, which
+means routine package-manager traffic (`pip install`, `npm install`
+hitting a registry directly rather than through the npm/pip CLI, a
+build script that curls a release asset) needs the same deny/approve
+handling as a fetch to an arbitrary host. Turning on
+`enable_network_destination_allowlist` changes that: a downloader
+command whose URL host matches an entry in `network_destination_allowlist`
+(default: `nuget.org`, `npmjs.org`, `pypi.org`, `github.com`, `localhost`,
+`127.0.0.1`) - or a subdomain of one - is allowed outright, skipping
+`tier_downloader` entirely. Anything else still gets the category's
+normal deny/approve treatment, and a command whose URL can't be
+extracted at all (built from a variable, indirection) also falls back
+to the normal tier rather than being silently allowed.
+
+**This is advisory, command-text-level matching - not OS network
+enforcement.** The host is read out of the literal command text with a
+generic `https?://...` regex, the same "not a real parser" limitation as
+everything else in this file: it can be evaded by building the URL from
+a variable, string concatenation, an IP address instead of a hostname,
+or a redirect chain that starts at an allowlisted host and ends up
+somewhere else entirely. Treat it as a friction-reducer for routine,
+known-good traffic, not a guarantee about where a command can actually
+reach - the OS-level firewall commands the hand-off doc describes for
+real network enforcement are explicitly out of scope for this Python
+plugin (see the "Not yet implemented" section).
+
 ## Scope and limitations - read before relying on this
 
 **This is not a sandbox.** It's regex/substring matching on literal command
