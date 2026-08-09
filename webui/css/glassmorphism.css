@@ -140,15 +140,17 @@ nav ul li a {
   );
 }
 
-/* Give Agent Zero's actual replies a glass bubble matching the user's
-   message bubble, instead of plain transparent text - same border/
-   radius/padding treatment, just left-aligned. Intermediate step/log
-   messages (tool calls, code-exec output, browser/info/util/warning
+/* Give Agent Zero's actual replies - and standalone warning/notice
+   blocks like the "extension error" message - a glass bubble matching
+   the user's message bubble, instead of plain transparent text. Same
+   border/radius/padding treatment, just left-aligned. Intermediate
+   step/log messages (tool calls, code-exec output, browser/info/util
    lines) are deliberately left as plain log lines, not bubbled, since
-   they read as process output rather than a "reply". */
+   they read as process output rather than a standalone reply/notice. */
 .message-default,
 .message-agent,
-.message-agent-response {
+.message-agent-response,
+.message-warning {
   background: color-mix(in srgb, var(--color-message-bg) 55%, transparent) !important;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -162,14 +164,16 @@ nav ul li a {
 
 .light-mode .message-default,
 .light-mode .message-agent,
-.light-mode .message-agent-response {
+.light-mode .message-agent-response,
+.light-mode .message-warning {
   border-color: var(--glass-border-light);
 }
 
 @media (max-width: 640px) {
   .message-default,
   .message-agent,
-  .message-agent-response {
+  .message-agent-response,
+  .message-warning {
     max-width: 92%;
   }
 }
