@@ -787,3 +787,52 @@ async def test_extension_allows_using_real_config_loader():
     )  # must not raise
 
     assert agent.context.log.entries == []
+
+
+# ------------------------------------------------------------------
+# config._as_bool_fail_closed - enforce_policy must fail closed
+# (enforcement stays ON) on a garbled-but-present value, unlike ordinary
+# opt-in settings (_as_bool) where an unrecognized value defaulting to
+# off is a reasonable failure mode.
+# ------------------------------------------------------------------
+
+from plugins._safety_policy.helpers.config import _as_bool_fail_closed, get_config as _real_get_config
+
+
+@pytest.mark.parametrize("value", [True, "true", "True", "1", "yes", "on", "  TRUE  "])
+def test_as_bool_fail_closed_true_like_values_are_true(value):
+    assert _as_bool_fail_closed(value) is True
+
+
+@pytest.mark.parametrize("value", [False, "false", "False", "0", "no", "off", "  FALSE  "])
+def test_as_bool_fail_closed_false_like_values_are_false(value):
+    assert _as_bool_fail_closed(value) is False
+
+
+@pytest.mark.parametrize("value", ["banana", "", "maybe", "disabled-ish", None, 2, [], {}])
+def test_as_bool_fail_closed_garbled_values_fail_closed_to_true(value):
+    assert _as_bool_fail_closed(value) is True
+
+
+def test_get_config_enforce_policy_fails_closed_on_garbled_stored_value(monkeypatch):
+    import helpers.plugins as plugins_module
+
+    monkeypatch.setattr(
+        plugins_module, "get_plugin_config", lambda plugin_name, agent=None: {"enforce_policy": "banana"}
+    )
+
+    cfg = _real_get_config(None)
+
+    assert cfg["enforce_policy"] is True
+
+
+def test_get_config_enforce_policy_still_disables_on_explicit_false(monkeypatch):
+    import helpers.plugins as plugins_module
+
+    monkeypatch.setattr(
+        plugins_module, "get_plugin_config", lambda plugin_name, agent=None: {"enforce_policy": "false"}
+    )
+
+    cfg = _real_get_config(None)
+
+    assert cfg["enforce_policy"] is False

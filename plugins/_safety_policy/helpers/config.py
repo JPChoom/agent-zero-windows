@@ -22,7 +22,7 @@ _CATEGORY_KEYS = (
 def get_config(agent) -> dict:
     cfg = plugins.get_plugin_config("_safety_policy", agent=agent) or {}
     return {
-        "enforce_policy": _as_bool(cfg.get("enforce_policy", True)),
+        "enforce_policy": _as_bool_fail_closed(cfg.get("enforce_policy", True)),
         "custom_deny_patterns": _parse_patterns(cfg.get("custom_deny_patterns", "")),
         "approval_tier_categories": _resolve_approval_categories(cfg),
         "approval_timeout_seconds": _as_int(cfg.get("approval_timeout_seconds", 300), default=300),
@@ -33,6 +33,20 @@ def _as_bool(value) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _as_bool_fail_closed(value) -> bool:
+    """Like _as_bool, but for enforce_policy specifically: this flag's
+    whole job is gating command denial, and its documented default is
+    "on". _as_bool's "unrecognized value -> False" behavior is fine for
+    ordinary settings (an opt-in feature staying off on a typo is a
+    reasonable failure mode) but wrong here - a corrupted config file or
+    a stray placeholder string must not silently turn enforcement off.
+    Only an explicit false-like value disables it; anything else
+    (including garbage) keeps enforcement on."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in ("0", "false", "no", "off")
 
 
 def _as_int(value, *, default: int) -> int:
