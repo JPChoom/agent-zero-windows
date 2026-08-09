@@ -1,0 +1,224 @@
+/* Glassmorphism theme layer.
+   Purely additive: a colorful blurred backdrop behind the whole app,
+   plus translucent + backdrop-filter treatment on the existing chrome
+   surfaces (sidebar, chat input bar, modals, dropdowns, user message
+   bubbles). Everything here targets selectors already defined in
+   index.css / messages.css / modals.css / left-sidebar.html - no
+   structural HTML changes, no new tokens consumed elsewhere.
+
+   To fully revert: remove the <link> to this file from index.html. */
+
+:root {
+  --glass-blur: 22px;
+  --glass-saturate: 165%;
+  --glass-border-dark: rgba(255, 255, 255, 0.14);
+  --glass-border-light: rgba(255, 255, 255, 0.55);
+  --glass-highlight: rgba(255, 255, 255, 0.07);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
+.light-mode {
+  --glass-shadow: 0 8px 32px rgba(60, 60, 110, 0.14);
+}
+
+/* Colorful animated gradient-mesh backdrop, fixed behind everything.
+   inset: -10% oversizes the layer so the drift animation's translate/
+   scale never reveals a flat edge; gradient stop percentages stay
+   relative to this element's own box (not scaled/panned), so blob
+   positions are simple and predictable at any viewport size. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 15% 20%, #5b8cff 0%, transparent 40%),
+    radial-gradient(circle at 85% 15%, #9b6bff 0%, transparent 40%),
+    radial-gradient(circle at 20% 85%, #35d6c4 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, #ff6ec0 0%, transparent 40%),
+    var(--color-background-dark);
+  filter: saturate(135%) hue-rotate(0deg);
+}
+
+.light-mode body::before {
+  background:
+    radial-gradient(circle at 15% 20%, #a7c4ff 0%, transparent 42%),
+    radial-gradient(circle at 85% 15%, #cdb0ff 0%, transparent 42%),
+    radial-gradient(circle at 20% 85%, #9fe9df 0%, transparent 42%),
+    radial-gradient(circle at 85% 80%, #ffc3e8 0%, transparent 42%),
+    var(--color-background-light);
+  filter: saturate(120%) hue-rotate(0deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body::before {
+    animation:
+      glass-drift 50s ease-in-out infinite alternate,
+      glass-hue-shift-dark 150s linear infinite;
+  }
+  .light-mode body::before {
+    animation:
+      glass-drift 50s ease-in-out infinite alternate,
+      glass-hue-shift-light 150s linear infinite;
+  }
+}
+
+@keyframes glass-drift {
+  0% { transform: translate(0%, 0%) scale(1.06); }
+  50% { transform: translate(-3%, 3%) scale(1.1); }
+  100% { transform: translate(3%, -3%) scale(1.06); }
+}
+
+/* Slow, continuous hue drift so the blob colors gradually shift over
+   time instead of sitting static - a full 360deg lap every 150s reads
+   as "subtly changing colors," not a visible sweep. True per-cycle
+   randomness isn't available in CSS without JS; an endless slow drift
+   gives the same felt effect without ever repeating on a noticeable
+   cadence. */
+@keyframes glass-hue-shift-dark {
+  0% { filter: saturate(135%) hue-rotate(0deg); }
+  100% { filter: saturate(135%) hue-rotate(360deg); }
+}
+
+@keyframes glass-hue-shift-light {
+  0% { filter: saturate(120%) hue-rotate(0deg); }
+  100% { filter: saturate(120%) hue-rotate(360deg); }
+}
+
+/* Let the colorful backdrop show through the main chrome instead of a
+   flat opaque fill */
+body,
+#chat-history,
+#right-panel {
+  background-color: transparent !important;
+}
+
+/* Shared glass-surface treatment */
+#left-panel,
+#input-section,
+.modal-inner,
+.modal-container,
+.settings-modal-content,
+.dropdown-menu,
+.confirm-dialog,
+.message-user .message-text,
+nav ul li a {
+  background: color-mix(in srgb, var(--color-panel) 55%, transparent) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border-dark);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+
+.light-mode #left-panel,
+.light-mode #input-section,
+.light-mode .modal-inner,
+.light-mode .modal-container,
+.light-mode .settings-modal-content,
+.light-mode .dropdown-menu,
+.light-mode .confirm-dialog,
+.light-mode .message-user .message-text,
+.light-mode nav ul li a {
+  border-color: var(--glass-border-light);
+}
+
+/* Modal header/footer/scroll strips already use color-mix against
+   --color-background; soften them to match instead of sitting as flat
+   opaque bars inside a glass shell */
+.modal-header,
+.modal-footer,
+.modal-footer-slot,
+.modal-scroll {
+  background: color-mix(in srgb, var(--color-panel) 42%, transparent) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* Chat input textarea/box and floating nav buttons */
+#chat-input,
+.chat-input-container,
+#chat-nav-buttons .btn-icon-action {
+  background: color-mix(in srgb, var(--color-input) 60%, transparent) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* Preview/attachment tiles and dropdown items read better with a touch
+   of glass too, matching the reference mood */
+.preview-item,
+.attachment-item {
+  background: color-mix(in srgb, var(--color-panel) 45%, transparent) !important;
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(var(--glass-saturate));
+}
+
+/* Collapsible-message fade mask (messages.css) fades text into a solid
+   --color-chat-background. Now that these messages sit in a bordered
+   glass bubble, the fade band reads as a mismatched rectangle with
+   visible edges against the colorful backdrop rather than a smooth
+   fade - drop it and let the bubble's own border be the truncation
+   boundary; "Show more" still works exactly the same. */
+.message.message-collapsible .message-body::after {
+  display: none;
+}
+
+/* Give Agent Zero's actual replies - and standalone warning/notice
+   blocks like the "extension error" message - a glass bubble matching
+   the user's message bubble, instead of plain transparent text. Same
+   border/radius/padding treatment, just left-aligned. Intermediate
+   step/log messages (tool calls, code-exec output, browser/info/util
+   lines) are deliberately left as plain log lines, not bubbled, since
+   they read as process output rather than a standalone reply/notice. */
+.message-default,
+.message-agent,
+.message-agent-response,
+.message-warning {
+  background: color-mix(in srgb, var(--color-message-bg) 55%, transparent) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border-dark);
+  border-radius: var(--border-radius) !important;
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  padding: var(--spacing-sm);
+  max-width: 80%;
+  opacity: 1 !important;
+}
+
+.light-mode .message-default,
+.light-mode .message-agent,
+.light-mode .message-agent-response,
+.light-mode .message-warning {
+  border-color: var(--glass-border-light);
+}
+
+@media (max-width: 640px) {
+  .message-default,
+  .message-agent,
+  .message-agent-response,
+  .message-warning {
+    max-width: 92%;
+  }
+}
+
+/* Process-group (the collapsible step-log block, e.g. "AO: Successfully
+   implemented..." with its GEN/USE/EXE/WRN step list) gets a much
+   lighter glass treatment than reply bubbles - just enough to separate
+   it from the backdrop, not a heavy card. Expand/collapse is already
+   handled by the existing .process-group.expanded grid-row animation
+   (process-group.css) - since the shell wraps header + content in
+   normal flow, it grows/shrinks with that animation automatically,
+   no extra JS needed here. */
+.process-group {
+  background: color-mix(in srgb, var(--color-panel) 28%, transparent) !important;
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.45)) saturate(calc(var(--glass-saturate) * 0.85));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.45)) saturate(calc(var(--glass-saturate) * 0.85));
+  border: 1px solid color-mix(in srgb, var(--glass-border-dark) 55%, transparent);
+  border-radius: var(--border-radius-sm) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  padding: var(--spacing-xs) var(--spacing-sm) !important;
+}
+
+.light-mode .process-group {
+  border-color: color-mix(in srgb, var(--glass-border-light) 55%, transparent);
+  box-shadow: 0 2px 10px rgba(60, 60, 110, 0.08);
+}
