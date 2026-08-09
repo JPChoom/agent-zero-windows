@@ -4,8 +4,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
 import pytest
-from helpers.email_client import read_messages
 from helpers.dotenv import get_dotenv_value, load_dotenv
+
+try:
+    from helpers.email_client import read_messages
+except ImportError:
+    read_messages = None
 
 
 @pytest.mark.skip(reason="This test is disabled as it has eternal dependencies and tests nothing automatically, please move it to a script or a manual test")

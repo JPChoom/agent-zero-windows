@@ -15,6 +15,15 @@ def _make_app() -> Flask:
     def login_handler():
         return Response("login", status=200)
 
+    # helpers.api.get_current_request_next_url() unconditionally calls
+    # url_for("serve_index") to build its redirect fallback - the real app
+    # (run_ui.py) always registers this endpoint, so this minimal test app
+    # needs it too or url_for() raises BuildError before auth/csrf logic
+    # is even reached.
+    @app.get("/")
+    def serve_index():
+        return Response("index", status=200)
+
     return app
 
 

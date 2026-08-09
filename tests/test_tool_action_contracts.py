@@ -109,11 +109,32 @@ def _skill_instruction_name(message) -> str:
     return ""
 
 
+def _stub_submodule(monkeypatch, dotted_name: str, module: types.ModuleType) -> None:
+    """Install a fake submodule so `from <package> import <name>` picks it up
+    even after another test has already imported the real submodule for real.
+
+    `monkeypatch.setitem(sys.modules, dotted_name, module)` alone isn't
+    enough: `from helpers import skills` resolves via
+    `getattr(sys.modules["helpers"], "skills")` first, and once any earlier
+    test has done a real `from helpers import skills`, that attribute is
+    permanently set on the real `helpers` package object - the sys.modules
+    dict entry is never even consulted for that import form. Patching both
+    the dict entry and the parent package attribute (via monkeypatch, so
+    both are restored automatically) covers both import styles.
+    """
+    monkeypatch.setitem(sys.modules, dotted_name, module)
+    package_name, _, attr_name = dotted_name.rpartition(".")
+    if package_name:
+        package = sys.modules.get(package_name)
+        if package is not None:
+            monkeypatch.setattr(package, attr_name, module, raising=False)
+
+
 def _install_tool_stub(monkeypatch) -> None:
     tool_stub = types.ModuleType("helpers.tool")
     tool_stub.Tool = _FakeTool
     tool_stub.Response = _FakeResponse
-    monkeypatch.setitem(sys.modules, "helpers.tool", tool_stub)
+    _stub_submodule(monkeypatch, "helpers.tool", tool_stub)
 
 
 def _load_skills_tool(monkeypatch, skill_root: Path):
@@ -139,13 +160,13 @@ def _load_skills_tool(monkeypatch, skill_root: Path):
     skills_stub.get_loaded_skill_names = _get_loaded_skill_names
     skills_stub.set_loaded_skill_names = _set_loaded_skill_names
     skills_stub.skill_instruction_name = _skill_instruction_name
-    monkeypatch.setitem(sys.modules, "helpers.skills", skills_stub)
+    _stub_submodule(monkeypatch, "helpers.skills", skills_stub)
 
     print_style_stub = types.ModuleType("helpers.print_style")
     print_style_stub.PrintStyle = lambda *args, **kwargs: types.SimpleNamespace(
         print=lambda *a, **k: None
     )
-    monkeypatch.setitem(sys.modules, "helpers.print_style", print_style_stub)
+    _stub_submodule(monkeypatch, "helpers.print_style", print_style_stub)
 
     sys.modules.pop("tools.skills_tool", None)
     return importlib.import_module("tools.skills_tool")

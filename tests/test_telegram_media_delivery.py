@@ -1,5 +1,9 @@
 import asyncio
 
+import pytest
+
+pytest.importorskip("aiogram", reason="telegram integration plugin's optional dependency isn't installed")
+
 from plugins._telegram_integration.helpers import handler
 from plugins._telegram_integration.helpers import telegram_client as tc
 from plugins._telegram_integration.helpers.constants import (

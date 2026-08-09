@@ -65,15 +65,32 @@ class _TestWsResult(dict):
         )
 
 
-sys.modules.setdefault("agent", SimpleNamespace(AgentContext=_TestAgentContext))
-sys.modules.setdefault("helpers.tool", SimpleNamespace(Response=_TestResponse, Tool=_TestTool))
-sys.modules.setdefault("helpers.ws", SimpleNamespace(WsHandler=_TestWsHandler))
-sys.modules.setdefault("helpers.ws_manager", SimpleNamespace(WsResult=_TestWsResult))
 _model_config_stub = ModuleType("plugins._model_config.helpers.model_config")
 _model_config_stub.get_presets = lambda: []
 _model_config_stub.get_preset_by_name = lambda name: None
 _model_config_stub.get_chat_model_config = lambda agent=None: {}
-sys.modules.setdefault("plugins._model_config.helpers.model_config", _model_config_stub)
+
+# These stand-ins are only needed to let the module-level imports below
+# succeed without dragging in the real agent.py/ws.py dependency chains.
+# setdefault() means we never clobber a real module another test file
+# already imported for real - but if a name IS newly inserted here, it
+# must be removed again once the imports are done, or it silently
+# corrupts every test file collected afterward in this pytest process
+# (collection imports all files before any test runs, so this isn't a
+# per-test monkeypatch situation - it has to be undone by hand, right
+# here, before this module finishes importing).
+_STUB_MODULES = {
+    "agent": SimpleNamespace(AgentContext=_TestAgentContext),
+    "helpers.tool": SimpleNamespace(Response=_TestResponse, Tool=_TestTool),
+    "helpers.ws": SimpleNamespace(WsHandler=_TestWsHandler),
+    "helpers.ws_manager": SimpleNamespace(WsResult=_TestWsResult),
+    "plugins._model_config.helpers.model_config": _model_config_stub,
+}
+_newly_inserted_stub_modules = []
+for _name, _stub in _STUB_MODULES.items():
+    if _name not in sys.modules:
+        sys.modules[_name] = _stub
+        _newly_inserted_stub_modules.append(_name)
 
 
 @pytest.fixture
@@ -115,6 +132,15 @@ import plugins._browser.helpers.playwright as browser_playwright_module
 import plugins._browser.hooks as browser_hooks_module
 import plugins._browser.tools.browser as browser_tool_module
 import plugins._browser.api.ws_browser as ws_browser_module
+
+# Undo the sys.modules stand-ins now that the imports needing them are
+# done - anything imported above already holds direct references to the
+# stub objects/classes it needed, so removing the sys.modules entries
+# here doesn't affect it, but leaving them in place would break every
+# test file collected after this one that needs the real agent/ws/
+# helpers.tool modules (see the comment above _STUB_MODULES).
+for _name in _newly_inserted_stub_modules:
+    del sys.modules[_name]
 
 
 SMALL_JPEG_10X10 = (
@@ -211,6 +237,7 @@ def test_browser_model_selection_uses_presets(monkeypatch):
             "chat": {"provider": "openrouter", "name": "example/model"},
         } if name == "Research" else None,
     )
+    monkeypatch.setattr(model_config, "get_config", lambda agent=None: {})
 
     selection = resolve_browser_model_selection(SimpleNamespace())
 

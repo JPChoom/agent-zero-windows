@@ -1,9 +1,18 @@
 import re
-import resource
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+if sys.platform == "win32":
+    pytest.skip(
+        "docker/run/fs/exe/initialize.sh targets the Linux container image; "
+        "the 'resource' module and bash-based ulimit checks aren't available on Windows",
+        allow_module_level=True,
+    )
+
+import resource
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
