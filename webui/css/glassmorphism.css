@@ -177,3 +177,26 @@ nav ul li a {
     max-width: 92%;
   }
 }
+
+/* Process-group (the collapsible step-log block, e.g. "AO: Successfully
+   implemented..." with its GEN/USE/EXE/WRN step list) gets a much
+   lighter glass treatment than reply bubbles - just enough to separate
+   it from the backdrop, not a heavy card. Expand/collapse is already
+   handled by the existing .process-group.expanded grid-row animation
+   (process-group.css) - since the shell wraps header + content in
+   normal flow, it grows/shrinks with that animation automatically,
+   no extra JS needed here. */
+.process-group {
+  background: color-mix(in srgb, var(--color-panel) 28%, transparent) !important;
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.45)) saturate(calc(var(--glass-saturate) * 0.85));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.45)) saturate(calc(var(--glass-saturate) * 0.85));
+  border: 1px solid color-mix(in srgb, var(--glass-border-dark) 55%, transparent);
+  border-radius: var(--border-radius-sm) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  padding: var(--spacing-xs) var(--spacing-sm) !important;
+}
+
+.light-mode .process-group {
+  border-color: color-mix(in srgb, var(--glass-border-light) 55%, transparent);
+  box-shadow: 0 2px 10px rgba(60, 60, 110, 0.08);
+}
