@@ -19,7 +19,7 @@ import litellm
 import openai
 
 from helpers import dotenv
-from helpers import settings, images
+from helpers import model_concurrency, settings, images
 from helpers.dotenv import load_dotenv
 from helpers.providers import ModelType as ProviderModelType, get_provider_config
 from helpers.rate_limiter import RateLimiter
@@ -517,12 +517,17 @@ class LiteLLMChatWrapper(SimpleChatModel):
             kwargs=call_kwargs,
             stop=stop,
         )
-        async for parsed in transport.astream():
-            output = result.add_chunk(parsed)
-            if output["response_delta"]:
-                yield ChatGenerationChunk(
-                    message=AIMessageChunk(content=output["response_delta"])
-                )
+        # Second call surface that needs the same serialization as
+        # unified_call() below - this is the LangChain-compatible async
+        # interface (helpers/call_llm.py's chain.astream() reaches it),
+        # a separate code path from this fork's own unified_call().
+        async with model_concurrency.model_call_slot():
+            async for parsed in transport.astream():
+                output = result.add_chunk(parsed)
+                if output["response_delta"]:
+                    yield ChatGenerationChunk(
+                        message=AIMessageChunk(content=output["response_delta"])
+                    )
 
     async def unified_call(
         self,
@@ -579,51 +584,59 @@ class LiteLLMChatWrapper(SimpleChatModel):
         while True:
             got_any_chunk = False
             try:
-                if stream:
-                    stop_response: str | None = None
-                    async for parsed in transport.astream():
-                        got_any_chunk = True
+                # Held for the whole call (including the full streaming
+                # duration, not just connection setup) - a local
+                # single-process inference backend genuinely can't handle
+                # simultaneous generations well regardless of streaming,
+                # so serializing here is the actual fix, not overcaution.
+                # See helpers/model_concurrency.py for why this is needed
+                # at all despite each Agent's own loop being single-threaded.
+                async with model_concurrency.model_call_slot():
+                    if stream:
+                        stop_response: str | None = None
+                        async for parsed in transport.astream():
+                            got_any_chunk = True
+                            output = result.add_chunk(parsed)
+
+                            # collect reasoning delta and call callbacks
+                            if output["reasoning_delta"]:
+                                if reasoning_callback:
+                                    await reasoning_callback(output["reasoning_delta"], result.reasoning)
+                                if tokens_callback:
+                                    await tokens_callback(
+                                        output["reasoning_delta"],
+                                        approximate_tokens(output["reasoning_delta"]),
+                                    )
+                                # Add output tokens to rate limiter if configured
+                                if limiter:
+                                    limiter.add(output=approximate_tokens(output["reasoning_delta"]))
+                            # collect response delta and call callbacks
+                            if output["response_delta"]:
+                                if response_callback:
+                                    stop_response = await response_callback(
+                                        output["response_delta"], result.response
+                                    )
+                                if tokens_callback:
+                                    await tokens_callback(
+                                        output["response_delta"],
+                                        approximate_tokens(output["response_delta"]),
+                                    )
+                                # Add output tokens to rate limiter if configured
+                                if limiter:
+                                    limiter.add(output=approximate_tokens(output["response_delta"]))
+                            if stop_response is not None:
+                                result.response = stop_response
+                                break
+
+                    # non-stream response
+                    else:
+                        parsed = await transport.acomplete()
                         output = result.add_chunk(parsed)
-
-                        # collect reasoning delta and call callbacks
-                        if output["reasoning_delta"]:
-                            if reasoning_callback:
-                                await reasoning_callback(output["reasoning_delta"], result.reasoning)
-                            if tokens_callback:
-                                await tokens_callback(
-                                    output["reasoning_delta"],
-                                    approximate_tokens(output["reasoning_delta"]),
-                                )
-                            # Add output tokens to rate limiter if configured
-                            if limiter:
-                                limiter.add(output=approximate_tokens(output["reasoning_delta"]))
-                        # collect response delta and call callbacks
-                        if output["response_delta"]:
-                            if response_callback:
-                                stop_response = await response_callback(
-                                    output["response_delta"], result.response
-                                )
-                            if tokens_callback:
-                                await tokens_callback(
-                                    output["response_delta"],
-                                    approximate_tokens(output["response_delta"]),
-                                )
-                            # Add output tokens to rate limiter if configured
-                            if limiter:
+                        if limiter:
+                            if output["response_delta"]:
                                 limiter.add(output=approximate_tokens(output["response_delta"]))
-                        if stop_response is not None:
-                            result.response = stop_response
-                            break
-
-                # non-stream response
-                else:
-                    parsed = await transport.acomplete()
-                    output = result.add_chunk(parsed)
-                    if limiter:
-                        if output["response_delta"]:
-                            limiter.add(output=approximate_tokens(output["response_delta"]))
-                        if output["reasoning_delta"]:
-                            limiter.add(output=approximate_tokens(output["reasoning_delta"]))
+                            if output["reasoning_delta"]:
+                                limiter.add(output=approximate_tokens(output["reasoning_delta"]))
 
                 # Successful completion of stream
                 return result.response, result.reasoning

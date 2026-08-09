@@ -1,5 +1,13 @@
 allow_chat_override: true
 
+# Serializes concurrent Main/Utility model calls through a shared
+# semaphore (helpers/model_concurrency.py) - default 1 (fully
+# serialized), since a local single-process inference backend (LM
+# Studio, etc.) can't reliably handle simultaneous requests. Raise this
+# if your backend genuinely supports concurrent generation (e.g. a
+# hosted API with its own concurrency handling).
+max_concurrent_model_calls: 1
+
 chat_model:
   provider: "openrouter"
   name: "anthropic/claude-sonnet-5"

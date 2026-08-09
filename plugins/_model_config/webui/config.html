@@ -52,6 +52,21 @@
           </div>
         </div>
 
+        <!-- Concurrency -->
+        <div class="model-section">
+          <div class="section-title">Concurrency</div>
+          <div class="section-description">Serializes concurrent Main/Utility model calls through a shared limit, so a local single-process inference backend isn't hit with simultaneous requests it can't handle.</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Max concurrent model calls</div>
+              <div class="field-description">1 fully serializes every model call. Raise this only if your backend genuinely supports concurrent generation.</div>
+            </div>
+            <div class="field-control">
+              <input type="number" min="1" x-model.number="config.max_concurrent_model_calls" />
+            </div>
+          </div>
+        </div>
+
       </div>
     </template>
   </div>
