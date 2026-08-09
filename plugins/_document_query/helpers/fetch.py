@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 import os
+import re
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -178,7 +179,7 @@ async def _fetch_http(
                             f"Unsupported document mimetype '{mimetype}' ({uri})"
                         )
 
-                    return FetchedDocument(
+                    fetched = FetchedDocument(
                         uri=str(response.url),
                         source_uri=uri,
                         scheme=response.url.scheme or scheme,
@@ -187,6 +188,13 @@ async def _fetch_http(
                         charset=charset,
                         content=b"".join(chunks),
                     )
+                    if mimetype == "text/html" and _looks_like_bot_wall(fetched.text()):
+                        if intervention_callback:
+                            await intervention_callback()
+                        browser_fetched = await _fetch_via_browser(str(response.url))
+                        if browser_fetched and len(browser_fetched.content) > len(fetched.content):
+                            return browser_fetched
+                    return fetched
         except Exception as e:
             last_error = str(e)
             if attempt < retries - 1:
@@ -213,6 +221,92 @@ def _parse_content_type(value: str) -> tuple[str | None, str | None]:
 register_protocol_handler("file", _fetch_file)
 register_protocol_handler("http", _fetch_http)
 register_protocol_handler("https", _fetch_http)
+
+
+# Sites like reddit.com serve a JS-driven bot-challenge shell to a plain
+# aiohttp GET (no navigator.webdriver spoofing, no JS execution) instead of
+# real content - the direct fetch above "succeeds" (200 OK) but the body is
+# just the challenge page. Detected by a short, marker-bearing body; when
+# triggered, retried once through the internal Playwright browser (the same
+# runtime plugins/_browser already hardens against this - see
+# plugins/_browser/helpers/config.py), which executes the challenge JS like
+# a real browser would. Falls back to the original fetch result if the
+# browser retry doesn't actually produce more content, so this can only
+# help, never make an already-working fetch worse.
+_BOT_WALL_MAX_VISIBLE_CHARS = 200
+_BOT_WALL_MARKERS = (
+    "prove your humanity",
+    "just a moment",
+    "checking your browser",
+    "enable javascript and cookies",
+    "verify you are human",
+    "cf-turnstile",
+    "cf_chl",
+    "captcha",
+    "access denied",
+)
+_SCRIPT_OR_STYLE_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _visible_text_from_html(html: str) -> str:
+    """Crude but effective for this heuristic: strip <script>/<style> blocks
+    and remaining tags to approximate what a reader would actually see -
+    NOT a real HTML parser, just enough to tell "an article" apart from
+    "a JS challenge shell whose visible content is a two-word title"."""
+    without_code = _SCRIPT_OR_STYLE_RE.sub(" ", html)
+    without_tags = _TAG_RE.sub(" ", without_code)
+    return _WHITESPACE_RE.sub(" ", without_tags).strip()
+
+
+def _looks_like_bot_wall(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if any(marker in lowered for marker in _BOT_WALL_MARKERS):
+        return True
+    # Raw HTML length says nothing here - a challenge shell can carry
+    # several KB of JS/CSS boilerplate while showing the reader almost
+    # nothing. Strip it down to visible text and judge that instead.
+    return len(_visible_text_from_html(stripped)) < _BOT_WALL_MAX_VISIBLE_CHARS
+
+
+async def _fetch_via_browser(uri: str) -> FetchedDocument | None:
+    """Best-effort retry of `uri` through the internal browser runtime.
+    Returns None on any failure - this is a fallback, never the primary
+    path, so it must never itself raise or block a document fetch."""
+    import uuid
+
+    from plugins._browser.helpers import runtime as browser_runtime
+
+    context_id = f"_document_query_fetch_{uuid.uuid4().hex}"
+    try:
+        runtime = await browser_runtime.get_runtime(context_id, create=True)
+        if runtime is None:
+            return None
+        await runtime.call("open", uri)
+        await asyncio.sleep(3)  # let any JS challenge/redirect resolve
+        content = await runtime.call("content", None, None)
+        text = content.get("document", "") if isinstance(content, dict) else str(content)
+        if not text or not text.strip():
+            return None
+        return FetchedDocument(
+            uri=uri,
+            source_uri=uri,
+            scheme="https",
+            mimetype="text/plain",
+            charset="utf-8",
+            content=text.encode("utf-8"),
+        )
+    except Exception:
+        return None
+    finally:
+        try:
+            await browser_runtime.close_runtime(context_id, delete_profile=True)
+        except Exception:
+            pass
 
 
 def _fix_file_path(path: str) -> str:

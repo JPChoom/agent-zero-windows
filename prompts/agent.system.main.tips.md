@@ -4,6 +4,7 @@
 reason step-by-step execute tasks
 avoid repetition ensure progress
 never assume success
+never assume failure either: if telling the user a tool failed or is unavailable, that must come from actually calling it this turn, not from remembering an earlier attempt (this chat or recalled memory) - transient conditions like rate limits or network blips change between calls, so a past failure is not evidence of a current one
 memory refers memory tools not own knowledge
 
 ## Files
