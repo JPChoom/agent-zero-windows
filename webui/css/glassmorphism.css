@@ -37,7 +37,7 @@ body::before {
     radial-gradient(circle at 20% 85%, #35d6c4 0%, transparent 40%),
     radial-gradient(circle at 85% 80%, #ff6ec0 0%, transparent 40%),
     var(--color-background-dark);
-  filter: saturate(135%);
+  filter: saturate(135%) hue-rotate(0deg);
 }
 
 .light-mode body::before {
@@ -47,12 +47,19 @@ body::before {
     radial-gradient(circle at 20% 85%, #9fe9df 0%, transparent 42%),
     radial-gradient(circle at 85% 80%, #ffc3e8 0%, transparent 42%),
     var(--color-background-light);
-  filter: saturate(120%);
+  filter: saturate(120%) hue-rotate(0deg);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   body::before {
-    animation: glass-drift 50s ease-in-out infinite alternate;
+    animation:
+      glass-drift 50s ease-in-out infinite alternate,
+      glass-hue-shift-dark 150s linear infinite;
+  }
+  .light-mode body::before {
+    animation:
+      glass-drift 50s ease-in-out infinite alternate,
+      glass-hue-shift-light 150s linear infinite;
   }
 }
 
@@ -60,6 +67,22 @@ body::before {
   0% { transform: translate(0%, 0%) scale(1.06); }
   50% { transform: translate(-3%, 3%) scale(1.1); }
   100% { transform: translate(3%, -3%) scale(1.06); }
+}
+
+/* Slow, continuous hue drift so the blob colors gradually shift over
+   time instead of sitting static - a full 360deg lap every 150s reads
+   as "subtly changing colors," not a visible sweep. True per-cycle
+   randomness isn't available in CSS without JS; an endless slow drift
+   gives the same felt effect without ever repeating on a noticeable
+   cadence. */
+@keyframes glass-hue-shift-dark {
+  0% { filter: saturate(135%) hue-rotate(0deg); }
+  100% { filter: saturate(135%) hue-rotate(360deg); }
+}
+
+@keyframes glass-hue-shift-light {
+  0% { filter: saturate(120%) hue-rotate(0deg); }
+  100% { filter: saturate(120%) hue-rotate(360deg); }
 }
 
 /* Let the colorful backdrop show through the main chrome instead of a
