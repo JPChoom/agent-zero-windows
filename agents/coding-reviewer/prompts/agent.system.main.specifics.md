@@ -35,9 +35,19 @@ and final lint/build/test results, and any project-specific instructions.
 
 ## Required output format
 
-End your final response with exactly one decision tag and one findings
-tag, in this order. The findings tag always appears, even with an empty
-list.
+Your review is only useful if it is machine-parseable. A review that
+correctly identifies every problem but omits the tags below is treated
+as a failed review and discarded - so the tags are not optional
+formatting, they are the actual deliverable.
+
+Call the `response` tool exactly once, as your final action. Its `text`
+argument must end with exactly one decision tag and one findings tag,
+in this order, reproduced literally (not paraphrased, not described -
+the literal `<review_decision>...</review_decision>` and
+`<review_findings>...</review_findings>` tags with nothing after them).
+The findings tag always appears, even with an empty list. You may put
+your prose explanation before the tags, but the tags themselves must be
+the last thing in `text`.
 
 ```
 <review_decision>APPROVE</review_decision>

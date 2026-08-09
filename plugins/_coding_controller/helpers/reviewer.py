@@ -95,11 +95,25 @@ def build_review_packet(
     return "\n\n".join(lines)
 
 
+_RETRY_NUDGE = (
+    "Your response is missing the required tags. Resend your review, "
+    "keeping your findings, but end the message with exactly one "
+    "<review_decision>...</review_decision> tag and one "
+    "<review_findings>...</review_findings> tag as described in your "
+    "instructions - the literal tags, not a description of them."
+)
+
+
 async def run_review(parent_agent, packet: str) -> ReviewResult:
     """Spawn the reviewer sub-agent, run it to completion, and parse its
     structured findings. Never raises - a spawn/parse failure becomes an
     UNABLE_TO_VERIFY result with parse_error set, so a broken reviewer
-    can't itself become a silent hard-blocker or a silent bypass."""
+    can't itself become a silent hard-blocker or a silent bypass.
+
+    Smaller/local models don't always follow the tag-format instruction on
+    the first try (observed live against an LM Studio-hosted model - it
+    correctly found real issues but replied in free prose with no tags).
+    One corrective retry is attempted before giving up as UNABLE_TO_VERIFY."""
     try:
         from agent import Agent, UserMessage
         from initialize import initialize_agent
@@ -109,13 +123,18 @@ async def run_review(parent_agent, packet: str) -> ReviewResult:
         reviewer.set_data(Agent.DATA_NAME_SUPERIOR, parent_agent)
         reviewer.hist_add_user_message(UserMessage(message=packet, attachments=[]))
         raw_response = await reviewer.monologue()
+
+        result = parse_review_response(raw_response)
+        if result.decision == "UNABLE_TO_VERIFY" and "tag" in result.parse_error:
+            reviewer.hist_add_user_message(UserMessage(message=_RETRY_NUDGE, attachments=[]))
+            raw_response = await reviewer.monologue()
+            result = parse_review_response(raw_response)
+        return result
     except Exception as exc:
         return ReviewResult(
             decision="UNABLE_TO_VERIFY",
             parse_error=f"reviewer sub-agent failed to run: {exc}",
         )
-
-    return parse_review_response(raw_response)
 
 
 def parse_review_response(text: str) -> ReviewResult:
