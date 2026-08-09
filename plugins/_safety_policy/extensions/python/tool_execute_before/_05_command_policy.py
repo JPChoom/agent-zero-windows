@@ -30,6 +30,7 @@ import uuid
 
 from helpers.extension import Extension
 from helpers.errors import RepairableException
+from helpers import kill_switch
 from plugins._safety_policy.helpers import approval_registry, audit_log, policy
 from plugins._safety_policy.helpers.config import get_config
 
@@ -45,6 +46,13 @@ class SafetyCommandPolicy(Extension):
         runtime = str(tool_args.get("runtime", "")).strip().lower()
         if runtime != "terminal" and runtime not in _SOURCE_RUNTIMES:
             return
+
+        # Defense-in-depth check #1 (see code_execution_tool.py for #2):
+        # checked here regardless of enforce_policy, so disabling this
+        # plugin's own policy enforcement doesn't also disable the kill
+        # switch - they are independent controls.
+        if kill_switch.is_tripped():
+            raise RepairableException(kill_switch.denial_message())
 
         cfg = get_config(self.agent)
         if not cfg["enforce_policy"]:

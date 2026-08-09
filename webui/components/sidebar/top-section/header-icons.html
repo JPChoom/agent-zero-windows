@@ -5,6 +5,9 @@
     import { store as chatsStore } from "/components/sidebar/chats/chats-store.js";
     import { store as projectsStore } from "/components/projects/projects-store.js";
     import { store as chatInputStore } from "/components/chat/input/input-store.js";
+    import { killSwitchStatus, toggleKillSwitch } from "/js/kill-switch.js";
+    window.killSwitchStatus = killSwitchStatus;
+    window.toggleKillSwitch = toggleKillSwitch;
   </script>
 </head>
 <body>
@@ -47,6 +50,20 @@
 
         <button class="config-button header-action-button" id="header-settings" @click="openModal('settings/settings.html')" title="Settings" aria-label="Settings" tabindex="-1">
           <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+        </button>
+
+        <button
+          class="config-button header-action-button"
+          id="header-kill-switch"
+          x-data="{ tripped: false }"
+          x-init="killSwitchStatus().then(s => tripped = s.tripped)"
+          @click="toggleKillSwitch(tripped).then(s => tripped = s.tripped)"
+          :class="{ 'kill-switch-tripped': tripped }"
+          :title="tripped ? 'Kill switch ACTIVE - all code execution halted. Click to reset.' : 'Kill switch inactive. Click to halt all code execution.'"
+          :aria-label="tripped ? 'Kill switch active, click to reset' : 'Kill switch inactive, click to trip'"
+          tabindex="-1"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true" x-text="tripped ? 'dangerous' : 'power_settings_new'"></span>
         </button>
 
         <button
@@ -304,6 +321,15 @@
     .sidebar-header-panel #hide-button .config-button:active {
       opacity: 0.5 !important;
       box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.06);
+    }
+
+    .sidebar-header-panel #hide-button .config-button.kill-switch-tripped {
+      color: #ff4d4f;
+      opacity: 1 !important;
+    }
+
+    .sidebar-header-panel #hide-button .config-button.kill-switch-tripped:hover {
+      background-color: color-mix(in srgb, #ff4d4f 18%, transparent);
     }
 
     .toggle-sidebar-button {

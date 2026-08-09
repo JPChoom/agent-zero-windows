@@ -6,7 +6,7 @@ import shlex
 import time
 
 from helpers.tool import Tool, Response
-from helpers import files, path_containment, rfc_exchange, projects, runtime, secrets, settings
+from helpers import files, kill_switch, path_containment, rfc_exchange, projects, runtime, secrets, settings
 from helpers.print_style import PrintStyle
 from helpers.strings import truncate_text as truncate_text_string
 from helpers.messages import truncate_text as truncate_text_agent
@@ -61,6 +61,15 @@ class CodeExecution(Tool):
         self.allow_running = bool(self.args.get("allow_running", False))
         reset = bool(self.args.get("reset", False) or runtime_arg == "reset")
         self._requested_cwd = str(self.args.get("cwd", "") or "").strip()
+
+        # Defense-in-depth check #2 (see plugins/_safety_policy's
+        # tool_execute_before/_05_command_policy.py for #1): checked here,
+        # directly in the tool itself, so disabling or misconfiguring the
+        # _safety_policy plugin doesn't bypass the kill switch. "output"
+        # (reading previous output) and "reset" (clearing a session, no
+        # new code) don't execute anything new, so they're not blocked.
+        if runtime_arg in ("python", "nodejs", "terminal") and kill_switch.is_tripped():
+            return Response(message=kill_switch.denial_message(), break_loop=False)
 
         cfg = _get_config(self.agent)
 
