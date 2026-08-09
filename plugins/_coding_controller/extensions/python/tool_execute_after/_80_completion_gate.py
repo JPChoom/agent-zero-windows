@@ -20,7 +20,7 @@ necessarily captured post-first-edit, not pre-task - see session_state.py.
 
 from helpers.extension import Extension
 from helpers.errors import RepairableException
-from plugins._coding_controller.helpers import diagnostician, diagnostics, gate_controller, git_state, reviewer, session_state
+from plugins._coding_controller.helpers import checkpoint, diagnostician, diagnostics, gate_controller, git_state, reviewer, session_state
 from plugins._coding_controller.helpers.config import get_config
 
 
@@ -41,6 +41,7 @@ class CodingCompletionGate(Extension):
         failures = []  # (root, result, new_findings, current_fingerprint)
         baseline_captured = []  # (root, result)
         passed_clean = []  # (root, result) - passed this turn, eligible for review
+        reverted = []  # roots where a worse repair attempt was rolled back
         for root, kind in dirty.items():
             result = await gate_controller.run_gate_for_root(root, kind, cfg)
 
@@ -77,6 +78,26 @@ class CodingCompletionGate(Extension):
                 session_state.clear_dirty(self.agent, root)
                 continue
 
+            # A checkpoint exists iff a prior repair attempt was requested
+            # for this root - compare against it to see whether that
+            # attempt made things worse, and if so, undo it before this
+            # failure becomes the basis for the next attempt.
+            prior_checkpoint = session_state.get_checkpoint(self.agent, root)
+            if prior_checkpoint is not None and checkpoint.is_worse(current_fp, prior_checkpoint.fingerprint):
+                await checkpoint.restore_checkpoint(prior_checkpoint)
+                reverted.append(root)
+                result = await gate_controller.run_gate_for_root(root, kind, cfg)
+                if result["passed"]:
+                    session_state.set_baseline(self.agent, root, {})
+                    session_state.clear_dirty(self.agent, root)
+                    passed_clean.append((root, result))
+                    continue
+                current_fp = _fingerprint_result(result)
+                new_findings = _new_findings(current_fp, baseline_fp)
+                if not new_findings:
+                    session_state.clear_dirty(self.agent, root)
+                    continue
+
             failures.append((root, result, new_findings, current_fp))
 
         max_attempts = cfg["max_repair_attempts"]
@@ -94,8 +115,15 @@ class CodingCompletionGate(Extension):
                 repair_instructions.append(
                     _format_failure(root, result, new_findings, attempts, max_attempts)
                 )
+                # Checkpoint the state we're about to ask the agent to build
+                # on top of, so if the next attempt makes it worse, it can
+                # be rolled back to exactly this point instead of compounding
+                # the regression.
+                new_checkpoint = await checkpoint.save_checkpoint(root, current_fp)
+                session_state.set_checkpoint(self.agent, root, new_checkpoint)
 
         notes = [_format_baseline_captured(root, result) for root, result in baseline_captured]
+        notes += [_format_reverted(root) for root in reverted]
         notes += [_format_gave_up(root, attempts) for root, attempts, _result in gave_up]
         if cfg["enable_diagnostician"]:
             for root, attempts, result in gave_up:
@@ -239,6 +267,15 @@ def _format_gave_up(root: str, attempts: int) -> str:
         f"[coding_controller] The quality gate for {root} still has a new, unresolved failure after "
         f"{attempts} automatic repair attempts. Reporting this as an unresolved failure rather than a "
         "false success claim; manual review is likely needed."
+    )
+
+
+def _format_reverted(root: str) -> str:
+    return (
+        f"[coding_controller] The previous repair attempt for {root} made the quality gate "
+        "worse (more failures, or a stage that was passing is now failing), so it has been "
+        "automatically rolled back to the state before that attempt. This still counts toward "
+        "the repair attempt budget."
     )
 
 

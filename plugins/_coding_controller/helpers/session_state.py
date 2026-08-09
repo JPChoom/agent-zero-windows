@@ -10,6 +10,7 @@ from plugins._coding_controller.helpers import project_detector
 DIRTY_ROOTS_KEY = "_coding_controller_dirty_roots"  # dict[root, kind]
 REPAIR_ATTEMPTS_KEY = "_coding_controller_repair_attempts"  # dict[root, count]
 BASELINE_KEY = "_coding_controller_baseline"  # dict[root, dict[stage_name, frozenset]]
+CHECKPOINT_KEY = "_coding_controller_checkpoint"  # dict[root, checkpoint.Checkpoint]
 
 
 def mark_dirty_for_path(agent, path: str) -> None:
@@ -31,7 +32,8 @@ def get_dirty_roots(agent) -> dict:
 
 
 def clear_dirty(agent, root: str) -> None:
-    """Stop tracking `root` as dirty and reset its repair-attempt counter.
+    """Stop tracking `root` as dirty and reset its repair-attempt counter
+    and any pending checkpoint.
 
     Called both when a gate check passes (successful fix, or nothing to
     verify) and when the repair budget is exhausted (giving up starts a
@@ -42,6 +44,9 @@ def clear_dirty(agent, root: str) -> None:
     attempts = agent.data.get(REPAIR_ATTEMPTS_KEY)
     if attempts:
         attempts.pop(root, None)
+    checkpoints = agent.data.get(CHECKPOINT_KEY)
+    if checkpoints:
+        checkpoints.pop(root, None)
 
 
 def get_repair_attempts(agent, root: str) -> int:
@@ -65,3 +70,15 @@ def get_baseline(agent, root: str) -> dict | None:
 def set_baseline(agent, root: str, baseline: dict) -> None:
     baselines = agent.data.setdefault(BASELINE_KEY, {})
     baselines[root] = baseline
+
+
+def get_checkpoint(agent, root: str):
+    """Returns the checkpoint.Checkpoint saved before the most recent
+    repair attempt for `root`, or None if there isn't one (no attempt has
+    been made yet, or it was already cleared)."""
+    return agent.data.get(CHECKPOINT_KEY, {}).get(root)
+
+
+def set_checkpoint(agent, root: str, checkpoint) -> None:
+    checkpoints = agent.data.setdefault(CHECKPOINT_KEY, {})
+    checkpoints[root] = checkpoint
