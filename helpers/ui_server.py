@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import secrets
+import sys
 import threading
 import time
 from typing import Any
@@ -55,6 +56,20 @@ def _positive_int_env(name: str, default: int) -> int:
 def configure_process_environment() -> None:
     logging.getLogger().setLevel(logging.WARNING)
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    # Windows consoles default stdout/stderr to the legacy per-machine code
+    # page (commonly cp1252), which can't encode most emoji/non-ASCII
+    # characters a model may stream. print_style.py's stream()/print() then
+    # crash with UnicodeEncodeError - and since agent.py retries on
+    # exception, the same unprintable character resurfaces every retry,
+    # producing an infinite crash loop instead of one failed print. Force
+    # UTF-8 here, once, regardless of how the process was launched (batch
+    # file, terminal, scheduled task, IDE) rather than relying on the user
+    # setting PYTHONUTF8/chcp before every run.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     from helpers.localization import Localization
 
     Localization.get().apply_process_timezone()
