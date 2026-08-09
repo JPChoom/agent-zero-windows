@@ -114,21 +114,17 @@ async def run_review(parent_agent, packet: str) -> ReviewResult:
     the first try (observed live against an LM Studio-hosted model - it
     correctly found real issues but replied in free prose with no tags).
     One corrective retry is attempted before giving up as UNABLE_TO_VERIFY."""
-    try:
-        from agent import Agent, UserMessage
-        from initialize import initialize_agent
+    from plugins._coding_controller.helpers import coding_agent_manager as cam
 
-        config = initialize_agent(override_settings={"agent_profile": REVIEWER_PROFILE})
-        reviewer = Agent(parent_agent.number + 1, config, parent_agent.context)
-        reviewer.set_data(Agent.DATA_NAME_SUPERIOR, parent_agent)
-        reviewer.hist_add_user_message(UserMessage(message=packet, attachments=[]))
-        raw_response = await reviewer.monologue()
+    try:
+        role = await cam.create_role(parent_agent, REVIEWER_PROFILE)
+        raw_response = await cam.send_task(role, packet)
 
         result = parse_review_response(raw_response)
         if result.decision == "UNABLE_TO_VERIFY" and "tag" in result.parse_error:
-            reviewer.hist_add_user_message(UserMessage(message=_RETRY_NUDGE, attachments=[]))
-            raw_response = await reviewer.monologue()
+            raw_response = await cam.send_task(role, _RETRY_NUDGE)
             result = parse_review_response(raw_response)
+        cam.terminate_role(role)
         return result
     except Exception as exc:
         return ReviewResult(

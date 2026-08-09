@@ -20,7 +20,7 @@ necessarily captured post-first-edit, not pre-task - see session_state.py.
 
 from helpers.extension import Extension
 from helpers.errors import RepairableException
-from plugins._coding_controller.helpers import diagnostics, gate_controller, git_state, reviewer, session_state
+from plugins._coding_controller.helpers import diagnostician, diagnostics, gate_controller, git_state, reviewer, session_state
 from plugins._coding_controller.helpers.config import get_config
 
 
@@ -85,7 +85,7 @@ class CodingCompletionGate(Extension):
         for root, result, new_findings, current_fp in failures:
             attempts = session_state.increment_repair_attempts(self.agent, root)
             if attempts > max_attempts:
-                gave_up.append((root, attempts))
+                gave_up.append((root, attempts, result))
                 session_state.clear_dirty(self.agent, root)
                 # Accept the current state as the new baseline so this same
                 # unresolved regression isn't flagged again forever.
@@ -96,7 +96,11 @@ class CodingCompletionGate(Extension):
                 )
 
         notes = [_format_baseline_captured(root, result) for root, result in baseline_captured]
-        notes += [_format_gave_up(root, attempts) for root, attempts in gave_up]
+        notes += [_format_gave_up(root, attempts) for root, attempts, _result in gave_up]
+        if cfg["enable_diagnostician"]:
+            for root, attempts, result in gave_up:
+                diagnosis = await _run_diagnosis_for_root(self.agent, root, attempts, max_attempts, result)
+                notes.append(_format_diagnosis(root, diagnosis))
         if notes:
             response.message = f"{response.message}\n\n" + "\n\n".join(notes)
             response.message = response.message.strip()
@@ -149,6 +153,29 @@ async def _run_review_for_root(agent, root: str, result: dict):
         project_root=root,
     )
     return await reviewer.run_review(agent, packet)
+
+
+async def _run_diagnosis_for_root(agent, root: str, attempts: int, max_attempts: int, result: dict) -> str:
+    diff = await git_state.get_git_diff(root)
+    failure_summary = "\n".join(
+        f"- {s['name']}: {'passed' if s['passed'] else 'FAILED'} (exit_code={s['exit_code']})"
+        for s in result.get("stages", [])
+    )
+    conversation_tail = ""
+    try:
+        conversation_tail = agent.history.output_text()[-3000:]
+    except Exception:
+        pass
+    packet = diagnostician.build_diagnosis_packet(
+        project_root=root,
+        original_request=conversation_tail,
+        repair_attempts=attempts,
+        max_repair_attempts=max_attempts,
+        final_failure_summary=failure_summary,
+        diff=diff,
+        repair_history="",
+    )
+    return await diagnostician.run_diagnosis(agent, packet)
 
 
 def _fingerprint_result(result: dict) -> dict:
@@ -213,6 +240,10 @@ def _format_gave_up(root: str, attempts: int) -> str:
         f"{attempts} automatic repair attempts. Reporting this as an unresolved failure rather than a "
         "false success claim; manual review is likely needed."
     )
+
+
+def _format_diagnosis(root: str, diagnosis: str) -> str:
+    return f"[coding_controller] Diagnostician's root-cause analysis for {root}:\n{diagnosis.strip()}"
 
 
 def _format_review_blocking(root: str, review_result) -> str:

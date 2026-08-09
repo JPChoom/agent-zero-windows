@@ -1,0 +1,7 @@
+title: Coding Implementer
+description: Full-capability coding agent scoped to minimal, targeted patches.
+context: Use this profile for a delegated coding task (via call_subordinate or
+  coding_agent_manager) where the caller wants a disciplined, smallest-possible
+  change rather than an open-ended rewrite. Has the same read/write/execute tools
+  as the default profile - this is a prompt-scoped discipline profile, not a
+  tool-restricted one.

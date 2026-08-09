@@ -1,0 +1,7 @@
+title: Coding Diagnostician
+description: Fresh, read-only investigator for a repair loop that gave up.
+context: Use this profile only via the coding_agent_manager spawn path, after the
+  automatic repair loop has exhausted its attempts on a project without clearing a
+  new quality-gate failure. This profile cannot write, patch, or execute anything -
+  it inspects the diff, failure history, and repair attempts, then explains the
+  likely root cause and what to try next. It does not fix anything itself.

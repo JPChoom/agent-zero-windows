@@ -16,6 +16,7 @@ def get_config(agent) -> dict:
         "powershell_lint_enabled": _as_bool(cfg.get("powershell_lint_enabled", True)),
         "enable_independent_review": _as_bool(cfg.get("enable_independent_review", False)),
         "review_blocking_severity": str(cfg.get("review_blocking_severity", "high")),
+        "enable_diagnostician": _as_bool(cfg.get("enable_diagnostician", False)),
     }
 
 
