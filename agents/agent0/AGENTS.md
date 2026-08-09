@@ -13,7 +13,7 @@
 ## Local Contracts
 
 - Keep `Agent 0` suitable as the direct conversation agent for the system.
-- Do not add narrow specialist behavior that belongs in `developer/`, `researcher/`, `hacker/`, or a custom user profile.
+- Do not add narrow specialist behavior that belongs in `developer/`, `researcher/`, or a custom user profile.
 - Do not store user-specific preferences, provider settings, or secrets in this profile.
 
 ## Work Guidance

@@ -413,7 +413,7 @@ Agent Zero provides a comprehensive settings interface to customize various aspe
 ### Agent Configuration
 
 - **Agent Profile:** Select the default profile for new chats, such as `agent0`,
-  `hacker`, or `researcher`.
+  `developer`, or `researcher`.
 - **Memory Subdirectory:** Select the subdirectory for agent memory storage, allowing separation between different instances.
 - **Knowledge Subdirectory:** Specify the location of custom knowledge files to enhance the agent's understanding.
 
@@ -424,9 +424,6 @@ profile switching, and guided profile creation.
 > Since v0.9.7, custom prompts belong inside a specific agent profile rather
 > than a shared `/prompts` folder. Most users should create profiles from the
 > chat profile menu.
-
-> [!NOTE]
-> The Hacker profile is included in the main image. After launch, choose the **hacker** agent profile in Settings to make it the default for new chats, or switch the selected chat from the composer profile selector. The "hacker" branch is deprecated.
 
 ![settings](../res/setup/settings/1-agentConfig.png)
 
