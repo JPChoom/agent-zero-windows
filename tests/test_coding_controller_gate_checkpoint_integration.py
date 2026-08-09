@@ -68,6 +68,11 @@ async def test_worsening_repair_attempt_is_rolled_back_on_disk(tmp_path: Path, m
         "enable_diagnostician": False,
     }
     monkeypatch.setattr(gate_ext, "get_config", lambda agent: cfg)
+    # Phase G: run_gate_for_root is now called with get_config_for_root()'s
+    # result (base config + any project coding.yaml), not the module-level
+    # get_config() patched above - this test isn't exercising coding.yaml,
+    # so it's patched to return the same fixed cfg regardless of root.
+    monkeypatch.setattr(gate_ext, "get_config_for_root", lambda agent, root: cfg)
 
     # Turn-by-turn scripted gate results: (turn 1) first failure -> baseline;
     # (turn 2) a new failure beyond baseline -> repair requested, checkpoint

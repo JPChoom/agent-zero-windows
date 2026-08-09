@@ -1,6 +1,6 @@
 from helpers.tool import Tool, Response
-from plugins._coding_controller.helpers import gate_controller, session_state
-from plugins._coding_controller.helpers.config import get_config
+from plugins._coding_controller.helpers import gate_controller, project_detector, session_state
+from plugins._coding_controller.helpers.config import get_config, get_config_for_root
 
 
 class CodingGate(Tool):
@@ -25,13 +25,26 @@ class CodingGate(Tool):
                 )
             summaries = []
             for root, kind in dirty.items():
-                result = await gate_controller.run_gate_for_root(root, kind, cfg)
+                # A project's own coding.yaml (if present) overrides
+                # build-command fields for its own gate run - see
+                # config.py's get_config_for_root() docstring.
+                root_cfg = get_config_for_root(self.agent, root)
+                result = await gate_controller.run_gate_for_root(root, kind, root_cfg)
                 summaries.append(_format_result(root, result))
                 if result.get("passed") or result.get("skipped"):
                     session_state.clear_dirty(self.agent, root)
             return Response(message="\n\n".join(summaries), break_loop=False)
 
-        result = await gate_controller.run_gate_for_path(path, cfg)
+        info = project_detector.detect_project(path)
+        if info is None:
+            result = {
+                "passed": True, "skipped": True,
+                "reason": "no supported project found",
+                "kind": "", "root": "", "stages": [],
+            }
+        else:
+            root_cfg = get_config_for_root(self.agent, info.root)
+            result = await gate_controller.run_gate_for_root(info.root, info.kind, root_cfg)
         return Response(message=_format_result(result.get("root") or path, result), break_loop=False)
 
     async def _status(self, cfg: dict) -> Response:

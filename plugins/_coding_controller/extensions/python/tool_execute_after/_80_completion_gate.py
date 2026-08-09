@@ -21,7 +21,7 @@ necessarily captured post-first-edit, not pre-task - see session_state.py.
 from helpers.extension import Extension
 from helpers.errors import RepairableException
 from plugins._coding_controller.helpers import checkpoint, diagnostician, diagnostics, gate_controller, git_state, reviewer, session_state
-from plugins._coding_controller.helpers.config import get_config
+from plugins._coding_controller.helpers.config import get_config, get_config_for_root
 
 
 class CodingCompletionGate(Extension):
@@ -43,7 +43,12 @@ class CodingCompletionGate(Extension):
         passed_clean = []  # (root, result) - passed this turn, eligible for review
         reverted = []  # roots where a worse repair attempt was rolled back
         for root, kind in dirty.items():
-            result = await gate_controller.run_gate_for_root(root, kind, cfg)
+            # A project's own coding.yaml (if present) overrides build-
+            # command fields for its own gate run - see config.py's
+            # get_config_for_root() docstring for exactly which fields
+            # and why enforcement toggles are excluded.
+            root_cfg = get_config_for_root(self.agent, root)
+            result = await gate_controller.run_gate_for_root(root, kind, root_cfg)
 
             if result.get("skipped"):
                 # Tool not installed / no adapter - can't verify, don't block
@@ -86,7 +91,7 @@ class CodingCompletionGate(Extension):
             if prior_checkpoint is not None and checkpoint.is_worse(current_fp, prior_checkpoint.fingerprint):
                 await checkpoint.restore_checkpoint(prior_checkpoint)
                 reverted.append(root)
-                result = await gate_controller.run_gate_for_root(root, kind, cfg)
+                result = await gate_controller.run_gate_for_root(root, kind, root_cfg)
                 if result["passed"]:
                     session_state.set_baseline(self.agent, root, {})
                     session_state.clear_dirty(self.agent, root)
