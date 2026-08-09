@@ -130,14 +130,13 @@ nav ul li a {
 }
 
 /* Collapsible-message fade mask (messages.css) fades text into a solid
-   --color-chat-background, which is now transparent behind the colorful
-   backdrop - fade into a translucent tint instead so it still reads as
-   a fade rather than a mismatched solid bar */
+   --color-chat-background. Now that these messages sit in a bordered
+   glass bubble, the fade band reads as a mismatched rectangle with
+   visible edges against the colorful backdrop rather than a smooth
+   fade - drop it and let the bubble's own border be the truncation
+   boundary; "Show more" still works exactly the same. */
 .message.message-collapsible .message-body::after {
-  background: linear-gradient(
-    transparent,
-    color-mix(in srgb, var(--color-chat-background) 85%, transparent)
-  );
+  display: none;
 }
 
 /* Give Agent Zero's actual replies - and standalone warning/notice
