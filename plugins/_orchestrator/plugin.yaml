@@ -1,0 +1,6 @@
+name: _orchestrator
+title: Orchestrator
+description: Load-on-demand skill for delegating coding/repository work to external terminal coding agents (Claude Code, Codex, Cursor CLI, Gemini CLI, Grok Build, Hermes Agent, OpenCode).
+version: 0.1.0
+per_project_config: false
+per_agent_config: false
