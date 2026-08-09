@@ -10,6 +10,8 @@ import os
 import time
 from dataclasses import dataclass
 
+from . import process_broker
+
 
 @dataclass
 class CommandResult:
@@ -26,7 +28,13 @@ class CommandResult:
 
 
 async def run_command(
-    args: list[str], cwd: str, timeout_seconds: int = 300, env: dict | None = None
+    args: list[str],
+    cwd: str,
+    timeout_seconds: int = 300,
+    env: dict | None = None,
+    enable_process_broker: bool = True,
+    memory_limit_mb: int = 2048,
+    max_processes: int = 64,
 ) -> CommandResult:
     if not args:
         return CommandResult(
@@ -55,16 +63,37 @@ async def run_command(
             stdout="", stderr=str(exc), duration_ms=0,
         )
 
-    try:
-        stdout_b, stderr_b = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout_seconds
+    # Assign the freshly-spawned process to a Job Object so a timeout can
+    # kill its whole descendant tree (npm test -> node.exe -> test-runner
+    # children), not just this one pid. No-op on non-Windows or when
+    # pywin32/job creation isn't available - the command still runs either way.
+    job = None
+    pid = getattr(proc, "pid", None)
+    if enable_process_broker and pid is not None:
+        job = process_broker.create_job(
+            memory_limit_bytes=memory_limit_mb * 1024 * 1024,
+            max_processes=max_processes,
         )
-        timed_out = False
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        stdout_b, stderr_b = b"", b""
-        timed_out = True
+        if job is not None:
+            process_broker.assign_process(job, pid)
+
+    try:
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout_seconds
+            )
+            timed_out = False
+        except asyncio.TimeoutError:
+            if job is not None:
+                job.terminate()  # kills the whole process tree, not just proc
+            else:
+                proc.kill()
+            await proc.wait()
+            stdout_b, stderr_b = b"", b""
+            timed_out = True
+    finally:
+        if job is not None:
+            job.close()
 
     duration_ms = int((time.monotonic() - start) * 1000)
     return CommandResult(
