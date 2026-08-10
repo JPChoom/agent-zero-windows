@@ -183,7 +183,14 @@
 
   <style>
     :root {
-      --header-panel-expanded-width: calc(250px - (var(--spacing-md) * 2));
+      /* Width must fit #hide-button's full icon row (6 buttons: toggle,
+         dashboard, plugins, settings, kill-switch, more) - each 2.2rem
+         wide with spacing-xs gaps, plus the panel's own spacing-sm
+         horizontal padding on both sides. Recompute this if a button is
+         added/removed from #hide-button, or the panel's overflow:hidden
+         (needed for the collapse/expand width transition) will silently
+         clip the newest icon off the edge instead of showing it. */
+      --header-panel-expanded-width: calc(296px - (var(--spacing-md) * 2));
       /* Padding left (0.625rem) + hamburger width (2.2rem) + padding right (0.625rem) = 3.45rem */
       --header-panel-collapsed-width: 3.45rem;
     }
