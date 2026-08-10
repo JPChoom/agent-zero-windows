@@ -184,15 +184,17 @@
   <style>
     :root {
       /* Width must fit #hide-button's full icon row (6 buttons: toggle,
-         dashboard, plugins, settings, kill-switch, more) - each 2.2rem
+         dashboard, plugins, settings, kill-switch, more) - each 1.85rem
          wide with spacing-xs gaps, plus the panel's own spacing-sm
-         horizontal padding on both sides. Recompute this if a button is
+         horizontal padding on both sides, while still fitting inside the
+         250px sidebar (left-sidebar.html) with the panel's own
+         spacing-md left offset. Recompute this if a button is
          added/removed from #hide-button, or the panel's overflow:hidden
          (needed for the collapse/expand width transition) will silently
          clip the newest icon off the edge instead of showing it. */
-      --header-panel-expanded-width: calc(296px - (var(--spacing-md) * 2));
-      /* Padding left (0.625rem) + hamburger width (2.2rem) + padding right (0.625rem) = 3.45rem */
-      --header-panel-collapsed-width: 3.45rem;
+      --header-panel-expanded-width: calc(266px - (var(--spacing-md) * 2));
+      /* Padding left (0.625rem) + hamburger width (1.85rem) + padding right (0.625rem) = 3.1rem */
+      --header-panel-collapsed-width: 3.1rem;
     }
 
     /* Shell: fixed panel with hover expansion */
@@ -299,8 +301,8 @@
       align-items: center;
       justify-content: center;
       padding: var(--spacing-xs);
-      width: 2.2rem;
-      height: 2.2rem;
+      width: 1.85rem;
+      height: 1.85rem;
       opacity: 0;
       transform: translateX(-10px);
       pointer-events: none; /* Disable when collapsed */
@@ -311,7 +313,7 @@
     }
 
     .sidebar-header-panel #hide-button .config-button .material-symbols-outlined {
-      font-size: 22px;
+      font-size: 19px;
       transition: transform 0.2s ease;
     }
 
@@ -346,8 +348,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 2.2rem;
-      height: 2.2rem;
+      width: 1.85rem;
+      height: 1.85rem;
       padding: var(--spacing-xs);
       transition: all var(--transition-speed) ease-in-out;
     }
@@ -364,7 +366,7 @@
     }
 
     .toggle-sidebar-button .material-symbols-outlined {
-      font-size: 22px;
+      font-size: 19px;
       transition: all var(--transition-speed) ease;
     }
 
