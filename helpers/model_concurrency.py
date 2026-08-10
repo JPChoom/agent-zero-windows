@@ -24,14 +24,31 @@ plugins/_coding_controller/helpers/reviewer.py), and _astream(), the
 LangChain-compatible async interface some plugins reach through
 helpers/call_llm.py's chain.astream(). No other call site needs to know
 this module exists - both wrap it internally.
+
+Scoped per event loop, not a single global singleton. asyncio.Lock/
+Semaphore bind to whichever running loop first uses them (raising
+RuntimeError: "... is bound to a different event loop" if a second loop
+touches the same instance) - and this fork genuinely has more than one
+loop in play: plugins/_memory's end-of-turn "memorize solutions"
+extension runs on its own background thread via helpers/defer.py's
+DeferredTask, with its own event loop, separate from the main server
+loop. A single module-level semaphore crashed the very first time that
+background thread called the model (reproduced from a real user log -
+plugins/_memory/extensions/python/monologue_end/_51_memorize_solutions.py
+-> call_utility_model -> unified_call -> model_call_slot -> crash).
+Keying by the running loop's id trades perfect cross-thread
+serialization (which would need a thread-safe primitive, meaningfully
+more complex) for "never crash, and fully serialize within whichever
+loop each call happens to run on" - correct for the dominant case
+(parallel_tools.py's worker agents, all on the main loop) and a real
+fix, not a workaround, for the background-thread case that was broken
+outright before (it crashed, so it had zero serialization anyway).
 """
 
 import asyncio
 import contextlib
 
-_lock = asyncio.Lock()
-_semaphore: asyncio.Semaphore | None = None
-_semaphore_limit: int | None = None
+_loop_state: dict[int, dict] = {}
 
 
 def get_configured_limit() -> int:
@@ -51,11 +68,24 @@ def get_configured_limit() -> int:
     return limit if limit > 0 else 1
 
 
+def _get_loop_state() -> dict:
+    """Returns this running loop's own lock/semaphore state, creating it
+    on first use. The Lock/Semaphore created here are only ever touched
+    by code running on this same loop (we're inside it right now), so
+    they never see a foreign-loop access."""
+    loop_key = id(asyncio.get_running_loop())
+    state = _loop_state.get(loop_key)
+    if state is None:
+        state = {"lock": asyncio.Lock(), "semaphore": None, "limit": None}
+        _loop_state[loop_key] = state
+    return state
+
+
 async def _get_semaphore() -> asyncio.Semaphore:
-    global _semaphore, _semaphore_limit
+    state = _get_loop_state()
     limit = get_configured_limit()
-    async with _lock:
-        if _semaphore is None or _semaphore_limit != limit:
+    async with state["lock"]:
+        if state["semaphore"] is None or state["limit"] != limit:
             # Recreates the semaphore when the configured limit changes
             # rather than trying to mutate an existing one's capacity
             # (asyncio.Semaphore doesn't support that). A call already
@@ -63,9 +93,9 @@ async def _get_semaphore() -> asyncio.Semaphore:
             # old limit until it finishes - a brief, harmless transition
             # window for what is a politeness/contention-avoidance
             # measure, not a hard security control.
-            _semaphore = asyncio.Semaphore(limit)
-            _semaphore_limit = limit
-        return _semaphore
+            state["semaphore"] = asyncio.Semaphore(limit)
+            state["limit"] = limit
+        return state["semaphore"]
 
 
 @contextlib.asynccontextmanager

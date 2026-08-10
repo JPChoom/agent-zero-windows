@@ -1,9 +1,19 @@
 """Tests for helpers/model_concurrency.py (Phase H): the shared semaphore
 that serializes concurrent Main/Utility model calls, and its wiring into
 models.py's unified_call()/_astream().
+
+State is scoped per running event loop (a dict keyed by loop id), not a
+single global singleton - see the module docstring for why: a bare
+module-level asyncio.Semaphore crashed for real
+("RuntimeError: ... is bound to a different event loop") the first time
+plugins/_memory's end-of-turn "memorize solutions" extension (which runs
+on its own background thread via helpers/defer.py's DeferredTask, with
+its own event loop) contended for the same semaphore instance the main
+server loop had already bound. Reproduced from a real user log.
 """
 
 import asyncio
+import threading
 
 import pytest
 
@@ -12,13 +22,11 @@ from helpers import model_concurrency
 
 @pytest.fixture(autouse=True)
 def _reset_semaphore_state():
-    """Each test gets a clean slate - the module caches the semaphore
-    keyed by configured limit, and tests deliberately vary that limit."""
-    model_concurrency._semaphore = None
-    model_concurrency._semaphore_limit = None
+    """Each test gets a clean slate - the module caches per-loop state,
+    and tests deliberately vary the configured limit."""
+    model_concurrency._loop_state.clear()
     yield
-    model_concurrency._semaphore = None
-    model_concurrency._semaphore_limit = None
+    model_concurrency._loop_state.clear()
 
 
 def _patch_limit(monkeypatch, limit: int) -> None:
@@ -129,15 +137,76 @@ async def test_semaphore_recreated_when_configured_limit_changes(monkeypatch):
     _patch_limit(monkeypatch, 1)
     async with model_concurrency.model_call_slot():
         pass
-    first_semaphore = model_concurrency._semaphore
+    first_semaphore = model_concurrency._get_loop_state()["semaphore"]
 
     _patch_limit(monkeypatch, 3)
     async with model_concurrency.model_call_slot():
         pass
-    second_semaphore = model_concurrency._semaphore
+    second_semaphore = model_concurrency._get_loop_state()["semaphore"]
 
     assert first_semaphore is not second_semaphore
     assert second_semaphore._value == 3
+
+
+# ------------------------------------------------------------------
+# Cross-event-loop safety - the actual bug reproduced from a real user
+# log (plugins/_memory's background-thread "memorize solutions"
+# extension crashing the main server's next model call)
+# ------------------------------------------------------------------
+
+def test_get_loop_state_is_isolated_per_event_loop():
+    """The real crash: a bare module-level asyncio.Semaphore permanently
+    binds to whichever loop first contends on it (asyncio.Semaphore's
+    _get_loop() check), and a second loop touching the same instance
+    raises "bound to a different event loop". Each loop must get its own
+    independent state, never a shared instance, so this can't happen."""
+    results = {}
+
+    def run_in_new_loop(key):
+        async def go():
+            results[key] = id(model_concurrency._get_loop_state())
+
+        asyncio.run(go())
+
+    t1 = threading.Thread(target=run_in_new_loop, args=("loop_a",))
+    t2 = threading.Thread(target=run_in_new_loop, args=("loop_b",))
+    t1.start()
+    t1.join()
+    t2.start()
+    t2.join()
+
+    assert results["loop_a"] != results["loop_b"]
+
+
+def test_model_call_slot_works_from_a_background_thread_with_its_own_loop(monkeypatch):
+    """End-to-end reproduction of the actual crash: use model_call_slot()
+    on the main loop first (as agent.py's normal chat/utility calls do),
+    then from a separate thread with its own fresh event loop (matching
+    helpers/defer.py's DeferredTask, which plugins/_memory's "memorize
+    solutions" extension uses to run in the background). Must not raise."""
+    _patch_limit(monkeypatch, 1)
+
+    async def use_slot():
+        async with model_concurrency.model_call_slot():
+            await asyncio.sleep(0.01)
+        return "ok"
+
+    asyncio.run(use_slot())  # main-loop-equivalent use, establishes state first
+
+    result: dict = {}
+
+    def background_thread_with_own_loop():
+        try:
+            result["value"] = asyncio.run(use_slot())
+        except Exception as exc:  # pragma: no cover - failure path under test
+            result["error"] = repr(exc)
+
+    thread = threading.Thread(target=background_thread_with_own_loop)
+    thread.start()
+    thread.join(timeout=5)
+
+    assert "error" not in result, f"cross-loop crash reproduced: {result.get('error')}"
+    assert result.get("value") == "ok"
 
 
 # ------------------------------------------------------------------
