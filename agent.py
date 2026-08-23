@@ -1132,12 +1132,43 @@ class Agent:
         while self.context.paused:
             await asyncio.sleep(0.1)
 
+    def _emit_stall_warning(self, raw_tool_name: str) -> str:
+        stalled_msg = self.read_prompt(
+            "fw.msg_stalled.md",
+            tool_name=raw_tool_name or "(unparseable tool request)",
+            count=self.loop_data.stall_count,
+        )
+        wmsg = self.hist_add_warning(stalled_msg)
+        PrintStyle(font_color="red", padding=True).print(stalled_msg)
+        self.context.log.log(
+            type="warning", content=f"{self.agent_name}: {stalled_msg}", id=wmsg.id
+        )
+        return stalled_msg
+
     async def process_llm_result_tools(self, llm_result: LLMResult):
         await self._log_response_builtin_items(llm_result)
         if llm_result.function_calls:
             for function_call in llm_result.function_calls:
                 name_map = self.get_data(Agent.DATA_NAME_RESPONSES_TOOL_NAME_MAP)
                 tool_name = original_tool_name(function_call.name, name_map)
+
+                # Same loop-stall circuit breaker as process_tools() (see
+                # TOOL_STALL_LIMIT) - native/structured function-calls can
+                # arrive as many repeated entries within a single
+                # degenerate LLM turn (observed live: a local model's
+                # malformed completion produced hundreds of duplicate
+                # empty-arg function calls in one response), which this
+                # loop would otherwise execute unconditionally with no
+                # model round-trip - and therefore no natural pause -
+                # between iterations.
+                stall_signature = tool_request_stall_signature(
+                    {"tool_name": tool_name, "tool_args": function_call.arguments},
+                    tool_name,
+                    function_call.arguments,
+                )
+                if update_stall_tracking(self.loop_data, stall_signature, Agent.TOOL_STALL_LIMIT):
+                    return self._emit_stall_warning(tool_name)
+
                 response_item_factory = lambda response, call=function_call: function_call_output_item(
                     call.call_id,
                     response.message,
@@ -1477,22 +1508,8 @@ class Agent:
         stall_signature = tool_request_stall_signature(
             tool_request, raw_tool_name, tool_args
         )
-        is_stalled = update_stall_tracking(
-            self.loop_data, stall_signature, Agent.TOOL_STALL_LIMIT
-        )
-
-        if is_stalled:
-            stalled_msg = self.read_prompt(
-                "fw.msg_stalled.md",
-                tool_name=raw_tool_name or "(unparseable tool request)",
-                count=self.loop_data.stall_count,
-            )
-            wmsg = self.hist_add_warning(stalled_msg)
-            PrintStyle(font_color="red", padding=True).print(stalled_msg)
-            self.context.log.log(
-                type="warning", content=f"{self.agent_name}: {stalled_msg}", id=wmsg.id
-            )
-            return stalled_msg
+        if update_stall_tracking(self.loop_data, stall_signature, Agent.TOOL_STALL_LIMIT):
+            return self._emit_stall_warning(raw_tool_name)
 
         if tool_request is not None:
             tool_name = raw_tool_name  # Initialize tool_name with raw_tool_name
