@@ -23,7 +23,6 @@ openai-whisper==20250625
 lxml_html_clean>=0.4.0  # CVE-2024-52595 fix: XSS CWE-79 CVSS 8.4
 markdown==3.7
 mcp==1.27.0
-newspaper3k==0.2.8
 paramiko==3.5.0
 playwright==1.52.0
 pypdf==6.0.0
@@ -47,7 +46,6 @@ soundfile==0.13.1
 imapclient>=3.0.1
 html2text>=2024.2.26
 beautifulsoup4>=4.12.3
-boto3>=1.35.0
 chardet<6  # unstructured may pull chardet; requests warns when chardet>=6 is present
 exchangelib>=5.4.3
 pywinpty==3.0.2; sys_platform == "win32"

@@ -1,3 +1,15 @@
+- name: "Local (LM Studio)"
+  chat:
+    provider: "lm_studio"
+    name: ""
+    api_key: ""
+    api_base: ""
+    ctx_length: 32000
+    ctx_history: 0.7
+    vision: false
+  utility:
+    provider: "lm_studio"
+    name: ""
 - name: "Max Power"
   chat:
     provider: "openrouter"
