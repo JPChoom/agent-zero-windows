@@ -736,6 +736,31 @@ class LiteLLMChatWrapper(SimpleChatModel):
         return llm_result
 
 
+# Some embedding models are trained with task-instruction prefixes and
+# produce poorly-discriminated embeddings without them - confirmed live
+# with nomic-embed-text-v1.5 via LM Studio: an unrelated query ("what is
+# the capital of France?") scored 0.69 similarity against a stored memory
+# about CSS gradients, nearly as high as genuinely related queries -
+# because raw, unprefixed text was being embedded. Nomic's own docs
+# require "search_document: " when embedding content for storage and
+# "search_query: " when embedding a search query, for every nomic-embed-*
+# model. Keyed by a substring match on the model name (matches
+# "nomic-embed-text-v1.5", "nomic-embed-text-v1", etc.) rather than an
+# exact name, since LiteLLM's model_name here already carries a
+# provider prefix (e.g. "lm_studio/text-embedding-nomic-embed-text-v1.5").
+_EMBEDDING_TASK_PREFIXES: dict[str, tuple[str, str]] = {
+    "nomic-embed-text": ("search_document: ", "search_query: "),
+}
+
+
+def _embedding_task_prefixes(model_name: str) -> tuple[str, str] | None:
+    lowered = model_name.lower()
+    for key, prefixes in _EMBEDDING_TASK_PREFIXES.items():
+        if key in lowered:
+            return prefixes
+    return None
+
+
 class LiteLLMEmbeddingWrapper(Embeddings):
     model_name: str
     kwargs: dict = {}
@@ -757,9 +782,14 @@ class LiteLLMEmbeddingWrapper(Embeddings):
         # Apply rate limiting if configured
         apply_rate_limiter_sync(self.a0_model_conf, " ".join(texts))
 
+        prefixes = _embedding_task_prefixes(self.model_name)
+        input_texts = (
+            [prefixes[0] + t for t in texts] if prefixes else texts
+        )
+
         resp = embedding(
             model=self.model_name,
-            input=texts,
+            input=input_texts,
             **_merge_litellm_call_kwargs(self.kwargs),
         )
         return [
@@ -772,9 +802,12 @@ class LiteLLMEmbeddingWrapper(Embeddings):
         # Apply rate limiting if configured
         apply_rate_limiter_sync(self.a0_model_conf, text)
 
+        prefixes = _embedding_task_prefixes(self.model_name)
+        input_text = prefixes[1] + text if prefixes else text
+
         resp = embedding(
             model=self.model_name,
-            input=[text],
+            input=[input_text],
             **_merge_litellm_call_kwargs(self.kwargs),
         )
         item = resp.data[0]  # type: ignore
