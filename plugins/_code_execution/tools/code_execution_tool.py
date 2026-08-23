@@ -1,8 +1,10 @@
 import asyncio
 import errno
+import os
 from dataclasses import dataclass
 import re
 import shlex
+import tempfile
 import time
 
 from helpers.tool import Tool, Response
@@ -33,8 +35,50 @@ def _group_multiline_command(command: str, powershell: bool = False) -> str:
     body = command.rstrip("\n")
     if "\n" not in body:
         return body
-    opener = ". {" if powershell else "{"
-    return f"{opener}\n{body}\n}}"
+    if powershell:
+        return _write_powershell_script_invocation(body)
+    return f"{{\n{body}\n}}"
+
+
+def _write_powershell_script_invocation(body: str) -> str:
+    """Multi-line PowerShell sent as a pasted brace block (the previous
+    approach here) never closes over this fork's winpty-driven session:
+    Windows PowerShell 5.1's legacy console host (PSReadLine is removed -
+    see shell_local.py's connect(), which drops it specifically to avoid
+    interactive-editor complications) shows '>>' after every line,
+    including the closing brace, and never actually executes the block -
+    confirmed by direct reproduction against TTYSession/
+    LocalInteractiveSession: it hangs indefinitely regardless of timeout,
+    while the exact same statements joined with ';' on one line, or
+    written to a real .ps1 file and invoked, both run instantly.
+
+    A one-liner ';' join isn't safe for arbitrary submitted code though -
+    it would silently break comments (extend to end of line), multi-line
+    strings, and multi-line control blocks. Writing the script to a real
+    temp .ps1 file and invoking that in one line sidesteps the
+    continuation-prompt parsing entirely instead: a script file is parsed
+    as a complete unit from the start, the same way any real .ps1 file
+    is, so arbitrary multi-line syntax just works.
+
+    utf-8-sig (BOM) because Windows PowerShell 5.1 - unlike PowerShell
+    Core - assumes the system codepage for a .ps1 with no BOM, so a plain
+    utf-8 file with non-ASCII content would misdecode.
+    """
+    fd, path = tempfile.mkstemp(suffix=".ps1", prefix="a0-cmd-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8-sig") as f:
+            f.write(body)
+    except Exception:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        raise
+    escaped_path = path.replace("'", "''")
+    return (
+        f"& '{escaped_path}'; "
+        f"Remove-Item -LiteralPath '{escaped_path}' -Force -ErrorAction SilentlyContinue"
+    )
 
 
 @dataclass
