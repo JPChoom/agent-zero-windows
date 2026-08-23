@@ -82,9 +82,9 @@ chat:
     litellm_provider: lm_studio
     models_list:
       endpoint_url: "/v1/models"
-      default_base: "http://localhost:1234"
+      default_base: "http://host.docker.internal:1234"
     kwargs:
-      api_base: "http://localhost:1234/v1"
+      api_base: "http://host.docker.internal:1234/v1"
       api_key: "lm-studio"
   llama_cpp:
     name: llama.cpp
