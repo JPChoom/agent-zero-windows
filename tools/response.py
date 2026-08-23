@@ -4,7 +4,13 @@ from helpers.tool import Tool, Response
 class ResponseTool(Tool):
 
     async def execute(self, **kwargs):
-        return Response(message=self.args["text"] if "text" in self.args else self.args["message"], break_loop=True)
+        # A local/weaker model can occasionally emit a response tool call
+        # missing both "text" and "message" (malformed tool-call JSON) -
+        # fall back to "" instead of a raw KeyError crashing the turn.
+        message = self.args.get("text")
+        if message is None:
+            message = self.args.get("message", "")
+        return Response(message=message, break_loop=True)
 
     async def before_execution(self, **kwargs):
         # self.log = self.agent.context.log.log(type="response", heading=f"{self.agent.agent_name}: Responding", content=self.args.get("text", ""))
