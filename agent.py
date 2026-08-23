@@ -542,6 +542,30 @@ class Agent:
                                 llm_result=llm_result,
                             )
                             self._remember_llm_result_state(llm_result, assistant_message)
+
+                            # Loop-stall circuit breaker - third call site,
+                            # sharing the same per-monologue counter as
+                            # process_tools() and process_llm_result_tools()
+                            # (see Agent.TOOL_STALL_LIMIT). This branch never
+                            # reaches tool processing at all, so neither of
+                            # those guards can see it: a model that keeps
+                            # emitting a byte-identical response just gets
+                            # warned and re-prompted forever. Observed live -
+                            # a 27B local model regenerated the same ~1MB
+                            # response repeatedly, producing megabytes of
+                            # output and zero tool calls, with nothing capping
+                            # it. A distinct signature means alternating
+                            # repeat/tool-call behavior correctly resets the
+                            # counter instead of accumulating across both.
+                            if update_stall_tracking(
+                                self.loop_data,
+                                "__repeat_response__",
+                                Agent.TOOL_STALL_LIMIT,
+                            ):
+                                return self._emit_stall_warning(
+                                    "", prompt_file="fw.msg_stalled_repeat.md"
+                                )
+
                             # Append warning message to the history
                             warning_msg = self.read_prompt("fw.msg_repeat.md")
                             wmsg = self.hist_add_warning(message=warning_msg)
@@ -1132,9 +1156,11 @@ class Agent:
         while self.context.paused:
             await asyncio.sleep(0.1)
 
-    def _emit_stall_warning(self, raw_tool_name: str) -> str:
+    def _emit_stall_warning(
+        self, raw_tool_name: str, prompt_file: str = "fw.msg_stalled.md"
+    ) -> str:
         stalled_msg = self.read_prompt(
-            "fw.msg_stalled.md",
+            prompt_file,
             tool_name=raw_tool_name or "(unparseable tool request)",
             count=self.loop_data.stall_count,
         )

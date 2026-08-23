@@ -246,3 +246,81 @@ async def test_function_calls_loop_does_not_trip_for_varied_calls():
 
     assert outcome is None
     assert tool.call_count == call_count
+
+
+# ------------------------------------------------------------------
+# monologue()'s repeated-identical-response branch - the third call
+# site. That branch (agent.py, `if self.loop_data.last_response ==
+# agent_response`) only appends a warning and loops; it never reaches
+# process_tools()/process_llm_result_tools(), so neither of those
+# guards can see it. Observed live: a 27B local model regenerated the
+# same response over and over, producing megabytes of output and zero
+# tool calls, with nothing capping the cycle.
+# ------------------------------------------------------------------
+
+REPEAT_SIGNATURE = "__repeat_response__"
+
+
+def test_repeated_identical_response_trips_after_the_limit():
+    loop_data = LoopData()
+    limit = Agent.TOOL_STALL_LIMIT
+
+    stalled = False
+    for _ in range(limit + 1):
+        stalled = update_stall_tracking(loop_data, REPEAT_SIGNATURE, limit)
+
+    assert stalled is True
+    assert loop_data.stall_count == limit + 1
+
+
+def test_repeated_identical_response_does_not_trip_under_the_limit():
+    loop_data = LoopData()
+    limit = Agent.TOOL_STALL_LIMIT
+
+    stalled = False
+    for _ in range(limit):
+        stalled = update_stall_tracking(loop_data, REPEAT_SIGNATURE, limit)
+
+    assert stalled is False
+
+
+def test_repeat_signature_is_distinct_from_tool_call_signatures():
+    """The repeat branch and the tool-call branches share one counter,
+    so their signatures must not collide - otherwise a model alternating
+    between "repeated a response" and "made a real tool call" would
+    accumulate toward the limit instead of resetting."""
+    tool_sig = tool_request_stall_signature({}, "code_execution_tool", {})
+    misformat_sig = tool_request_stall_signature(None, "", {})
+
+    assert REPEAT_SIGNATURE != tool_sig
+    assert REPEAT_SIGNATURE != misformat_sig
+
+
+def test_alternating_repeat_and_tool_calls_resets_the_counter():
+    """Real forward progress between repeats must reset the streak."""
+    loop_data = LoopData()
+    limit = Agent.TOOL_STALL_LIMIT
+    tool_sig = tool_request_stall_signature({}, "code_execution_tool", {"step": 1})
+
+    stalled = False
+    for _ in range(limit * 3):
+        stalled = update_stall_tracking(loop_data, REPEAT_SIGNATURE, limit)
+        assert stalled is False
+        stalled = update_stall_tracking(loop_data, tool_sig, limit)
+        assert stalled is False
+
+    assert loop_data.stall_count == 1
+
+
+def test_emit_stall_warning_accepts_the_repeat_prompt_file():
+    """The repeat branch uses its own prompt (the tool-request wording
+    doesn't fit), so _emit_stall_warning must honor prompt_file."""
+    agent = _make_dummy_agent()
+    agent.loop_data.stall_count = Agent.TOOL_STALL_LIMIT + 1
+
+    message = Agent._emit_stall_warning(
+        agent, "", prompt_file="fw.msg_stalled_repeat.md"
+    )
+
+    assert "same response" in message
+    assert str(Agent.TOOL_STALL_LIMIT + 1) in message
