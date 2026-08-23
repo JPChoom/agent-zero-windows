@@ -1,36 +1,14 @@
-import json
 from pathlib import Path
 
+from helpers.plugin_review import ChecklistPromptBuilder
+
 _DIR = Path(__file__).parent.parent
-_CFG = None
-_TMPL = None
+_builder = ChecklistPromptBuilder(
+    checks_path=_DIR / "webui" / "plugin-validator-checks.json",
+    template_path=_DIR / "webui" / "plugin-validator-prompt.md",
+    no_checks_selected_label="no validation phases selected",
+)
 _CHECKLIST_GUIDANCE = None
-
-
-def _load_config() -> dict:
-    global _CFG
-    if _CFG is not None:
-        return _CFG
-
-    path = _DIR / "webui" / "plugin-validator-checks.json"
-    try:
-        _CFG = json.loads(path.read_text())
-        return _CFG
-    except Exception as e:
-        raise RuntimeError(f"Unable to load plugin validator checks: {e}") from e
-
-
-def _load_template() -> str:
-    global _TMPL
-    if _TMPL is not None:
-        return _TMPL
-
-    path = _DIR / "webui" / "plugin-validator-prompt.md"
-    try:
-        _TMPL = path.read_text()
-        return _TMPL
-    except Exception as e:
-        raise RuntimeError(f"Unable to load plugin validator prompt template: {e}") from e
 
 
 def _load_guidance() -> str:
@@ -40,7 +18,7 @@ def _load_guidance() -> str:
 
     path = _DIR / "webui" / "plugin-validator-guidance.md"
     try:
-        _CHECKLIST_GUIDANCE = path.read_text().strip()
+        _CHECKLIST_GUIDANCE = path.read_text(encoding="utf-8").strip()
         return _CHECKLIST_GUIDANCE
     except Exception as e:
         raise RuntimeError(f"Unable to load plugin validator guidance: {e}") from e
@@ -95,37 +73,9 @@ def build_prompt(
     checks: list | None = None,
     cleanup_target: str | None = None,
 ) -> str:
-    cfg = _load_config()
-    ratings, all_checks = cfg["ratings"], cfg["checks"]
-    keys = list(all_checks.keys()) if checks is None else [k for k in checks if k in all_checks]
-    prompt_template = _load_template()
-
-    subs = {
-        "SOURCE_LABEL": _source_label(source_type),
-        "TARGET_REFERENCE": _target_reference(source_type, target),
-        "SOURCE_INSTRUCTIONS": _source_instructions(source_type, target, cleanup_target),
-        "SELECTED_CHECKS": (
-            "\n".join(f"- **{all_checks[k]['label']}**" for k in keys)
-            if keys
-            else "- (no validation phases selected)"
-        ),
-        "CHECK_DETAILS": (
-            "\n\n".join(
-                f"#### {c['label']}\n{c['detail']}\n\nCriteria:\n"
-                + "\n".join(f"  - {ratings[level]['icon']} {desc}" for level, desc in c["criteria"].items())
-                for c in (all_checks[k] for k in keys)
-            )
-            if keys
-            else "(no validation phases selected)"
-        ),
-        "CHECKLIST_GUIDANCE": _load_guidance(),
-        "STATUS_LEGEND": "\n".join(f"- {r['icon']} **{r['label']}**" for r in ratings.values()),
-        "RATING_ICONS": "/".join(r["icon"] for r in ratings.values()),
-        "RATING_PASS": ratings["pass"]["icon"],
-        "RATING_WARNING": ratings["warning"]["icon"],
-        "RATING_FAIL": ratings["fail"]["icon"],
-    }
-    prompt = prompt_template
-    for key, val in subs.items():
-        prompt = prompt.replace(f"{{{{{key}}}}}", val)
-    return prompt
+    subs = _builder.shared_substitutions(checks)
+    subs["SOURCE_LABEL"] = _source_label(source_type)
+    subs["TARGET_REFERENCE"] = _target_reference(source_type, target)
+    subs["SOURCE_INSTRUCTIONS"] = _source_instructions(source_type, target, cleanup_target)
+    subs["CHECKLIST_GUIDANCE"] = _load_guidance()
+    return _builder.render(subs)

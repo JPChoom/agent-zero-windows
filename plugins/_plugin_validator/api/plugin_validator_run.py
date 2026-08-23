@@ -1,7 +1,5 @@
-from agent import AgentContext, UserMessage
 from helpers.api import ApiHandler, Input, Output, Request, Response
-from helpers import guids, message_queue as mq
-from helpers.persist_chat import remove_chat
+from helpers.plugin_review import run_scoped_review
 from plugins._plugin_validator.helpers.prompt import build_prompt
 
 
@@ -24,26 +22,15 @@ class PluginValidatorRun(ApiHandler):
         if not target:
             return Response("Missing 'target'.", 400)
 
-        ctxid = guids.generate_id()
-        report = ""
         try:
-            context = self.use_context(ctxid)
             prompt = build_prompt(source, target, input.get("checks"))
-            mq.log_user_message(context, prompt, [])
-            task = context.communicate(UserMessage(prompt, []))
-            report: str = await task.result()
+            report = await run_scoped_review(self, prompt)
         except Exception as e:
             return Response(f"Validation failed: {e}", 500)
-        finally:
-            try:
-                AgentContext.remove(ctxid)
-                remove_chat(ctxid)
-            except Exception:
-                pass
 
         return {
             "ok": True,
             "source": source,
             "target": target,
-            "report": report or "",
+            "report": report,
         }
