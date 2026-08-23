@@ -345,10 +345,42 @@ class LoopData:
         self.params_temporary: dict = {}
         self.params_persistent: dict = {}
         self.current_tool = None
+        # Loop-stall detection (see Agent.TOOL_STALL_LIMIT / process_tools):
+        # tracks the same-tool-request signature across consecutive
+        # iterations of one monologue so a model stuck repeating an
+        # identical (often malformed) tool call can be caught instead of
+        # retried indefinitely.
+        self.stall_signature: str | None = None
+        self.stall_count: int = 0
 
         # override values with kwargs
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+
+def tool_request_stall_signature(
+    tool_request: Any, raw_tool_name: str, tool_args: dict
+) -> str:
+    """Signature identifying "what this process_tools() iteration would
+    do" - a misformatted/unparseable message and a resolved (tool_name,
+    tool_args) pair each get their own stable signature. Used by
+    update_stall_tracking() to detect a model stuck repeating the exact
+    same request."""
+    if tool_request is None:
+        return "__misformat__"
+    return f"{raw_tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
+
+
+def update_stall_tracking(loop_data: "LoopData", signature: str, limit: int) -> bool:
+    """Update loop_data's stall signature/counter for this iteration.
+    Returns True once the same signature has repeated more than `limit`
+    times in a row (caller should stop retrying), False otherwise."""
+    if signature == loop_data.stall_signature:
+        loop_data.stall_count += 1
+    else:
+        loop_data.stall_signature = signature
+        loop_data.stall_count = 1
+    return loop_data.stall_count > limit
 
 
 class Agent:
@@ -359,6 +391,15 @@ class Agent:
     DATA_NAME_RESPONSES_STATE = "responses_state"
     DATA_NAME_RESPONSES_TOOL_NAME_MAP = "responses_tool_name_map"
     DATA_NAME_RESPONSES_COMPUTER_SESSION = "responses_computer_session_id"
+
+    # Loop-stall circuit breaker: if the same tool-request signature (tool
+    # name + args, or "misformatted") repeats this many times in a row
+    # within one monologue, process_tools() ends the turn instead of
+    # retrying forever. Observed live: a small local model got stuck
+    # emitting an identical malformed code_execution_tool call 100+ times
+    # in a row for a single "hello" message - each retry is a real,
+    # potentially slow inference round-trip, not a free no-op.
+    TOOL_STALL_LIMIT = 5
 
     @extension.extensible
     def __init__(
@@ -1426,6 +1467,32 @@ class Agent:
                 )
             except ValueError:
                 tool_request = None  # treat structural validation errors as misformat
+
+        # Loop-stall circuit breaker: a local/weak model can get stuck
+        # emitting the exact same (often malformed) tool request over and
+        # over, burning real inference round-trips without ever making
+        # progress. Track a signature of "what this iteration would do"
+        # and bail out with a clear message once it repeats too many
+        # times in a row, instead of retrying indefinitely.
+        stall_signature = tool_request_stall_signature(
+            tool_request, raw_tool_name, tool_args
+        )
+        is_stalled = update_stall_tracking(
+            self.loop_data, stall_signature, Agent.TOOL_STALL_LIMIT
+        )
+
+        if is_stalled:
+            stalled_msg = self.read_prompt(
+                "fw.msg_stalled.md",
+                tool_name=raw_tool_name or "(unparseable tool request)",
+                count=self.loop_data.stall_count,
+            )
+            wmsg = self.hist_add_warning(stalled_msg)
+            PrintStyle(font_color="red", padding=True).print(stalled_msg)
+            self.context.log.log(
+                type="warning", content=f"{self.agent_name}: {stalled_msg}", id=wmsg.id
+            )
+            return stalled_msg
 
         if tool_request is not None:
             tool_name = raw_tool_name  # Initialize tool_name with raw_tool_name
