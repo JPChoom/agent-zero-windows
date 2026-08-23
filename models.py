@@ -529,32 +529,40 @@ class LiteLLMChatWrapper(SimpleChatModel):
                         message=AIMessageChunk(content=output["response_delta"])
                     )
 
-    async def unified_call(
+    async def _run_unified(
         self,
-        system_message="",
-        user_message="",
-        messages: List[BaseMessage] | None = None,
-        response_callback: Callable[[str, str], Awaitable[str | None]] | None = None,
-        reasoning_callback: Callable[[str, str], Awaitable[None]] | None = None,
-        tokens_callback: Callable[[str, int], Awaitable[None]] | None = None,
-        rate_limiter_callback: (
-            Callable[[str, str, int, int], Awaitable[bool]] | None
-        ) = None,
-        explicit_caching: bool = False,
-        **kwargs: Any,
-    ) -> Tuple[str, str]:
+        system_message: str,
+        user_message: str,
+        messages: List[BaseMessage] | None,
+        response_callback: Callable[[str, str], Awaitable[str | None]] | None,
+        reasoning_callback: Callable[[str, str], Awaitable[None]] | None,
+        tokens_callback: Callable[[str, int], Awaitable[None]] | None,
+        rate_limiter_callback: Callable[[str, str, int, int], Awaitable[bool]] | None,
+        explicit_caching: bool,
+        stop_immediately_on_callback: bool,
+        call_kwargs_overrides: dict[str, Any],
+    ) -> Tuple[ChatGenerationResult, LiteLLMTransport, List[BaseMessage]]:
+        """Shared retry/streaming core behind unified_call and unified_turn.
 
+        stop_immediately_on_callback controls what happens when
+        response_callback signals a stop mid-stream:
+        - unified_call (True): break immediately - its callers only want
+          the final text, so there's nothing to gain from draining further.
+        - unified_turn (False): only break if the transport isn't using
+          the Responses API (transport.policy.using_responses) - Responses
+          callers need the stream drained to capture the response id and
+          native output items, so breaking early there would lose that
+          metadata even though the text itself is already known.
+        """
         configure_litellm()
 
         if not messages:
             messages = []
-        # construct messages
         if system_message:
             messages.insert(0, SystemMessage(content=system_message))
         if user_message:
             messages.append(HumanMessage(content=user_message))
 
-        # convert to litellm format
         msgs_conv = self._convert_messages(messages, explicit_caching=explicit_caching)
 
         # Apply rate limiting if configured
@@ -564,7 +572,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
 
         # Prepare call kwargs and retry config (strip A0-only params before calling LiteLLM)
         call_kwargs: dict[str, Any] = _merge_litellm_call_kwargs(
-            self.kwargs, kwargs
+            self.kwargs, call_kwargs_overrides
         )
         if explicit_caching:
             call_kwargs["a0_explicit_prompt_caching"] = True
@@ -577,7 +585,6 @@ class LiteLLMChatWrapper(SimpleChatModel):
             kwargs=call_kwargs,
         )
 
-        # results
         result = ChatGenerationResult()
 
         attempt = 0
@@ -624,9 +631,13 @@ class LiteLLMChatWrapper(SimpleChatModel):
                                 # Add output tokens to rate limiter if configured
                                 if limiter:
                                     limiter.add(output=approximate_tokens(output["response_delta"]))
-                            if stop_response is not None:
-                                result.response = stop_response
-                                break
+                                if stop_response is not None:
+                                    result.response = stop_response
+                                    if (
+                                        stop_immediately_on_callback
+                                        or not transport.policy.using_responses
+                                    ):
+                                        break
 
                     # non-stream response
                     else:
@@ -639,7 +650,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
                                 limiter.add(output=approximate_tokens(output["reasoning_delta"]))
 
                 # Successful completion of stream
-                return result.response, result.reasoning
+                return result, transport, msgs_conv
 
             except Exception as e:
                 import asyncio
@@ -649,6 +660,34 @@ class LiteLLMChatWrapper(SimpleChatModel):
                     raise
                 attempt += 1
                 await asyncio.sleep(retry_delay_s)
+
+    async def unified_call(
+        self,
+        system_message="",
+        user_message="",
+        messages: List[BaseMessage] | None = None,
+        response_callback: Callable[[str, str], Awaitable[str | None]] | None = None,
+        reasoning_callback: Callable[[str, str], Awaitable[None]] | None = None,
+        tokens_callback: Callable[[str, int], Awaitable[None]] | None = None,
+        rate_limiter_callback: (
+            Callable[[str, str, int, int], Awaitable[bool]] | None
+        ) = None,
+        explicit_caching: bool = False,
+        **kwargs: Any,
+    ) -> Tuple[str, str]:
+        result, _transport, _msgs_conv = await self._run_unified(
+            system_message,
+            user_message,
+            messages,
+            response_callback,
+            reasoning_callback,
+            tokens_callback,
+            rate_limiter_callback,
+            explicit_caching,
+            stop_immediately_on_callback=True,
+            call_kwargs_overrides=kwargs,
+        )
+        return result.response, result.reasoning
 
     async def unified_turn(
         self,
@@ -670,130 +709,31 @@ class LiteLLMChatWrapper(SimpleChatModel):
         orchestration uses this method when it needs response ids, native output
         items, and state/capability metadata.
         """
-
-        configure_litellm()
-
-        if not messages:
-            messages = []
-        if system_message:
-            messages.insert(0, SystemMessage(content=system_message))
-        if user_message:
-            messages.append(HumanMessage(content=user_message))
-
-        msgs_conv = self._convert_messages(messages, explicit_caching=explicit_caching)
-
-        limiter = await apply_rate_limiter(
-            self.a0_model_conf, str(msgs_conv), rate_limiter_callback
+        result, transport, msgs_conv = await self._run_unified(
+            system_message,
+            user_message,
+            messages,
+            response_callback,
+            reasoning_callback,
+            tokens_callback,
+            rate_limiter_callback,
+            explicit_caching,
+            stop_immediately_on_callback=False,
+            call_kwargs_overrides=kwargs,
         )
 
-        call_kwargs: dict[str, Any] = _merge_litellm_call_kwargs(
-            self.kwargs, kwargs
+        llm_result = transport.last_result or LLMResult.from_chat(
+            response=result.output()["response_delta"],
+            reasoning=result.output()["reasoning_delta"],
+            input_items=ResponsesTransport.input_from_messages(msgs_conv),
+            provider_model_key=self.model_name,
+            capability=transport._capability_metadata(),
         )
-        if explicit_caching:
-            call_kwargs["a0_explicit_prompt_caching"] = True
-        max_retries: int = int(call_kwargs.pop("a0_retry_attempts", 2))
-        retry_delay_s: float = float(call_kwargs.pop("a0_retry_delay_seconds", 1.5))
-        stream = (
-            reasoning_callback is not None
-            or response_callback is not None
-            or tokens_callback is not None
-        )
-        transport = LiteLLMTransport(
-            model=self.model_name,
-            messages=msgs_conv,
-            kwargs=call_kwargs,
-        )
-
-        result = ChatGenerationResult()
-
-        attempt = 0
-        while True:
-            got_any_chunk = False
-            try:
-                if stream:
-                    stop_response: str | None = None
-                    async for parsed in transport.astream():
-                        got_any_chunk = True
-                        output = result.add_chunk(parsed)
-
-                        if output["reasoning_delta"]:
-                            if reasoning_callback:
-                                await reasoning_callback(
-                                    output["reasoning_delta"], result.reasoning
-                                )
-                            if tokens_callback:
-                                await tokens_callback(
-                                    output["reasoning_delta"],
-                                    approximate_tokens(output["reasoning_delta"]),
-                                )
-                            if limiter:
-                                limiter.add(
-                                    output=approximate_tokens(
-                                        output["reasoning_delta"]
-                                    )
-                                )
-
-                        if output["response_delta"]:
-                            if response_callback:
-                                stop_response = await response_callback(
-                                    output["response_delta"], result.response
-                                )
-                            if tokens_callback:
-                                await tokens_callback(
-                                    output["response_delta"],
-                                    approximate_tokens(output["response_delta"]),
-                                )
-                            if limiter:
-                                limiter.add(
-                                    output=approximate_tokens(
-                                        output["response_delta"]
-                                    )
-                                )
-                            if (
-                                stop_response is not None
-                                and not transport.policy.using_responses
-                            ):
-                                result.response = stop_response
-                                break
-                            if stop_response is not None:
-                                result.response = stop_response
-                else:
-                    parsed = await transport.acomplete()
-                    output = result.add_chunk(parsed)
-                    if limiter:
-                        if output["response_delta"]:
-                            limiter.add(
-                                output=approximate_tokens(output["response_delta"])
-                            )
-                        if output["reasoning_delta"]:
-                            limiter.add(
-                                output=approximate_tokens(output["reasoning_delta"])
-                            )
-
-                llm_result = transport.last_result or LLMResult.from_chat(
-                    response=result.output()["response_delta"],
-                    reasoning=result.output()["reasoning_delta"],
-                    input_items=ResponsesTransport.input_from_messages(msgs_conv),
-                    provider_model_key=self.model_name,
-                    capability=transport._capability_metadata(),
-                )
-                if result.output()["response_delta"]:
-                    llm_result.response = result.output()["response_delta"]
-                if result.output()["reasoning_delta"]:
-                    llm_result.reasoning = result.output()["reasoning_delta"]
-                return llm_result
-
-            except Exception as e:
-                import asyncio
-
-                if (
-                    got_any_chunk
-                    or not _is_transient_litellm_error(e)
-                    or attempt >= max_retries
-                ):
-                    raise
-                attempt += 1
-                await asyncio.sleep(retry_delay_s)
+        if result.output()["response_delta"]:
+            llm_result.response = result.output()["response_delta"]
+        if result.output()["reasoning_delta"]:
+            llm_result.reasoning = result.output()["reasoning_delta"]
+        return llm_result
 
 
 class LiteLLMEmbeddingWrapper(Embeddings):
