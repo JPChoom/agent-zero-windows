@@ -21,68 +21,50 @@
   --glass-shadow: 0 8px 32px rgba(60, 60, 110, 0.14);
 }
 
-/* Colorful animated gradient-mesh backdrop, fixed behind everything.
+/* Subtle blue-only gradient-mesh backdrop, fixed behind everything.
    inset: -10% oversizes the layer so the drift animation's translate/
    scale never reveals a flat edge; gradient stop percentages stay
    relative to this element's own box (not scaled/panned), so blob
-   positions are simple and predictable at any viewport size. */
+   positions are simple and predictable at any viewport size.
+   Deliberately no hue-rotate here (unlike the theme's original version)
+   - a hue rotation sweeps through the whole color wheel, which would
+   break the "stays blue" requirement partway through every cycle. */
 body::before {
   content: "";
   position: fixed;
   inset: -10%;
   z-index: -1;
   background:
-    radial-gradient(circle at 15% 20%, #5b8cff 0%, transparent 40%),
-    radial-gradient(circle at 85% 15%, #9b6bff 0%, transparent 40%),
-    radial-gradient(circle at 20% 85%, #35d6c4 0%, transparent 40%),
-    radial-gradient(circle at 85% 80%, #ff6ec0 0%, transparent 40%),
+    radial-gradient(circle at 15% 20%, #2f6fc0 0%, transparent 55%),
+    radial-gradient(circle at 85% 15%, #1a3d78 0%, transparent 55%),
+    radial-gradient(circle at 20% 85%, #234f9e 0%, transparent 55%),
+    radial-gradient(circle at 85% 80%, #0f1f45 0%, transparent 55%),
     var(--color-background-dark);
-  filter: saturate(135%) hue-rotate(0deg);
+  filter: saturate(100%);
 }
 
 .light-mode body::before {
   background:
-    radial-gradient(circle at 15% 20%, #a7c4ff 0%, transparent 42%),
-    radial-gradient(circle at 85% 15%, #cdb0ff 0%, transparent 42%),
-    radial-gradient(circle at 20% 85%, #9fe9df 0%, transparent 42%),
-    radial-gradient(circle at 85% 80%, #ffc3e8 0%, transparent 42%),
+    radial-gradient(circle at 15% 20%, #7ea4e8 0%, transparent 55%),
+    radial-gradient(circle at 85% 15%, #4d76c9 0%, transparent 55%),
+    radial-gradient(circle at 20% 85%, #6690dc 0%, transparent 55%),
+    radial-gradient(circle at 85% 80%, #385e9e 0%, transparent 55%),
     var(--color-background-light);
-  filter: saturate(120%) hue-rotate(0deg);
+  filter: saturate(90%);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   body::before {
-    animation:
-      glass-drift 50s ease-in-out infinite alternate,
-      glass-hue-shift-dark 150s linear infinite;
-  }
-  .light-mode body::before {
-    animation:
-      glass-drift 50s ease-in-out infinite alternate,
-      glass-hue-shift-light 150s linear infinite;
+    animation: glass-drift 60s ease-in-out infinite alternate;
   }
 }
 
+/* Gentle drift only - small enough to read as "subtly alive," not as a
+   moving pattern. */
 @keyframes glass-drift {
-  0% { transform: translate(0%, 0%) scale(1.06); }
-  50% { transform: translate(-3%, 3%) scale(1.1); }
-  100% { transform: translate(3%, -3%) scale(1.06); }
-}
-
-/* Slow, continuous hue drift so the blob colors gradually shift over
-   time instead of sitting static - a full 360deg lap every 150s reads
-   as "subtly changing colors," not a visible sweep. True per-cycle
-   randomness isn't available in CSS without JS; an endless slow drift
-   gives the same felt effect without ever repeating on a noticeable
-   cadence. */
-@keyframes glass-hue-shift-dark {
-  0% { filter: saturate(135%) hue-rotate(0deg); }
-  100% { filter: saturate(135%) hue-rotate(360deg); }
-}
-
-@keyframes glass-hue-shift-light {
-  0% { filter: saturate(120%) hue-rotate(0deg); }
-  100% { filter: saturate(120%) hue-rotate(360deg); }
+  0% { transform: translate(0%, 0%) scale(1.03); }
+  50% { transform: translate(-1.5%, 1.5%) scale(1.05); }
+  100% { transform: translate(1.5%, -1.5%) scale(1.03); }
 }
 
 /* Let the colorful backdrop show through the main chrome instead of a
