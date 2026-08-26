@@ -196,20 +196,89 @@ def _schema_from_embedded_json(prompt: str) -> dict[str, Any]:
         return {}
 
 
+# Tool prompts declare arguments on a line like:
+#   arg: `query` (keyword-based text search query)
+#   args: `message`, optional `profile`, `reset`
+#   Args: `tool_calls`, `job_ids`, `wait` default `true`
+# The singular "arg:" and capitalised "Args:" forms are both in active use,
+# so this is anchored at line start and case-insensitive rather than doing a
+# substring test for "args:" - that older test missed every singular "arg:"
+# prompt (search_engine and behaviour), which then fell through to the fully
+# permissive schema. A tool advertised with `properties: {}` is telling the
+# model, formally, that it takes no arguments at all - observed live as
+# repeated `{"tool_name": "search_engine", "tool_args": {}}` calls.
+# A leading qualifier is common too ("Common args: `action`, `name`, ..."),
+# so one optional word is allowed before the keyword.
+_ARGS_LINE_PATTERN = re.compile(
+    r"^(?:[A-Za-z]+\s+)?(?:arg|args|argument|arguments)\s*:", re.IGNORECASE
+)
+_ARG_NAME_PATTERN = re.compile(r"`([A-Za-z_][A-Za-z0-9_-]*)`")
+# Markers that make the argument(s) in their comma-segment optional.
+_OPTIONAL_SEGMENT_MARKERS = ("optional", "default")
+
+
 def _schema_from_args_line(prompt: str) -> dict[str, Any]:
+    """Derive {properties, required} from a tool prompt's argument line.
+
+    Required-detection is deliberately conservative: a name counts as
+    required only when nothing in its own comma-separated segment marks it
+    optional, and the line doesn't say "any of" (which means no single
+    argument is individually mandatory - e.g. the wait tool). Marking a
+    genuinely-optional argument as required is the damaging direction,
+    since schema-enforcing providers would then reject or fabricate it;
+    under-marking merely preserves the previous behaviour.
+    """
     properties: dict[str, Any] = {}
+    required: list[str] = []
+
     for line in (prompt or "").splitlines():
         normalized = line.strip()
-        if "args:" not in normalized.lower() and "argument:" not in normalized.lower():
+        if not _ARGS_LINE_PATTERN.match(normalized):
             continue
-        for name in re.findall(r"`([A-Za-z_][A-Za-z0-9_-]*)`", normalized):
+        lowered = normalized.lower()
+
+        # Lines describing a subset ("any of `a`, `b`") or carrying inline
+        # defaults ("`wait` default `true`") describe conditional or
+        # mode-dependent signatures - the parallel tool's arguments depend on
+        # its action, for example. Deriving "required" from those reliably
+        # isn't possible from prose, so nothing is marked required and the
+        # previous (permissive) behaviour is preserved for them.
+        # A qualifier ("Common args: ...") means a shared pool spanning several
+        # actions rather than a per-call signature - the scheduler tool's
+        # arguments vary by action, so none of them is universally required.
+        qualified = bool(re.match(r"^[A-Za-z]+\s+", normalized))
+        derive_required = (
+            not qualified and "any of" not in lowered and "default" not in lowered
+        )
+
+        # Everything from the first "optional" onward is optional; prompts use
+        # it as a divider ("args: `message`, optional `profile`, `reset`")
+        # rather than repeating it per argument.
+        optional_at = lowered.find("optional")
+        cut = optional_at if optional_at != -1 else len(normalized)
+
+        for match in _ARG_NAME_PATTERN.finditer(normalized):
+            name = match.group(1)
+            # A backticked token after "default" in the same segment is a
+            # default *value* (`true`), not an argument name.
+            segment_start = normalized.rfind(",", 0, match.start()) + 1
+            if "default" in normalized[segment_start : match.start()].lower():
+                continue
             properties.setdefault(name, {"type": "string"})
+            if derive_required and match.start() < cut and name not in required:
+                required.append(name)
+
     if properties:
-        return {
+        schema: dict[str, Any] = {
             "type": "object",
             "properties": properties,
+            # Kept permissive: tools accept undocumented extras (e.g. action
+            # variants), and rejecting them would break working calls.
             "additionalProperties": True,
         }
+        if required:
+            schema["required"] = required
+        return schema
     return _permissive_schema()
 
 
