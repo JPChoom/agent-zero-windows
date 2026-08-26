@@ -1,0 +1,11 @@
+name: _win_desktop
+title: Windows Desktop
+description: Lets the agent see (and optionally control) the real Windows desktop, and streams it to a live panel.
+version: 1.0.0
+always_enabled: false
+os_support:
+  - windows
+settings_sections:
+  - agent
+per_project_config: false
+per_agent_config: false
