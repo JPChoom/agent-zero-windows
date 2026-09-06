@@ -30,13 +30,20 @@ def _handler():
 def _no_real_input(monkeypatch):
     """Nothing here may reach the OS or the real audit log."""
     performed: list[tuple] = []
-    for name in ("move", "click", "scroll", "type_text", "press_keys"):
+    # Every function that reaches the OS must be listed. An earlier version
+    # omitted "drag", so adding the drag action made the test move the real
+    # pointer instead of recording the call.
+    for name in (
+        "move", "click", "scroll", "type_text", "press_keys", "drag",
+        "set_clipboard_text",
+    ):
         monkeypatch.setattr(
             di.input_control,
             name,
             lambda *a, _n=name, **k: performed.append((_n, a, k)),
         )
     monkeypatch.setattr(di.input_control, "get_screen_size", lambda: (1920, 1080))
+    monkeypatch.setattr(di.input_control, "get_clipboard_text", lambda: "")
 
     async def fake_append(record):
         return record
@@ -275,3 +282,116 @@ async def test_unknown_monitor_is_rejected(monkeypatch, _no_real_input):
     )
     assert result["ok"] is False
     assert _no_real_input == []
+
+
+# ------------------------------------------------------------------
+# Drag, clipboard, quality
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_drag_maps_both_endpoints(monkeypatch, _no_real_input):
+    """Both ends of a drag go through the same scaling, or a window is
+    picked up in one place and dropped somewhere unrelated."""
+    _allow(monkeypatch)
+    await _handler().process(
+        {"action": "drag", "x": 100, "y": 100, "to_x": 500, "to_y": 300,
+         "frame_width": 960, "frame_height": 540},
+        None,  # type: ignore[arg-type]
+    )
+    name, args, _ = _no_real_input[0]
+    assert name == "drag"
+    # Frame is half the stubbed 1920x1080 desktop, so both points double.
+    assert args == (200, 200, 1000, 600)
+
+
+@pytest.mark.asyncio
+async def test_drag_respects_the_monitor_offset(monkeypatch, _no_real_input):
+    _allow(monkeypatch)
+    _three_monitors(monkeypatch)
+    await _handler().process(
+        {"action": "drag", "x": 0, "y": 0, "to_x": 100, "to_y": 0,
+         "frame_width": 1920, "frame_height": 1080, "monitor": 2},
+        None,  # type: ignore[arg-type]
+    )
+    assert _no_real_input[0][1] == (3840, 0, 3940, 0)
+
+
+@pytest.mark.asyncio
+async def test_clipboard_get_returns_text_not_a_message(monkeypatch, _no_real_input):
+    _allow(monkeypatch)
+    monkeypatch.setattr(di.input_control, "get_clipboard_text", lambda: "remote text")
+    result = await _handler().process({"action": "clipboard_get"}, None)  # type: ignore[arg-type]
+    assert result == {"ok": True, "text": "remote text"}
+
+
+@pytest.mark.asyncio
+async def test_clipboard_set_requires_text(monkeypatch, _no_real_input):
+    _allow(monkeypatch)
+    monkeypatch.setattr(di.input_control, "set_clipboard_text", lambda t: None)
+    assert (await _handler().process({"action": "clipboard_set"}, None))["ok"] is False  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_clipboard_contents_are_not_written_to_the_audit_log(monkeypatch):
+    """The record should show that the clipboard was set, without copying
+    whatever the user had on it into a durable log."""
+    records: list[dict] = []
+
+    async def capture_record(record):
+        records.append(record)
+        return record
+
+    monkeypatch.setattr(di.audit_log, "append_record", capture_record)
+    monkeypatch.setattr(di.input_control, "set_clipboard_text", lambda t: None)
+    _allow(monkeypatch)
+
+    await _handler().process(
+        {"action": "clipboard_set", "text": "hunter2"}, None  # type: ignore[arg-type]
+    )
+    assert records[0]["action"] == "clipboard_set"
+    assert records[0]["arguments"]["text"] == "<redacted>"
+    assert "hunter2" not in str(records[0])
+
+
+@pytest.mark.asyncio
+async def test_clipboard_is_gated_like_any_other_input(monkeypatch, _no_real_input):
+    """Reading the remote clipboard is a disclosure, so it must sit behind
+    the same switch as clicking and typing."""
+    _allow(monkeypatch, control_enabled=False)
+    for action in ("clipboard_get", "clipboard_set"):
+        result = await _handler().process(
+            {"action": action, "text": "x"}, None  # type: ignore[arg-type]
+        )
+        assert result["ok"] is False
+
+
+def test_quality_presets_are_ordered_by_cost():
+    """Each step down must actually reduce bandwidth on every axis, or the
+    control does not do what its label promises."""
+    high = ds.QUALITY_PRESETS["high"]
+    medium = ds.QUALITY_PRESETS["medium"]
+    low = ds.QUALITY_PRESETS["low"]
+    for key in ("max_edge", "jpeg_quality", "fps"):
+        assert high[key] >= medium[key] >= low[key], key
+    assert low["max_edge"] < high["max_edge"]
+
+
+def test_every_os_touching_function_is_stubbed():
+    """Guard against the fixture drifting behind the module: a new action
+    whose helper is not stubbed would drive the real desktop during a test
+    run, which is how adding `drag` first moved the actual pointer."""
+    import inspect
+
+    from plugins._win_desktop.helpers import input_control
+
+    # Functions that synthesise input or touch the clipboard.
+    reaches_os = {
+        "move", "click", "scroll", "type_text", "press_keys", "drag",
+        "get_clipboard_text", "set_clipboard_text", "focus_window",
+    }
+    exported = {
+        name for name, obj in vars(input_control).items()
+        if inspect.isfunction(obj) and not name.startswith("_")
+    }
+    missing = reaches_os - exported
+    assert not missing, f"input_control no longer defines: {missing}"

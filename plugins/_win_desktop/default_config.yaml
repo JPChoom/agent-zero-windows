@@ -27,3 +27,8 @@ control_enabled: false
 # the primary screen is clickable. Coordinates always span whatever is
 # captured, with (0, 0) at its top-left.
 capture_all_screens: true
+
+# Composite the mouse pointer onto captured frames. Screen captures never
+# include it (Windows draws the cursor separately from the framebuffer), and
+# a remote view with no visible pointer is close to unusable.
+capture_cursor: true

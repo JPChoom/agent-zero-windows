@@ -430,3 +430,70 @@ def list_monitors():
     from plugins._win_desktop.helpers.capture import list_monitors as _impl
 
     return _impl()
+
+
+def drag(
+    start_x: int, start_y: int, end_x: int, end_y: int,
+    button: str = "left", steps: int = 24,
+) -> None:
+    """Press at the start point, move to the end point, release.
+
+    The pointer is moved in steps rather than teleported: applications track
+    WM_MOUSEMOVE to decide a drag has begun, and a single jump from press to
+    release is frequently interpreted as a click on the destination instead.
+    Window dragging and text selection both depend on the intermediate moves.
+    """
+    button = (button or "left").strip().lower()
+    if button not in MOUSE_BUTTONS:
+        raise InputError(f"unknown mouse button {button!r}")
+    steps = max(2, min(int(steps), 200))
+
+    down, up = MOUSE_BUTTONS[button]
+    start = _to_absolute(int(start_x), int(start_y))
+    end = _to_absolute(int(end_x), int(end_y))
+
+    _send(_mouse_input(*start, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK))
+    time.sleep(0.02)
+    _send(_mouse_input(0, 0, down))
+    time.sleep(0.05)
+    for index in range(1, steps + 1):
+        fraction = index / steps
+        point = (
+            int(round(start[0] + (end[0] - start[0]) * fraction)),
+            int(round(start[1] + (end[1] - start[1]) * fraction)),
+        )
+        _send(
+            _mouse_input(
+                *point,
+                MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+            )
+        )
+        time.sleep(0.008)
+    time.sleep(0.05)
+    _send(_mouse_input(0, 0, up))
+
+
+def get_clipboard_text() -> str:
+    """Read the clipboard as text, or "" if it holds something else."""
+    import win32clipboard
+    import win32con as wc
+
+    win32clipboard.OpenClipboard()
+    try:
+        if not win32clipboard.IsClipboardFormatAvailable(wc.CF_UNICODETEXT):
+            return ""
+        return win32clipboard.GetClipboardData(wc.CF_UNICODETEXT) or ""
+    finally:
+        win32clipboard.CloseClipboard()
+
+
+def set_clipboard_text(text: str) -> None:
+    import win32clipboard
+    import win32con as wc
+
+    win32clipboard.OpenClipboard()
+    try:
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(wc.CF_UNICODETEXT, str(text))
+    finally:
+        win32clipboard.CloseClipboard()

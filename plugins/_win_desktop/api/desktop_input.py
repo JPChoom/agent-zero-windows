@@ -43,7 +43,10 @@ class DesktopInput(ApiHandler):
             return {"ok": False, "error": kill_switch.denial_message()}
 
         action = str(input.get("action") or "").strip().lower()
-        if action not in ("move", "click", "scroll", "type", "key"):
+        if action not in (
+            "move", "click", "scroll", "type", "key",
+            "drag", "clipboard_get", "clipboard_set",
+        ):
             return {"ok": False, "error": f"Unsupported action: {action!r}"}
 
         await audit_log.append_record(
@@ -51,13 +54,23 @@ class DesktopInput(ApiHandler):
                 "tool": "desktop_input",
                 "agent_role": "webui",
                 "action": action,
-                "arguments": {k: v for k, v in input.items() if k != "action"},
+                # Clipboard text is not copied into the log: the record
+                # exists to show an action happened, not to duplicate
+                # whatever the user had copied.
+                "arguments": {
+                    k: ("<redacted>" if k == "text" else v)
+                    for k, v in input.items()
+                    if k != "action"
+                },
                 "context": "viewer-panel",
             }
         )
 
         try:
-            return {"ok": True, "message": self._dispatch(action, input)}
+            result = self._dispatch(action, input)
+            if action == "clipboard_get":
+                return {"ok": True, "text": result}
+            return {"ok": True, "message": result}
         except input_control.InputError as exc:
             return {"ok": False, "error": str(exc)}
         except Exception as exc:
@@ -110,7 +123,26 @@ class DesktopInput(ApiHandler):
             button = str(data.get("button") or "left")
             clicks = int(data.get("clicks") or 1)
             input_control.click(x, y, button=button, clicks=clicks)
-            return f"clicked {button} at ({x}, {y})"
+            return f"clicked {button} x{clicks} at ({x}, {y})"
+
+        if action == "drag":
+            start = self._screen_coords(data)
+            end = self._screen_coords(
+                {**data, "x": data.get("to_x"), "y": data.get("to_y")}
+            )
+            button = str(data.get("button") or "left")
+            input_control.drag(*start, *end, button=button)
+            return f"dragged {button} {start} -> {end}"
+
+        if action == "clipboard_get":
+            return input_control.get_clipboard_text()
+
+        if action == "clipboard_set":
+            text = data.get("text")
+            if not isinstance(text, str):
+                raise input_control.InputError("text is required")
+            input_control.set_clipboard_text(text)
+            return f"clipboard set ({len(text)} characters)"
 
         if action == "scroll":
             x, y = self._screen_coords(data)

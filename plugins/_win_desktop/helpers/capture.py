@@ -87,6 +87,7 @@ def capture_frame(
     jpeg_quality: int = 60,
     all_screens: bool = True,
     monitor: int | None = None,
+    show_cursor: bool = True,
 ) -> CapturedFrame:
     """Grab the desktop and return it as JPEG bytes.
 
@@ -118,6 +119,12 @@ def capture_frame(
                 offset_y + chosen["height"],
             )
         )
+
+    # Drawn before the downscale so the pointer is positioned in native
+    # coordinates and shrinks with everything else, rather than floating at a
+    # fixed size over a scaled desktop.
+    if show_cursor:
+        draw_cursor(image, offset_x, offset_y)
 
     screen_width, screen_height = image.size
 
@@ -157,6 +164,7 @@ _DEFAULTS = {
     "capture_max_edge": 1920,
     "capture_jpeg_quality": 60,
     "capture_all_screens": True,
+    "capture_cursor": True,
     "control_enabled": False,
 }
 
@@ -177,6 +185,9 @@ def get_config(agent=None) -> dict:
         ),
         "capture_all_screens": bool(
             cfg.get("capture_all_screens", _DEFAULTS["capture_all_screens"])
+        ),
+        "capture_cursor": bool(
+            cfg.get("capture_cursor", _DEFAULTS["capture_cursor"])
         ),
         "control_enabled": bool(
             cfg.get("control_enabled", _DEFAULTS["control_enabled"])
@@ -237,3 +248,108 @@ def list_monitors() -> list[dict]:
     for index, monitor in enumerate(monitors):
         monitor["index"] = index
     return monitors
+
+
+# Screen captures do not include the mouse pointer - BitBlt copies the
+# framebuffer, and Windows composites the cursor separately. A remote view
+# without a visible pointer is close to unusable, so it is drawn on.
+CURSOR_SHOWING = 0x00000001
+_CURSOR_BOX = 32
+# Rendered cursors keyed by handle. Windows reuses a small set of handles
+# (arrow, I-beam, hand, resize), so this turns a per-frame render into a
+# dict lookup after the first sighting of each shape.
+_CURSOR_CACHE: dict[int, object] = {}
+
+
+def _cursor_image(handle):
+    """Render a cursor handle to an RGBA PIL image.
+
+    Most system cursors are monochrome (GetIconInfo reports a mask bitmap
+    and no colour bitmap), so there is no alpha channel to read. The
+    standard recovery is to draw the same cursor twice, on black and on
+    white: pixels that come out identical are opaque, and pixels that
+    differ by the full range are transparent. Deriving alpha from that
+    difference keeps the pointer's outline instead of pasting a white box.
+    """
+    import win32con
+    import win32gui
+    import win32ui
+    from PIL import Image
+
+    screen_dc = None
+    try:
+        screen_dc = win32gui.GetDC(0)
+        dc = win32ui.CreateDCFromHandle(screen_dc)
+        renders = []
+        for fill in (win32con.BLACKNESS, win32con.WHITENESS):
+            mem = dc.CreateCompatibleDC()
+            bitmap = win32ui.CreateBitmap()
+            bitmap.CreateCompatibleBitmap(dc, _CURSOR_BOX, _CURSOR_BOX)
+            mem.SelectObject(bitmap)
+            mem.PatBlt((0, 0), (_CURSOR_BOX, _CURSOR_BOX), fill)
+            win32gui.DrawIconEx(
+                mem.GetSafeHdc(), 0, 0, handle,
+                _CURSOR_BOX, _CURSOR_BOX, 0, None, win32con.DI_NORMAL,
+            )
+            renders.append(
+                Image.frombuffer(
+                    "RGBA", (_CURSOR_BOX, _CURSOR_BOX),
+                    bitmap.GetBitmapBits(True), "raw", "BGRA", 0, 1,
+                )
+            )
+            win32gui.DeleteObject(bitmap.GetHandle())
+            mem.DeleteDC()
+        dc.DeleteDC()
+    finally:
+        if screen_dc:
+            win32gui.ReleaseDC(0, screen_dc)
+
+    import numpy
+
+    on_black, on_white = renders
+    # Vectorised rather than a per-pixel loop: this runs on every streamed
+    # frame, and the Python version cost more than the screen grab itself.
+    black = numpy.asarray(on_black, dtype=numpy.int16)
+    white = numpy.asarray(on_white, dtype=numpy.int16)
+    # Fully transparent pixels track the background exactly, so the
+    # difference is 255; opaque ones are identical, difference 0.
+    alpha = 255 - (white[:, :, :3] - black[:, :, :3]).max(axis=2)
+    rgba = numpy.dstack(
+        [black[:, :, :3], numpy.clip(alpha, 0, 255)]
+    ).astype(numpy.uint8)
+    return Image.fromarray(rgba, "RGBA")
+
+
+def draw_cursor(image, offset_x: int = 0, offset_y: int = 0) -> None:
+    """Composite the live mouse pointer onto a captured frame, in place.
+
+    Coordinates are converted from Windows' signed virtual-screen space to
+    the frame's own 0-based space, minus any monitor crop offset. Failures
+    are swallowed: a missing pointer is a cosmetic loss, and it must never
+    take down a stream.
+    """
+    try:
+        import win32gui
+
+        _flags, handle, position = win32gui.GetCursorInfo()
+        if not handle or not (_flags & CURSOR_SHOWING):
+            return
+        info = win32gui.GetIconInfo(handle)
+        hotspot_x, hotspot_y = info[1], info[2]
+        for bitmap in (info[3], info[4]):
+            if bitmap:
+                win32gui.DeleteObject(bitmap)
+
+        origin_x, origin_y, _, _ = get_virtual_bounds()
+        x = position[0] - origin_x - offset_x - hotspot_x
+        y = position[1] - origin_y - offset_y - hotspot_y
+        if not (-_CURSOR_BOX < x < image.width and -_CURSOR_BOX < y < image.height):
+            return  # pointer is on a screen this frame does not cover
+
+        sprite = _CURSOR_CACHE.get(handle)
+        if sprite is None:
+            sprite = _cursor_image(handle)
+            _CURSOR_CACHE[handle] = sprite
+        image.paste(sprite, (x, y), sprite)
+    except Exception:
+        return

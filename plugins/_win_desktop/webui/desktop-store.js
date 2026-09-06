@@ -31,6 +31,9 @@ export function mount(scope = document) {
   const monitorSelect = pick("monitor");
   const fullscreenButton = pick("fullscreen");
   const expandButton = pick("expand");
+  const qualitySelect = pick("quality");
+  const clipPull = pick("clip-pull");
+  const clipPush = pick("clip-push");
   const root = frame.closest(".wd-root");
 
   let streaming = false;
@@ -45,7 +48,8 @@ export function mount(scope = document) {
   function start() {
     // Cache-busted so a reconnect is not served the previous response.
     const monitor = encodeURIComponent(currentMonitor());
-    frame.src = `${STREAM_URL}?monitor=${monitor}&t=${Date.now()}`;
+    const quality = encodeURIComponent(qualitySelect?.value || "medium");
+    frame.src = `${STREAM_URL}?monitor=${monitor}&quality=${quality}&t=${Date.now()}`;
     streaming = true;
     if (toggle) toggle.textContent = "Stop";
     setStatus("connecting…");
@@ -76,6 +80,22 @@ export function mount(scope = document) {
         : "Read-only. Tick the box above to send clicks and typing to the real desktop.";
     }
   });
+
+  async function request(payload) {
+    try {
+      const response = await globalThis.fetchApi(INPUT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!data.ok) setStatus(data.error || "request rejected", true);
+      return data;
+    } catch (error) {
+      setStatus(String(error), true);
+      return null;
+    }
+  }
 
   async function send(payload) {
     if (!control?.checked) return;
@@ -110,9 +130,37 @@ export function mount(scope = document) {
     };
   }
 
-  frame.addEventListener("click", (event) => {
+  // A drag is press, move, release - so the click handler only fires for a
+  // press and release in roughly the same place. Anything further apart is
+  // sent as a drag, which is what moving a window or selecting text needs.
+  const DRAG_THRESHOLD_PX = 5;
+  let pressPoint = null;
+
+  frame.addEventListener("mousedown", (event) => {
+    if (!control?.checked || event.button !== 0) return;
+    event.preventDefault();
+    pressPoint = framePoint(event);
+  });
+
+  frame.addEventListener("mouseup", (event) => {
+    if (!control?.checked || event.button !== 0) return;
+    const release = framePoint(event);
+    const press = pressPoint;
+    pressPoint = null;
+    if (!press || !release) return;
+    const moved = Math.hypot(release.x - press.x, release.y - press.y);
+    if (moved > DRAG_THRESHOLD_PX) {
+      send({ action: "drag", ...press, to_x: release.x, to_y: release.y });
+    } else {
+      send({ action: "click", ...release, clicks: event.detail >= 2 ? 2 : 1 });
+    }
+  });
+
+  frame.addEventListener("auxclick", (event) => {
+    if (!control?.checked || event.button !== 1) return;
+    event.preventDefault();
     const point = framePoint(event);
-    if (point) send({ action: "click", ...point });
+    if (point) send({ action: "click", button: "middle", ...point });
   });
 
   frame.addEventListener("contextmenu", (event) => {
@@ -153,6 +201,36 @@ export function mount(scope = document) {
   // side per connection rather than per frame.
   monitorSelect?.addEventListener("change", () => {
     if (streaming) start();
+  });
+
+  // Quality is chosen server side per connection, so changing it reconnects.
+  qualitySelect?.addEventListener("change", () => {
+    if (streaming) start();
+  });
+
+  clipPull?.addEventListener("click", async () => {
+    const data = await request({ action: "clipboard_get" });
+    if (!data?.ok) return;
+    try {
+      await navigator.clipboard.writeText(data.text || "");
+      setStatus(`copied ${(data.text || "").length} characters from the remote`);
+    } catch {
+      // The Clipboard API needs a secure context and permission; showing the
+      // text is more useful than failing silently.
+      setStatus(`remote clipboard: ${(data.text || "").slice(0, 80)}`);
+    }
+  });
+
+  clipPush?.addEventListener("click", async () => {
+    let text = "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      setStatus("this browser would not share the clipboard", true);
+      return;
+    }
+    const data = await request({ action: "clipboard_set", text });
+    if (data?.ok) setStatus(`sent ${text.length} characters to the remote`);
   });
 
   // Where the panel normally lives, so expanding can put it back.

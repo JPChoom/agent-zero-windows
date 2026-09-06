@@ -28,6 +28,13 @@
       <option value="all">All screens</option>
     </select>
     <label><input type="checkbox" data-wd="control" /> Allow my clicks &amp; typing</label>
+    <select data-wd="quality" title="Stream quality">
+      <option value="high">High</option>
+      <option value="medium" selected>Medium</option>
+      <option value="low">Low (slow link)</option>
+    </select>
+    <button type="button" data-wd="clip-pull" title="Copy the remote clipboard to this device">📋←</button>
+    <button type="button" data-wd="clip-push" title="Send this device's clipboard to the remote">📋→</button>
     <button type="button" data-wd="expand" title="Fill the window (Esc to exit)">⤢</button>
     <button type="button" data-wd="fullscreen" title="True fullscreen (Esc to exit)">⛶</button>
     <span class="wd-status" data-wd="status">idle</span>
@@ -39,6 +46,7 @@
 
   <div class="wd-hint" data-wd="hint">
     Read-only. Tick the box above to send clicks and typing to the real desktop.
+    Double-click, right-click, middle-click, drag and scroll all pass through.
   </div>
 </div>
 

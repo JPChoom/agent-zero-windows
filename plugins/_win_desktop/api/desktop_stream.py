@@ -23,6 +23,15 @@ from plugins._win_desktop.helpers import capture
 
 BOUNDARY = "a0desktopframe"
 
+# Bandwidth presets, chosen per connection. A three-monitor desktop at high
+# quality is several hundred KB per frame, which a remote link over a tunnel
+# will not sustain - hence a visible control rather than a fixed setting.
+QUALITY_PRESETS = {
+    "high": {"max_edge": 2560, "jpeg_quality": 80, "fps": 12},
+    "medium": {"max_edge": 1920, "jpeg_quality": 60, "fps": 10},
+    "low": {"max_edge": 1280, "jpeg_quality": 40, "fps": 5},
+}
+
 # Upper bound on frame rate. Measured cost of a grab plus resize/encode is
 # ~80ms (~12fps), so this caps rather than paces the common case; it exists
 # to stop a fast machine spending the whole core on frames nobody watches.
@@ -72,13 +81,22 @@ class DesktopStream(ApiHandler):
         except (TypeError, ValueError):
             return Response("invalid monitor", status=400, mimetype="text/plain")
 
-        quality = cfg["capture_jpeg_quality"]
-        max_edge = cfg["capture_max_edge"]
+        preset = QUALITY_PRESETS.get(str(request.args.get("quality", "")).lower())
+        if preset:
+            quality = preset["jpeg_quality"]
+            max_edge = preset["max_edge"]
+            max_fps = preset["fps"]
+        else:
+            # No preset asked for: fall back to the configured values.
+            quality = cfg["capture_jpeg_quality"]
+            max_edge = cfg["capture_max_edge"]
+            max_fps = MAX_FPS
         all_screens = cfg["capture_all_screens"]
+        show_cursor = cfg["capture_cursor"]
 
         def frames():
             deadline = time.time() + STREAM_SECONDS
-            min_interval = 1.0 / MAX_FPS
+            min_interval = 1.0 / max_fps
             while time.time() < deadline:
                 started = time.time()
                 try:
@@ -87,6 +105,7 @@ class DesktopStream(ApiHandler):
                         jpeg_quality=quality,
                         all_screens=all_screens,
                         monitor=monitor_index,
+                        show_cursor=show_cursor,
                     )
                 except Exception:
                     # A transient grab failure (screen locked, display mode
