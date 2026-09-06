@@ -1,0 +1,11 @@
+<div
+  class="right-canvas-surface-panel win-desktop-canvas-surface"
+  data-surface-id="win-desktop"
+  :class="{
+    'is-active': $store.rightCanvas?.isSurfaceVisible('win-desktop'),
+    'is-mounted': $store.rightCanvas?.isSurfaceRendered('win-desktop')
+  }"
+  :aria-hidden="(!$store.rightCanvas?.isSurfaceVisible('win-desktop')).toString()"
+>
+  <x-component path="/plugins/_win_desktop/webui/desktop-panel.html"></x-component>
+</div>

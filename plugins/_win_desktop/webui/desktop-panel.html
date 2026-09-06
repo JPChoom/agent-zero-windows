@@ -1,0 +1,30 @@
+<div class="wd-root">
+  <style>
+    .wd-root { display:flex; flex-direction:column; height:100%; min-height:0; gap:.5rem; padding:.5rem; }
+    .wd-bar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; font-size:.85rem; }
+    .wd-bar button { padding:.25rem .6rem; cursor:pointer; }
+    .wd-status { opacity:.75; margin-left:auto; }
+    .wd-stage { position:relative; flex:1; min-height:0; display:flex;
+                align-items:center; justify-content:center; overflow:hidden;
+                background:#000; border-radius:.35rem; }
+    .wd-stage img { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+    .wd-stage.wd-live img { cursor:crosshair; }
+    .wd-hint { font-size:.75rem; opacity:.7; }
+    .wd-warn { color:#ffb4a2; }
+  </style>
+
+  <div class="wd-bar">
+    <button type="button" data-wd="toggle">Start</button>
+    <label><input type="checkbox" data-wd="control" /> Allow my clicks &amp; typing</label>
+    <span class="wd-status" data-wd="status">idle</span>
+  </div>
+
+  <div class="wd-stage" data-wd="stage">
+    <img data-wd="frame" alt="Windows desktop stream" />
+  </div>
+
+  <div class="wd-hint" data-wd="hint">
+    Read-only. Tick the box above to send clicks and typing to the real desktop.
+  </div>
+</div>
+

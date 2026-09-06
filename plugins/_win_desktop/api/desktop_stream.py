@@ -1,0 +1,91 @@
+"""MJPEG stream of the live Windows desktop.
+
+Served as multipart/x-mixed-replace, which browsers render natively in a
+plain <img> tag. That is the whole reason this needs no streaming protocol,
+no WebSocket framing and no client-side decoder - the alternative designs
+(Xpra, noVNC + websockify, Guacamole) all require an external daemon, and
+this fork already has everything needed to produce JPEG frames.
+
+GET rather than POST because an <img src> can only issue a GET. Auth is
+still required: the browser sends the session cookie with the image
+request like any other subresource.
+"""
+
+from __future__ import annotations
+
+import time
+
+from flask import Response
+
+from helpers.api import ApiHandler, Request
+from plugins._win_desktop.helpers import capture
+
+
+BOUNDARY = "a0desktopframe"
+
+# Upper bound on frame rate. Measured cost of a grab plus resize/encode is
+# ~80ms (~12fps), so this caps rather than paces the common case; it exists
+# to stop a fast machine spending the whole core on frames nobody watches.
+MAX_FPS = 10
+
+# A viewer left open forever would hold a worker thread indefinitely. The
+# panel reconnects automatically - an <img> re-requests when the stream
+# ends - so a bounded stream costs the viewer nothing and releases the
+# thread if the tab is abandoned.
+STREAM_SECONDS = 300
+
+
+class DesktopStream(ApiHandler):
+
+    @classmethod
+    def get_methods(cls) -> list[str]:
+        return ["GET"]
+
+    @classmethod
+    def requires_csrf(cls) -> bool:
+        # A CSRF token cannot be attached to an <img src>. This endpoint is
+        # read-only and returns no data an attacker could read cross-origin
+        # (the browser will not let a foreign page read image pixels), so
+        # the exchange is safe; every state-changing action lives in
+        # desktop_input, which does require CSRF.
+        return False
+
+    async def process(self, input: dict, request: Request) -> Response:
+        cfg = capture.get_config(None)
+        if not cfg["capture_enabled"]:
+            return Response("desktop capture is disabled", status=409,
+                            mimetype="text/plain")
+
+        quality = cfg["capture_jpeg_quality"]
+        max_edge = cfg["capture_max_edge"]
+
+        def frames():
+            deadline = time.time() + STREAM_SECONDS
+            min_interval = 1.0 / MAX_FPS
+            while time.time() < deadline:
+                started = time.time()
+                try:
+                    frame = capture.capture_frame(
+                        max_edge=max_edge, jpeg_quality=quality
+                    )
+                except Exception:
+                    # A transient grab failure (screen locked, display mode
+                    # change) must not tear down the viewer.
+                    time.sleep(0.5)
+                    continue
+                yield (
+                    f"--{BOUNDARY}\r\n"
+                    f"Content-Type: {frame.mime}\r\n"
+                    f"Content-Length: {len(frame.payload)}\r\n"
+                    f"X-Screen-Width: {frame.screen_width}\r\n"
+                    f"X-Screen-Height: {frame.screen_height}\r\n\r\n"
+                ).encode("ascii") + frame.payload + b"\r\n"
+                elapsed = time.time() - started
+                if elapsed < min_interval:
+                    time.sleep(min_interval - elapsed)
+
+        return Response(
+            frames(),
+            mimetype=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
+            headers={"Cache-Control": "no-store, no-cache", "Pragma": "no-cache"},
+        )

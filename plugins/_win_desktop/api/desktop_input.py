@@ -1,0 +1,117 @@
+"""Mouse and keyboard input from the desktop viewer panel.
+
+Separate from tools/desktop_control.py on purpose. That tool gates the
+*agent*; this gates the *browser*, and the two callers are different
+principals - the person watching the panel is the signed-in user acting
+directly, not a model whose next action is a prediction.
+
+The gates are nonetheless the same three, enforced here rather than
+inherited, because helpers/input_control performs no permission checks of
+its own and a second entry point that skipped them would silently undo
+them for everyone:
+
+1. control_enabled  - opt-in config, default false.
+2. kill switch      - refuses while tripped.
+3. audit log        - every accepted action recorded before it is performed.
+
+Coordinates arrive in the coordinate space of the streamed image, which is
+downscaled (1280px by default) from a 1920x1080 screen. They are scaled
+back here from the frame dimensions the client reports, so a click on the
+panel lands where the user aimed it.
+"""
+
+from __future__ import annotations
+
+from helpers import audit_log, kill_switch
+from helpers.api import ApiHandler, Request
+from plugins._win_desktop.helpers import capture, input_control
+
+
+class DesktopInput(ApiHandler):
+
+    async def process(self, input: dict, request: Request) -> dict:
+        cfg = capture.get_config(None)
+        if not cfg["control_enabled"]:
+            return {
+                "ok": False,
+                "error": (
+                    "Desktop control is disabled. Enable 'control_enabled' in "
+                    "the Windows Desktop plugin settings."
+                ),
+            }
+        if kill_switch.is_tripped():
+            return {"ok": False, "error": kill_switch.denial_message()}
+
+        action = str(input.get("action") or "").strip().lower()
+        if action not in ("move", "click", "scroll", "type", "key"):
+            return {"ok": False, "error": f"Unsupported action: {action!r}"}
+
+        await audit_log.append_record(
+            {
+                "tool": "desktop_input",
+                "agent_role": "webui",
+                "action": action,
+                "arguments": {k: v for k, v in input.items() if k != "action"},
+                "context": "viewer-panel",
+            }
+        )
+
+        try:
+            return {"ok": True, "message": self._dispatch(action, input)}
+        except input_control.InputError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            return {"ok": False, "error": f"input failed: {exc}"}
+
+    def _screen_coords(self, data: dict) -> tuple[int, int]:
+        """Map a click on the streamed image back to screen pixels."""
+        try:
+            x = float(data["x"])
+            y = float(data["y"])
+        except (KeyError, TypeError, ValueError):
+            raise input_control.InputError("x and y are required")
+
+        frame_w = float(data.get("frame_width") or 0)
+        frame_h = float(data.get("frame_height") or 0)
+        screen_w, screen_h = input_control.get_screen_size()
+        # Absent or nonsensical frame dimensions mean the client didn't
+        # report them; treating the coordinates as already-screen-space is
+        # the only safe reading, and _to_absolute still range-checks them.
+        if frame_w > 0 and frame_h > 0:
+            x = x * screen_w / frame_w
+            y = y * screen_h / frame_h
+        return int(round(x)), int(round(y))
+
+    def _dispatch(self, action: str, data: dict) -> str:
+        if action == "move":
+            x, y = self._screen_coords(data)
+            input_control.move(x, y)
+            return f"moved to ({x}, {y})"
+
+        if action == "click":
+            x, y = self._screen_coords(data)
+            button = str(data.get("button") or "left")
+            clicks = int(data.get("clicks") or 1)
+            input_control.click(x, y, button=button, clicks=clicks)
+            return f"clicked {button} at ({x}, {y})"
+
+        if action == "scroll":
+            x, y = self._screen_coords(data)
+            amount = int(data.get("amount") or 0)
+            if not amount:
+                raise input_control.InputError("amount is required")
+            input_control.scroll(x, y, amount)
+            return f"scrolled {amount} at ({x}, {y})"
+
+        if action == "type":
+            text = data.get("text")
+            if not isinstance(text, str) or not text:
+                raise input_control.InputError("text is required")
+            input_control.type_text(text)
+            return f"typed {len(text)} characters"
+
+        keys = data.get("keys")
+        if not isinstance(keys, str) or not keys.strip():
+            raise input_control.InputError("keys is required")
+        input_control.press_keys(keys)
+        return f"pressed {keys}"
