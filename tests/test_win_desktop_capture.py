@@ -190,3 +190,66 @@ def test_all_screens_config_defaults_to_true(monkeypatch):
 
     monkeypatch.setattr(plugins, "get_plugin_config", lambda *a, **k: {})
     assert capture.get_config()["capture_all_screens"] is True
+
+
+# ------------------------------------------------------------------
+# Per-monitor cropping
+# ------------------------------------------------------------------
+
+def test_monitor_crop_reports_its_offset(monkeypatch):
+    """The offset is what lets a click on a cropped frame map back to the
+    right screen; without it every click lands on the leftmost monitor."""
+    monkeypatch.setattr(capture, "_grab", _fake_grab((5760, 1080)))
+    monkeypatch.setattr(capture, "list_monitors", lambda: [
+        {"index": 0, "x": 0, "y": 0, "width": 1920, "height": 1080, "primary": False},
+        {"index": 1, "x": 1920, "y": 0, "width": 1920, "height": 1080, "primary": True},
+        {"index": 2, "x": 3840, "y": 0, "width": 1920, "height": 1080, "primary": False},
+    ])
+    frame = capture.capture_frame(max_edge=0, monitor=2)
+    assert (frame.width, frame.height) == (1920, 1080)
+    assert (frame.offset_x, frame.offset_y) == (3840, 0)
+
+
+def test_full_desktop_has_no_offset(monkeypatch):
+    monkeypatch.setattr(capture, "_grab", _fake_grab((5760, 1080)))
+    frame = capture.capture_frame(max_edge=0)
+    assert (frame.offset_x, frame.offset_y) == (0, 0)
+    assert (frame.width, frame.height) == (5760, 1080)
+
+
+def test_out_of_range_monitor_raises(monkeypatch):
+    monkeypatch.setattr(capture, "_grab", _fake_grab((5760, 1080)))
+    monkeypatch.setattr(capture, "list_monitors", lambda: [
+        {"index": 0, "x": 0, "y": 0, "width": 1920, "height": 1080, "primary": True},
+    ])
+    with pytest.raises(ValueError):
+        capture.capture_frame(monitor=5)
+
+
+def test_monitors_are_ordered_left_to_right():
+    """Windows enumerates monitors in an arbitrary order - on the
+    development machine the rightmost screen comes second - so a positional
+    label built from the raw order would mislabel screens."""
+    monitors = capture.list_monitors()
+    xs = [m["x"] for m in monitors]
+    assert xs == sorted(xs)
+    assert [m["index"] for m in monitors] == list(range(len(monitors)))
+
+
+def test_code_defaults_match_the_shipped_yaml():
+    """get_plugin_config returns only values that have been explicitly set,
+    so the YAML defaults are never merged in and the code fallbacks are what
+    actually apply. A mismatch means the documented default silently loses -
+    capture_max_edge shipped as 1920 while the code used 1280."""
+    import yaml
+
+    from helpers import files
+
+    shipped = yaml.safe_load(
+        files.read_file("plugins/_win_desktop/default_config.yaml")
+    )
+    for key, value in capture._DEFAULTS.items():
+        assert key in shipped, f"{key} missing from default_config.yaml"
+        assert shipped[key] == value, (
+            f"{key}: yaml says {shipped[key]!r}, code falls back to {value!r}"
+        )

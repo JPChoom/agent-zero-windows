@@ -4,6 +4,15 @@
     .wd-bar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; font-size:.85rem; }
     .wd-bar button { padding:.25rem .6rem; cursor:pointer; }
     .wd-status { opacity:.75; margin-left:auto; }
+    /* In fullscreen the stage is the whole screen, so it paints its own
+       background and centres the frame rather than inheriting panel layout. */
+    /* Expanded: fills the browser window using CSS only. Real fullscreen
+       needs the Fullscreen API, which some embedded browsers refuse
+       ("Permissions check failed"), so this is the mode that always works. */
+    .wd-root.wd-expanded { position:fixed; inset:0; z-index:9999;
+                           background:#0b1220; padding:.5rem; }
+    .wd-stage:fullscreen { background:#000; padding:0; }
+    .wd-stage:fullscreen img { max-width:100vw; max-height:100vh; }
     .wd-stage { position:relative; flex:1; min-height:0; display:flex;
                 align-items:center; justify-content:center; overflow:hidden;
                 background:#000; border-radius:.35rem; }
@@ -15,7 +24,12 @@
 
   <div class="wd-bar">
     <button type="button" data-wd="toggle">Start</button>
+    <select data-wd="monitor" title="Which screen to show">
+      <option value="all">All screens</option>
+    </select>
     <label><input type="checkbox" data-wd="control" /> Allow my clicks &amp; typing</label>
+    <button type="button" data-wd="expand" title="Fill the window (Esc to exit)">⤢</button>
+    <button type="button" data-wd="fullscreen" title="True fullscreen (Esc to exit)">⛶</button>
     <span class="wd-status" data-wd="status">idle</span>
   </div>
 

@@ -195,3 +195,83 @@ def test_input_endpoint_requires_auth_and_csrf():
 def test_stream_is_bounded_so_an_abandoned_tab_frees_its_worker():
     assert 0 < ds.STREAM_SECONDS <= 900
     assert 0 < ds.MAX_FPS <= 30
+
+
+# ------------------------------------------------------------------
+# Per-monitor viewing
+# ------------------------------------------------------------------
+#
+# A 5760x1080 three-screen desktop scaled into a panel leaves each screen
+# too small to read, so the viewer can crop to one. That adds a second
+# transform to every click: scale from the rendered frame, then offset by
+# the monitor's position. Missing the offset does not raise - it silently
+# puts every click on the leftmost screen.
+
+def _three_monitors(monkeypatch):
+    monitors = [
+        {"index": 0, "x": 0, "y": 0, "width": 1920, "height": 1080, "primary": False},
+        {"index": 1, "x": 1920, "y": 0, "width": 1920, "height": 1080, "primary": True},
+        {"index": 2, "x": 3840, "y": 0, "width": 1920, "height": 1080, "primary": False},
+    ]
+    monkeypatch.setattr(di.input_control, "list_monitors", lambda: monitors)
+    return monitors
+
+
+@pytest.mark.asyncio
+async def test_click_on_a_cropped_monitor_gets_its_offset(monkeypatch, _no_real_input):
+    _allow(monkeypatch)
+    _three_monitors(monkeypatch)
+    # Centre of the rightmost screen, rendered at 960x540.
+    await _handler().process(
+        {"action": "click", "x": 480, "y": 270,
+         "frame_width": 960, "frame_height": 540, "monitor": 2},
+        None,  # type: ignore[arg-type]
+    )
+    # 480/960 of 1920 = 960, plus that monitor's x offset of 3840.
+    assert _no_real_input[0][1] == (4800, 540)
+
+
+@pytest.mark.asyncio
+async def test_same_frame_point_differs_per_monitor(monkeypatch, _no_real_input):
+    """The identical click must land on a different screen depending on
+    which one is being viewed - the whole point of the offset."""
+    _allow(monkeypatch)
+    _three_monitors(monkeypatch)
+    seen = []
+    for index in (0, 1, 2):
+        _no_real_input.clear()
+        await _handler().process(
+            {"action": "click", "x": 100, "y": 100,
+             "frame_width": 1920, "frame_height": 1080, "monitor": index},
+            None,  # type: ignore[arg-type]
+        )
+        seen.append(_no_real_input[0][1])
+    assert seen == [(100, 100), (2020, 100), (3940, 100)]
+
+
+@pytest.mark.asyncio
+async def test_all_screens_applies_no_offset(monkeypatch, _no_real_input):
+    _allow(monkeypatch)
+    _three_monitors(monkeypatch)
+    # The shared fixture stubs a single-screen desktop; "all screens" scales
+    # against the whole virtual desktop, so widen it for this case.
+    monkeypatch.setattr(di.input_control, "get_screen_size", lambda: (5760, 1080))
+    for value in ("all", None, ""):
+        _no_real_input.clear()
+        payload = {"action": "click", "x": 2880, "y": 540,
+                   "frame_width": 5760, "frame_height": 1080}
+        if value is not None:
+            payload["monitor"] = value
+        await _handler().process(payload, None)  # type: ignore[arg-type]
+        assert _no_real_input[0][1] == (2880, 540)
+
+
+@pytest.mark.asyncio
+async def test_unknown_monitor_is_rejected(monkeypatch, _no_real_input):
+    _allow(monkeypatch)
+    _three_monitors(monkeypatch)
+    result = await _handler().process(
+        {"action": "click", "x": 1, "y": 1, "monitor": 9}, None  # type: ignore[arg-type]
+    )
+    assert result["ok"] is False
+    assert _no_real_input == []

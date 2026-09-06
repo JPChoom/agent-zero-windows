@@ -38,6 +38,11 @@ class CapturedFrame:
     # multiple monitors are present, not just the primary screen.
     screen_width: int
     screen_height: int
+    # Where this frame sits in the 0-based virtual desktop. Non-zero when a
+    # single monitor was cropped out; a click at frame (0, 0) then means
+    # desktop (offset_x, offset_y), not the desktop's own corner.
+    offset_x: int = 0
+    offset_y: int = 0
 
     @property
     def scale(self) -> float:
@@ -81,14 +86,39 @@ def capture_frame(
     max_edge: int = 1280,
     jpeg_quality: int = 60,
     all_screens: bool = True,
+    monitor: int | None = None,
 ) -> CapturedFrame:
     """Grab the desktop and return it as JPEG bytes.
 
-    Spans every monitor by default. max_edge <= 0 keeps native resolution.
+    Spans every monitor by default. Pass `monitor` (an index from
+    list_monitors) to crop to one screen - a three-monitor desktop is
+    5760x1080, and scaled to fit a panel each screen becomes too small to
+    read, so viewing one at a time is the practical mode.
+
+    max_edge <= 0 keeps native resolution.
     """
     from PIL import Image
 
     image = _grab(all_screens)
+    offset_x = offset_y = 0
+
+    if monitor is not None:
+        monitors = list_monitors()
+        if not 0 <= monitor < len(monitors):
+            raise ValueError(
+                f"monitor {monitor} does not exist (found {len(monitors)})"
+            )
+        chosen = monitors[monitor]
+        offset_x, offset_y = chosen["x"], chosen["y"]
+        image = image.crop(
+            (
+                offset_x,
+                offset_y,
+                offset_x + chosen["width"],
+                offset_y + chosen["height"],
+            )
+        )
+
     screen_width, screen_height = image.size
 
     if max_edge and max(image.size) > max_edge:
@@ -113,7 +143,22 @@ def capture_frame(
         height=image.height,
         screen_width=screen_width,
         screen_height=screen_height,
+        offset_x=offset_x,
+        offset_y=offset_y,
     )
+
+
+# Fallbacks used when a key is absent from the stored plugin config. These
+# must match default_config.yaml: get_plugin_config returns only values that
+# have actually been set, so the YAML defaults are not merged in and a
+# mismatch here silently wins over the documented default.
+_DEFAULTS = {
+    "capture_enabled": True,
+    "capture_max_edge": 1920,
+    "capture_jpeg_quality": 60,
+    "capture_all_screens": True,
+    "control_enabled": False,
+}
 
 
 def get_config(agent=None) -> dict:
@@ -121,9 +166,74 @@ def get_config(agent=None) -> dict:
 
     cfg = plugins.get_plugin_config("_win_desktop", agent=agent) or {}
     return {
-        "capture_enabled": bool(cfg.get("capture_enabled", True)),
-        "capture_max_edge": int(cfg.get("capture_max_edge", 1280) or 0),
-        "capture_jpeg_quality": int(cfg.get("capture_jpeg_quality", 60) or 60),
-        "capture_all_screens": bool(cfg.get("capture_all_screens", True)),
-        "control_enabled": bool(cfg.get("control_enabled", False)),
+        "capture_enabled": bool(
+            cfg.get("capture_enabled", _DEFAULTS["capture_enabled"])
+        ),
+        "capture_max_edge": int(
+            cfg.get("capture_max_edge", _DEFAULTS["capture_max_edge"]) or 0
+        ),
+        "capture_jpeg_quality": int(
+            cfg.get("capture_jpeg_quality", _DEFAULTS["capture_jpeg_quality"]) or 60
+        ),
+        "capture_all_screens": bool(
+            cfg.get("capture_all_screens", _DEFAULTS["capture_all_screens"])
+        ),
+        "control_enabled": bool(
+            cfg.get("control_enabled", _DEFAULTS["control_enabled"])
+        ),
     }
+
+
+def list_monitors() -> list[dict]:
+    """Monitors in 0-based virtual-desktop coordinates, ordered left to right.
+
+    Windows' own enumeration order is not spatial - on the development
+    machine the rightmost screen enumerates second - so entries are sorted
+    by x and given a stable index for the UI to label. Coordinates are
+    0-based (virtual-desktop origin subtracted) to match capture_frame's
+    output and desktop_control's input, rather than Windows' signed space.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", wintypes.LONG),
+            ("top", wintypes.LONG),
+            ("right", wintypes.LONG),
+            ("bottom", wintypes.LONG),
+        ]
+
+    proc = ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC,
+        ctypes.POINTER(RECT), wintypes.LPARAM,
+    )
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+    found: list[tuple[int, int, int, int]] = []
+
+    def _collect(_hmon, _hdc, lprect, _lparam):
+        rect = lprect.contents
+        found.append((rect.left, rect.top, rect.right, rect.bottom))
+        return True
+
+    # The callback must stay referenced for the duration of the call.
+    callback = proc(_collect)
+    user32.EnumDisplayMonitors(None, None, callback, 0)
+
+    origin_x, origin_y, _, _ = get_virtual_bounds()
+    monitors = []
+    for left, top, right, bottom in sorted(found, key=lambda r: (r[0], r[1])):
+        monitors.append(
+            {
+                "x": left - origin_x,
+                "y": top - origin_y,
+                "width": right - left,
+                "height": bottom - top,
+                # The primary monitor is the one containing Windows' (0, 0).
+                "primary": left <= 0 < right and top <= 0 < bottom,
+            }
+        )
+    for index, monitor in enumerate(monitors):
+        monitor["index"] = index
+    return monitors

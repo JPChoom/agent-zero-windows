@@ -418,3 +418,15 @@ def focus_window(title_substring: str, timeout: float = 2.0) -> str:
         f"could not bring {title!r} to the foreground (Windows refused the "
         "focus change); click the window yourself and retry"
     )
+
+
+def list_monitors():
+    """Monitors in 0-based virtual-desktop coordinates.
+
+    Re-exported from helpers.capture so there is one implementation: the
+    viewer maps clicks with it and the capture path crops with it, and two
+    copies drifting apart would put clicks on the wrong screen.
+    """
+    from plugins._win_desktop.helpers.capture import list_monitors as _impl
+
+    return _impl()

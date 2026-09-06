@@ -28,8 +28,13 @@ export function mount(scope = document) {
   const toggle = pick("toggle");
   const control = pick("control");
   const hint = pick("hint");
+  const monitorSelect = pick("monitor");
+  const fullscreenButton = pick("fullscreen");
+  const expandButton = pick("expand");
+  const root = frame.closest(".wd-root");
 
   let streaming = false;
+  const currentMonitor = () => monitorSelect?.value || "all";
 
   const setStatus = (text, warn = false) => {
     if (!status) return;
@@ -39,7 +44,8 @@ export function mount(scope = document) {
 
   function start() {
     // Cache-busted so a reconnect is not served the previous response.
-    frame.src = `${STREAM_URL}?t=${Date.now()}`;
+    const monitor = encodeURIComponent(currentMonitor());
+    frame.src = `${STREAM_URL}?monitor=${monitor}&t=${Date.now()}`;
     streaming = true;
     if (toggle) toggle.textContent = "Stop";
     setStatus("connecting…");
@@ -97,6 +103,10 @@ export function mount(scope = document) {
       y: event.clientY - box.top,
       frame_width: box.width,
       frame_height: box.height,
+      // The server crops to this monitor, so it also needs to know which one
+      // in order to add the right offset back - without it every click would
+      // land on the leftmost screen.
+      monitor: currentMonitor(),
     };
   }
 
@@ -139,8 +149,93 @@ export function mount(scope = document) {
     send({ action: "key", keys: [...modifiers, key].join("+") });
   });
 
+  // Switching screens restarts the stream, since the crop is chosen server
+  // side per connection rather than per frame.
+  monitorSelect?.addEventListener("change", () => {
+    if (streaming) start();
+  });
+
+  // Where the panel normally lives, so expanding can put it back.
+  let homeParent = null;
+  let homeNextSibling = null;
+
+  function setExpanded(on) {
+    if (!root) return;
+    if (on && !root.classList.contains("wd-expanded")) {
+      // The right canvas sets `transform` (an identity matrix, for its slide
+      // animation), which makes it the containing block for any fixed-
+      // position descendant - so `inset: 0` would fill the panel rather than
+      // the window. Re-parenting to <body> is what actually escapes it;
+      // CSS alone cannot.
+      homeParent = root.parentElement;
+      homeNextSibling = root.nextSibling;
+      document.body.appendChild(root);
+    } else if (!on && homeParent) {
+      homeParent.insertBefore(root, homeNextSibling);
+      homeParent = null;
+      homeNextSibling = null;
+    }
+    root.classList.toggle("wd-expanded", on);
+    if (on) stage?.focus();
+  }
+
+  expandButton?.addEventListener("click", () => {
+    setExpanded(!root?.classList.contains("wd-expanded"));
+  });
+
+  fullscreenButton?.addEventListener("click", async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    try {
+      await stage.requestFullscreen();
+      // Keyboard events are bound to the stage, so it must hold focus or
+      // typing in fullscreen would go nowhere.
+      stage.focus();
+    } catch (error) {
+      // Some embedded browsers refuse the Fullscreen API outright. Falling
+      // back to the CSS mode means the button still does something useful
+      // rather than reporting a failure the user cannot act on.
+      setExpanded(true);
+      setStatus("filled the window (true fullscreen blocked here)");
+    }
+  });
+
+  // Esc leaves the CSS mode too, matching what it does for real fullscreen.
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && root?.classList.contains("wd-expanded")) {
+      setExpanded(false);
+    }
+  });
+
+  populateMonitors(monitorSelect);
   stop();
   return true;
+}
+
+/** Fill the screen selector from the server's monitor list. */
+async function populateMonitors(select) {
+  if (!select) return;
+  try {
+    const response = await fetch(`${STREAM_URL}?monitors=1`);
+    if (!response.ok) return;
+    const { monitors } = await response.json();
+    if (!Array.isArray(monitors) || monitors.length < 2) return;
+    for (const monitor of monitors) {
+      const option = document.createElement("option");
+      option.value = String(monitor.index);
+      // Positional labels: Windows' enumeration order is not left to right,
+      // so an index alone would not tell the user which screen it is.
+      option.textContent =
+        `Screen ${monitor.index + 1}` +
+        (monitor.primary ? " (main)" : "") +
+        ` – ${monitor.width}×${monitor.height}`;
+      select.appendChild(option);
+    }
+  } catch {
+    // Selector stays at "All screens"; not worth surfacing.
+  }
 }
 
 /** Retry until <x-component> has injected the panel markup. */

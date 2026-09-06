@@ -56,6 +56,22 @@ class DesktopStream(ApiHandler):
             return Response("desktop capture is disabled", status=409,
                             mimetype="text/plain")
 
+        # ?monitors=1 returns the monitor list instead of a stream, so the
+        # panel can build its selector without a second endpoint.
+        if str(request.args.get("monitors", "")).strip() in ("1", "true", "yes"):
+            import json
+
+            return Response(
+                json.dumps({"monitors": capture.list_monitors()}),
+                mimetype="application/json",
+            )
+
+        monitor = request.args.get("monitor")
+        try:
+            monitor_index = int(monitor) if monitor not in (None, "", "all") else None
+        except (TypeError, ValueError):
+            return Response("invalid monitor", status=400, mimetype="text/plain")
+
         quality = cfg["capture_jpeg_quality"]
         max_edge = cfg["capture_max_edge"]
         all_screens = cfg["capture_all_screens"]
@@ -70,6 +86,7 @@ class DesktopStream(ApiHandler):
                         max_edge=max_edge,
                         jpeg_quality=quality,
                         all_screens=all_screens,
+                        monitor=monitor_index,
                     )
                 except Exception:
                     # A transient grab failure (screen locked, display mode
@@ -81,7 +98,14 @@ class DesktopStream(ApiHandler):
                     f"Content-Type: {frame.mime}\r\n"
                     f"Content-Length: {len(frame.payload)}\r\n"
                     f"X-Screen-Width: {frame.screen_width}\r\n"
-                    f"X-Screen-Height: {frame.screen_height}\r\n\r\n"
+                    f"X-Screen-Height: {frame.screen_height}\r\n"
+                    # Where this frame sits in the desktop when a single
+                    # monitor is cropped out. The panel maps clicks using the
+                    # monitor index it asked for rather than these, but they
+                    # make a captured stream self-describing when debugging a
+                    # click that landed on the wrong screen.
+                    f"X-Offset-X: {frame.offset_x}\r\n"
+                    f"X-Offset-Y: {frame.offset_y}\r\n\r\n"
                 ).encode("ascii") + frame.payload + b"\r\n"
                 elapsed = time.time() - started
                 if elapsed < min_interval:

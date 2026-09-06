@@ -64,7 +64,12 @@ class DesktopInput(ApiHandler):
             return {"ok": False, "error": f"input failed: {exc}"}
 
     def _screen_coords(self, data: dict) -> tuple[int, int]:
-        """Map a click on the streamed image back to screen pixels."""
+        """Map a click on the streamed image back to desktop pixels.
+
+        Two transforms, in order: the frame is a scaled rendering, and it may
+        also be a crop of one monitor. Scaling alone would put every click on
+        the leftmost screen when a different monitor is being viewed.
+        """
         try:
             x = float(data["x"])
             y = float(data["y"])
@@ -77,10 +82,22 @@ class DesktopInput(ApiHandler):
         # Absent or nonsensical frame dimensions mean the client didn't
         # report them; treating the coordinates as already-screen-space is
         # the only safe reading, and _to_absolute still range-checks them.
+        monitor = data.get("monitor")
+        if monitor not in (None, "", "all"):
+            try:
+                chosen = input_control.list_monitors()[int(monitor)]
+            except (TypeError, ValueError, IndexError):
+                raise input_control.InputError(f"unknown monitor {monitor!r}")
+            source_w, source_h = chosen["width"], chosen["height"]
+            offset_x, offset_y = chosen["x"], chosen["y"]
+        else:
+            source_w, source_h = screen_w, screen_h
+            offset_x = offset_y = 0
+
         if frame_w > 0 and frame_h > 0:
-            x = x * screen_w / frame_w
-            y = y * screen_h / frame_h
-        return int(round(x)), int(round(y))
+            x = x * source_w / frame_w
+            y = y * source_h / frame_h
+        return int(round(x + offset_x)), int(round(y + offset_y))
 
     def _dispatch(self, action: str, data: dict) -> str:
         if action == "move":
