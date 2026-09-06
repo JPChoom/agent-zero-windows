@@ -152,3 +152,25 @@ export async function mountWhenReady(timeoutMs = 10000) {
   }
   return false;
 }
+
+/**
+ * Mount whenever the panel markup appears, for as long as the page lives.
+ *
+ * Depending on the surface's open() hook proved unreliable: the panel wired
+ * on one run and not the next, because whether the markup exists when that
+ * hook fires is a race with <x-component>'s injection. Observing the DOM
+ * removes the timing question entirely and also re-wires a panel that is
+ * unmounted and remounted, or opened in the modal after the docked canvas.
+ * mount() is idempotent per frame element, so repeated calls are free.
+ */
+let observing = false;
+
+export function autoMount() {
+  mount();
+  if (observing) return;
+  observing = true;
+  new MutationObserver(() => mount()).observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+}

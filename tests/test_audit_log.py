@@ -239,3 +239,68 @@ async def test_after_hook_without_matching_before_does_not_raise(_redirect_audit
     await after.execute(response=_FakeResponse(), tool_name="text_editor")  # must not raise
 
     assert not _redirect_audit_log.exists() or _redirect_audit_log.read_text(encoding="utf-8") == ""
+
+
+# ------------------------------------------------------------------
+# Cross-event-loop writers
+# ------------------------------------------------------------------
+
+def test_append_record_works_from_a_separate_event_loop(tmp_path, monkeypatch):
+    """Writers do not all share one event loop: API handlers run on a
+    different loop from the agent. An asyncio.Lock created at import time
+    raised "bound to a different event loop" for any caller outside it,
+    which made every audited action from the web UI a 500.
+    """
+    import asyncio
+
+    from helpers import audit_log
+
+    path = tmp_path / "audit.jsonl"
+    monkeypatch.setattr(audit_log, "get_audit_log_path", lambda: str(path))
+
+    # Two records written from two independently created loops, as the agent
+    # and an API request would.
+    for index in range(2):
+        loop = asyncio.new_event_loop()
+        try:
+            entry = loop.run_until_complete(
+                audit_log.append_record({"tool": "t", "n": index})
+            )
+        finally:
+            loop.close()
+        assert entry, "append_record returned nothing"
+
+    lines = path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    ok, reason = audit_log.verify_chain(str(path))
+    assert ok, reason
+
+
+def test_concurrent_threads_do_not_corrupt_the_chain(tmp_path, monkeypatch):
+    """The lock must also hold across OS threads, since Flask serves
+    requests from a thread pool."""
+    import asyncio
+    import threading
+
+    from helpers import audit_log
+
+    path = tmp_path / "audit.jsonl"
+    monkeypatch.setattr(audit_log, "get_audit_log_path", lambda: str(path))
+
+    def writer(n):
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(audit_log.append_record({"tool": "t", "n": n}))
+        finally:
+            loop.close()
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    lines = path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 8
+    ok, reason = audit_log.verify_chain(str(path))
+    assert ok, reason

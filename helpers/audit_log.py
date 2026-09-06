@@ -19,22 +19,29 @@ single-machine log.
 
 Single-process, best-effort locking (matches the existing safety_policy
 audit log's posture): concurrent writers within the same process are
-serialized by an asyncio.Lock; concurrent writers across separate OS
-processes could still interleave. Not attempted here - this repo has no
+serialized by a threading.Lock; concurrent writers across separate OS
+processes could still interleave.
+
+The lock is a threading.Lock rather than an asyncio.Lock because writers
+do not all share one event loop - API handlers run on a different loop
+from the agent, and an asyncio.Lock created at import time raises
+"bound to a different event loop" for any caller outside it. A thread
+lock is correct across both loops and threads, and the critical section
+is a single short file append. Not attempted here - this repo has no
 existing cross-process file-locking primitive to build on, and a broken
 chain is detectable (via verify_chain) even if it happens, which is the
 main property this module is trying to provide.
 """
 
-import asyncio
 import hashlib
 import json
+import threading
 import time
 
 from helpers import files
 
 _AUDIT_LOG_FILENAME = "audit_log.jsonl"
-_write_lock = asyncio.Lock()
+_write_lock = threading.Lock()
 
 
 def get_audit_log_path() -> str:
@@ -64,7 +71,7 @@ async def append_record(record: dict) -> dict:
     """Append `record` to the audit log with timestamp/prev_hash/hash
     fields added, and return the full stored entry. Never raises - audit
     logging must never itself break the action being logged."""
-    async with _write_lock:
+    with _write_lock:
         try:
             path = get_audit_log_path()
             prev_hash = _read_last_hash(path)
