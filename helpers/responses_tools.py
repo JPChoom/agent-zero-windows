@@ -177,7 +177,61 @@ def _schema_from_prompt(prompt: str) -> dict[str, Any]:
     schema = _schema_from_embedded_json(prompt)
     if schema:
         return schema
-    return _schema_from_args_line(prompt)
+    schema = _schema_from_args_line(prompt)
+    if schema.get("properties"):
+        return schema
+    # Some prompts never declare an "args:" line and document the call shape
+    # only through their worked example - the response tool describes its
+    # argument in prose ("put result in text arg") but shows
+    # "tool_args": {"text": ...} underneath. The example is the calling
+    # contract the model is being shown, so it is a sound last resort.
+    return _schema_from_usage_example(prompt) or schema
+
+
+def _schema_from_usage_example(prompt: str) -> dict[str, Any]:
+    """Extract argument names from a prompt's "tool_args" worked example.
+
+    Parsed with brace matching rather than json.loads: these examples are
+    illustrative and frequently contain trailing commas or "..." elisions
+    that are not valid JSON. Only keys at the top level of the tool_args
+    object are taken, so nested example values contribute nothing.
+    """
+    marker = re.search(r'"tool_args"\s*:\s*\{', prompt or "")
+    if not marker:
+        return {}
+
+    start = marker.end()
+    depth = 1
+    for index in range(start, len(prompt)):
+        char = prompt[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                break
+    else:
+        return {}
+
+    body = prompt[start:index]
+    properties: dict[str, Any] = {}
+    depth = 0
+    for match in re.finditer(r'[{}\[\]]|"([A-Za-z_][A-Za-z0-9_-]*)"\s*:', body):
+        token = match.group(0)
+        if token in "{[":
+            depth += 1
+        elif token in "}]":
+            depth -= 1
+        elif depth == 0 and match.group(1):
+            properties.setdefault(match.group(1), {"type": "string"})
+
+    if not properties:
+        return {}
+    return {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": True,
+    }
 
 
 def _schema_from_embedded_json(prompt: str) -> dict[str, Any]:
@@ -217,6 +271,64 @@ _ARG_NAME_PATTERN = re.compile(r"`([A-Za-z_][A-Za-z0-9_-]*)`")
 _OPTIONAL_SEGMENT_MARKERS = ("optional", "default")
 
 
+# A bare argument name, for prompts that list them without backticks.
+_BARE_ARG_NAME = re.compile(r"^[a-z_][a-z0-9_]*$", re.IGNORECASE)
+# Words that appear in prose after "args:" and are not argument names. Without
+# this, a sentence like "args: see the table below" would become properties.
+_PROSE_WORDS = {
+    "a", "an", "and", "any", "are", "as", "at", "be", "below", "but", "by",
+    "can", "each", "for", "from", "if", "in", "is", "it", "its", "must", "no",
+    "none", "not", "of", "on", "one", "only", "or", "see", "should", "so",
+    "some", "such", "than", "that", "the", "them", "then", "these", "this",
+    "to", "up", "use", "used", "when", "where", "which", "with", "you", "your",
+}
+
+
+def _collect_bulleted_args(
+    lines: list[str], index: int, properties: dict[str, Any]
+) -> None:
+    """Read "- `name`: description" bullets following a bare "args:" line.
+
+    Only the first backticked token on each bullet is the argument name; the
+    rest are example values ("- `runtime`: `terminal`, `python`, `nodejs`"),
+    and capturing those would advertise "terminal" as an argument.
+
+    Nothing is marked required. Prompts in this form signal optionality
+    inconsistently - code_execution_tool marks `cwd` "optional" and `session`
+    with a "default", but leaves `reset` unmarked despite it being optional -
+    and over-marking is the damaging direction, since a schema-enforcing
+    provider would reject the call or make the model invent a value.
+    """
+    for follow in lines[index + 1 :]:
+        stripped = follow.strip()
+        if not stripped.startswith(("-", "*")):
+            break
+        match = _ARG_NAME_PATTERN.search(stripped)
+        if match:
+            properties.setdefault(match.group(1), {"type": "string"})
+
+
+def _collect_bare_args(normalized: str, properties: dict[str, Any]) -> None:
+    """Handle "common args: action path" - names written without backticks.
+
+    Accepted only when every remaining token is a short identifier and none
+    is a common English word, so prose following "args:" cannot be mistaken
+    for a list of argument names. Like the bulleted form, this yields
+    properties only and never marks anything required.
+    """
+    if ":" not in normalized:
+        return
+    tokens = normalized.split(":", 1)[1].replace(",", " ").split()
+    if not 1 <= len(tokens) <= 8:
+        return
+    if not all(_BARE_ARG_NAME.match(token) for token in tokens):
+        return
+    if any(token.lower() in _PROSE_WORDS for token in tokens):
+        return
+    for token in tokens:
+        properties.setdefault(token, {"type": "string"})
+
+
 def _schema_from_args_line(prompt: str) -> dict[str, Any]:
     """Derive {properties, required} from a tool prompt's argument line.
 
@@ -230,11 +342,24 @@ def _schema_from_args_line(prompt: str) -> dict[str, Any]:
     """
     properties: dict[str, Any] = {}
     required: list[str] = []
+    lines = (prompt or "").splitlines()
 
-    for line in (prompt or "").splitlines():
+    for index, line in enumerate(lines):
         normalized = line.strip()
         if not _ARGS_LINE_PATTERN.match(normalized):
             continue
+
+        # Not every prompt names its arguments on the "args:" line itself.
+        # code_execution_tool announces "args:" and lists them as bullets
+        # underneath; text_editor writes "common args: action path" with no
+        # backticks at all. Both previously fell through to the permissive
+        # schema, which is what told the model - formally - that
+        # code_execution_tool takes no arguments.
+        if not _ARG_NAME_PATTERN.search(normalized):
+            _collect_bulleted_args(lines, index, properties)
+            _collect_bare_args(normalized, properties)
+            continue
+
         lowered = normalized.lower()
 
         # Lines describing a subset ("any of `a`, `b`") or carrying inline
