@@ -101,8 +101,42 @@ class InputError(ValueError):
     """Raised for a malformed or out-of-range input request."""
 
 
+_USER32 = None
+
+
 def _user32():
-    return ctypes.WinDLL("user32", use_last_error=True)
+    """user32 with the signatures this module uses declared.
+
+    Without argtypes, ctypes marshals arguments as C int, which truncates
+    64-bit pointers - the kind of fault that appears to work until it
+    silently corrupts. Declared once and cached rather than re-resolved
+    per event.
+    """
+    global _USER32
+    if _USER32 is None:
+        lib = ctypes.WinDLL("user32", use_last_error=True)
+        lib.SendInput.argtypes = (wintypes.UINT, ctypes.c_void_p, ctypes.c_int)
+        lib.SendInput.restype = wintypes.UINT
+        lib.GetSystemMetrics.argtypes = (ctypes.c_int,)
+        lib.GetSystemMetrics.restype = ctypes.c_int
+        lib.GetForegroundWindow.restype = wintypes.HWND
+        lib.SetForegroundWindow.argtypes = (wintypes.HWND,)
+        lib.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+        lib.GetWindowTextW.restype = ctypes.c_int
+        lib.IsWindowVisible.argtypes = (wintypes.HWND,)
+        lib.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+        lib.AttachThreadInput.argtypes = (
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.BOOL,
+        )
+        lib.GetWindowThreadProcessId.argtypes = (
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        )
+        lib.GetWindowThreadProcessId.restype = wintypes.DWORD
+        _USER32 = lib
+    return _USER32
 
 
 def get_screen_size() -> tuple[int, int]:
@@ -197,16 +231,21 @@ def type_text(text: str) -> None:
     Sent as Unicode scan codes rather than virtual-key codes so the output
     doesn't depend on the active keyboard layout - a VK-based approach types
     the wrong characters on a non-US layout.
+
+    Sent one character at a time rather than as a single batched array.
+    A batch is delivered atomically, and rich text controls (Windows 11's
+    Notepad uses RichEditD2DPT) do not reliably keep up: an observed run of
+    "Hello from Agent Zero" arrived as "Hello " followed by fifteen copies
+    of the final character - the right number of events, the wrong content.
+    Per-character delivery with a short gap is what every mature automation
+    library does, for this reason.
     """
-    events: list[_INPUT] = []
     for char in str(text):
-        for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP):
-            events.append(_key_input(0, flags, ord(char)))
-    if events:
-        # Chunked: SendInput takes one array, and very long strings would
-        # otherwise build an unnecessarily large allocation.
-        for start in range(0, len(events), 200):
-            _send(*events[start : start + 200])
+        _send(
+            _key_input(0, KEYEVENTF_UNICODE, ord(char)),
+            _key_input(0, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, ord(char)),
+        )
+        time.sleep(TYPE_CHAR_INTERVAL)
 
 
 def parse_hotkey(combo: str) -> list[int]:
@@ -234,3 +273,100 @@ def press_keys(combo: str) -> None:
     events = [_key_input(code) for code in codes]
     events += [_key_input(code, KEYEVENTF_KEYUP) for code in reversed(codes)]
     _send(*events)
+
+
+# --- window targeting -----------------------------------------------------
+#
+# Input is delivered to whatever holds focus. A test that launched Notepad
+# and typed into it appended the text to a *pre-existing, unsaved* Notepad
+# document instead, because Start-Process did not bring the intended window
+# forward. Typing at ambient focus is not safe on a real desktop, so the
+# caller can name a target window and the action is refused if that window
+# cannot be brought to the front.
+
+SW_RESTORE = 9
+
+# Interval between characters. Long enough for rich text controls to keep
+# up, short enough that a sentence still types in well under a second.
+TYPE_CHAR_INTERVAL = 0.006
+
+
+def get_foreground_window() -> tuple[int, str]:
+    """Return (hwnd, title) of the window that will receive input."""
+    user32 = _user32()
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return 0, ""
+    buffer = ctypes.create_unicode_buffer(512)
+    user32.GetWindowTextW(hwnd, buffer, 512)
+    return int(hwnd), buffer.value
+
+
+def find_windows(title_substring: str) -> list[tuple[int, str]]:
+    """Visible top-level windows whose title contains `title_substring`."""
+    needle = str(title_substring or "").strip().lower()
+    matches: list[tuple[int, str]] = []
+    user32 = _user32()
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _enum(hwnd, _lparam):
+        if user32.IsWindowVisible(hwnd):
+            buffer = ctypes.create_unicode_buffer(512)
+            user32.GetWindowTextW(hwnd, buffer, 512)
+            title = buffer.value
+            if title and needle in title.lower():
+                matches.append((int(hwnd), title))
+        return True
+
+    user32.EnumWindows(_enum, 0)
+    return matches
+
+
+def focus_window(title_substring: str, timeout: float = 2.0) -> str:
+    """Bring the window matching `title_substring` to the foreground.
+
+    Returns its title. Raises InputError if no window matches, if several
+    do (ambiguous target - refusing beats guessing which document to type
+    into), or if the window will not come forward.
+    """
+    matches = find_windows(title_substring)
+    if not matches:
+        raise InputError(f"no visible window matching {title_substring!r}")
+    if len(matches) > 1:
+        titles = ", ".join(repr(title) for _, title in matches[:5])
+        raise InputError(
+            f"{len(matches)} windows match {title_substring!r} ({titles}); "
+            "use a more specific title"
+        )
+
+    hwnd, title = matches[0]
+    user32 = _user32()
+
+    # SetForegroundWindow is refused unless the calling thread shares input
+    # state with the current foreground window, so attach to it first and
+    # detach afterwards regardless of the outcome.
+    current = user32.GetForegroundWindow()
+    our_thread = ctypes.windll.kernel32.GetCurrentThreadId()
+    their_thread = user32.GetWindowThreadProcessId(current, None) if current else 0
+
+    attached = False
+    if their_thread and their_thread != our_thread:
+        attached = bool(user32.AttachThreadInput(our_thread, their_thread, True))
+    try:
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(our_thread, their_thread, False)
+
+    # Verified rather than assumed: SetForegroundWindow can return success
+    # and still not change focus under Windows' foreground lock.
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if user32.GetForegroundWindow() == hwnd:
+            return title
+        time.sleep(0.05)
+    raise InputError(
+        f"could not bring {title!r} to the foreground (Windows refused the "
+        "focus change); click the window yourself and retry"
+    )

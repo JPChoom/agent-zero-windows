@@ -179,3 +179,63 @@ def test_modifiers_are_released_in_reverse_order(sent):
     ups = [e.union.ki.wVk for e in sent if e.union.ki.dwFlags & ic.KEYEVENTF_KEYUP]
     assert downs == [ic.VK_CODES["ctrl"], ic.VK_CODES["shift"], ord("S")]
     assert ups == list(reversed(downs))
+
+
+# ------------------------------------------------------------------
+# Per-character delivery
+# ------------------------------------------------------------------
+#
+# Observed live: "Hello from Agent Zero" arrived in Notepad as "Hello "
+# followed by fifteen copies of the final character - the right number of
+# events, the wrong content. The events were correct in Python (the tests
+# above assert their scan codes), so the corruption happened on delivery:
+# the whole string was sent as one atomic SendInput block, which rich text
+# controls (Windows 11 Notepad uses RichEditD2DPT) do not reliably process.
+
+def test_each_character_is_sent_as_its_own_call(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(ic, "_send", lambda *events: calls.append(events))
+    monkeypatch.setattr(ic, "TYPE_CHAR_INTERVAL", 0)
+
+    ic.type_text("abc")
+
+    assert len(calls) == 3, "characters must not be batched into one block"
+    assert all(len(events) == 2 for events in calls), "each call is one down+up pair"
+
+
+def test_per_character_calls_carry_the_right_scan_codes(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(ic, "_send", lambda *events: calls.append(events))
+    monkeypatch.setattr(ic, "TYPE_CHAR_INTERVAL", 0)
+
+    ic.type_text("hi!")
+
+    assert [events[0].union.ki.wScan for events in calls] == [
+        ord("h"), ord("i"), ord("!")
+    ]
+    # Down then up within each call.
+    for events in calls:
+        assert not events[0].union.ki.dwFlags & ic.KEYEVENTF_KEYUP
+        assert events[1].union.ki.dwFlags & ic.KEYEVENTF_KEYUP
+
+
+def test_no_character_is_dropped_or_duplicated_in_a_long_string(monkeypatch):
+    """The failure signature was a correct event count with repeated
+    content, so assert the actual sequence, not just the length."""
+    calls: list[tuple] = []
+    monkeypatch.setattr(ic, "_send", lambda *events: calls.append(events))
+    monkeypatch.setattr(ic, "TYPE_CHAR_INTERVAL", 0)
+
+    text = "Hello from Agent Zero"
+    ic.type_text(text)
+
+    typed = "".join(chr(events[0].union.ki.wScan) for events in calls)
+    assert typed == text
+
+
+def test_sendinput_signature_is_declared():
+    """Undeclared argtypes marshal arguments as C int, truncating 64-bit
+    pointers - a fault that appears to work until it corrupts silently."""
+    user32 = ic._user32()
+    assert user32.SendInput.argtypes is not None
+    assert user32.SendInput.restype is not None

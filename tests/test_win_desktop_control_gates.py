@@ -55,6 +55,17 @@ def _no_real_input(monkeypatch):
             name,
             lambda *a, _n=name, **k: performed.append((_n, a, k)),
         )
+    # Window targeting also touches the live desktop, and reading the real
+    # foreground window would make results depend on what is on screen.
+    monkeypatch.setattr(
+        dc.input_control,
+        "focus_window",
+        lambda title, *a, **k: performed.append(("focus_window", (title,), {}))
+        or f"[{title}]",
+    )
+    monkeypatch.setattr(
+        dc.input_control, "get_foreground_window", lambda: (1, "Ambient Window")
+    )
     return performed
 
 
@@ -242,3 +253,85 @@ async def test_success_message_prompts_verification(monkeypatch, _no_real_input,
     _allow(monkeypatch)
     response = await _tool(action="click", x=1, y=1).execute(action="click", x=1, y=1)
     assert "desktop_screenshot" in response.message
+
+
+# ------------------------------------------------------------------
+# Window targeting
+# ------------------------------------------------------------------
+#
+# Input goes wherever focus is. A live test that launched Notepad and typed
+# into it appended the text to a pre-existing, unsaved Notepad document,
+# because launching an application neither guarantees focus nor a new
+# window. These cover the targeting added in response.
+
+@pytest.mark.asyncio
+async def test_named_window_is_focused_before_acting(monkeypatch, _no_real_input, audited):
+    _allow(monkeypatch)
+    await _tool(action="type", window="Notepad", text="hi").execute(
+        action="type", window="Notepad", text="hi"
+    )
+    assert _no_real_input[0] == ("focus_window", ("Notepad",), {})
+    assert _no_real_input[1][0] == "type_text"
+
+
+@pytest.mark.asyncio
+async def test_unfocusable_window_refuses_without_typing(monkeypatch, _no_real_input, audited):
+    """An ambiguous or missing target must abort, not fall back to
+    whatever happens to be focused."""
+    _allow(monkeypatch)
+
+    def refuse(title, *a, **k):
+        raise dc.input_control.InputError(f"3 windows match {title!r}")
+
+    monkeypatch.setattr(dc.input_control, "focus_window", refuse)
+    response = await _tool(action="type", window="Notepad", text="x").execute(
+        action="type", window="Notepad", text="x"
+    )
+    assert "invalid request" in response.message.lower()
+    assert _no_real_input == []
+    # Refused before it could act, so nothing is recorded as performed.
+    assert audited == []
+
+
+@pytest.mark.asyncio
+async def test_audit_records_where_the_input_actually_went(monkeypatch, _no_real_input, audited):
+    _allow(monkeypatch)
+    await _tool(action="type", window="Notepad", text="x").execute(
+        action="type", window="Notepad", text="x"
+    )
+    assert audited[0]["target_window"] == "[Notepad]"
+    assert audited[0]["targeted_explicitly"] is True
+
+
+@pytest.mark.asyncio
+async def test_audit_records_ambient_focus_when_no_window_named(monkeypatch, _no_real_input, audited):
+    _allow(monkeypatch)
+    await _tool(action="type", text="x").execute(action="type", text="x")
+    assert audited[0]["target_window"] == "Ambient Window"
+    assert audited[0]["targeted_explicitly"] is False
+
+
+@pytest.mark.asyncio
+async def test_untargeted_typing_is_flagged_in_the_result(monkeypatch, _no_real_input, audited):
+    """The model should be told its text went somewhere unverified rather
+    than reading a bare success."""
+    _allow(monkeypatch)
+    response = await _tool(action="type", text="x").execute(action="type", text="x")
+    assert "whatever had focus" in response.message
+    assert "Ambient Window" in response.message
+
+
+@pytest.mark.asyncio
+async def test_targeted_typing_is_not_flagged(monkeypatch, _no_real_input, audited):
+    _allow(monkeypatch)
+    response = await _tool(action="type", window="N", text="x").execute(
+        action="type", window="N", text="x"
+    )
+    assert "whatever had focus" not in response.message
+
+
+@pytest.mark.asyncio
+async def test_focus_action_requires_a_window(monkeypatch, _no_real_input, audited):
+    _allow(monkeypatch)
+    response = await _tool(action="focus").execute(action="focus")
+    assert "invalid request" in response.message.lower()

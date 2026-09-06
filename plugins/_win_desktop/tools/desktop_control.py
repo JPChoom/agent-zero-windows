@@ -45,6 +45,7 @@ class DesktopControl(Tool):
 
         action = str(action or "").strip().lower()
         handlers = {
+            "focus": self._focus,
             "move": self._move,
             "click": self._click,
             "scroll": self._scroll,
@@ -61,14 +62,27 @@ class DesktopControl(Tool):
                 break_loop=False,
             )
 
-        # Logged before execution: an action that hangs or crashes the
-        # session must still leave a record that it was attempted.
+        # Focus the requested window before auditing, so the record names
+        # where the input actually went rather than where it was aimed.
+        # Raising a window is itself harmless - it changes no data - and an
+        # audit entry that records the wrong target would be worse.
+        window = kwargs.get("window")
+        try:
+            if window:
+                focused = input_control.focus_window(str(window))
+            else:
+                _, focused = input_control.get_foreground_window()
+        except input_control.InputError as exc:
+            return Response(message=f"Invalid request: {exc}", break_loop=False)
+
         await audit_log.append_record(
             {
                 "tool": "desktop_control",
                 "agent_role": getattr(self.agent, "agent_name", ""),
                 "action": action,
                 "arguments": {k: v for k, v in kwargs.items() if k != "action"},
+                "target_window": focused,
+                "targeted_explicitly": bool(window),
                 "context": getattr(self.agent.context, "id", ""),
             }
         )
@@ -82,15 +96,32 @@ class DesktopControl(Tool):
                 message=f"Desktop control failed: {exc}", break_loop=False
             )
 
+        # Naming the receiving window matters even on success: input goes
+        # wherever focus is, and a run that typed into a pre-existing
+        # unsaved document looked identical to one that worked.
+        target = f"\nInput went to: {focused!r}" if focused else ""
+        if not window and action in ("type", "key"):
+            target += (
+                "\nNo window was named, so this went to whatever had focus. "
+                "Pass `window` to target one explicitly."
+            )
+
         return Response(
             message=(
-                f"{message}\nTake a desktop_screenshot to confirm the result "
-                "before assuming it worked."
+                f"{message}{target}\nTake a desktop_screenshot to confirm the "
+                "result before assuming it worked."
             ),
             break_loop=False,
         )
 
     # -- actions ----------------------------------------------------------
+
+    def _focus(self, **kwargs) -> str:
+        window = kwargs.get("window")
+        if not isinstance(window, str) or not window.strip():
+            raise input_control.InputError("window is required for the focus action")
+        # focus_window already ran above; reaching here means it succeeded.
+        return f"Brought the window matching {window!r} to the foreground."
 
     def _coords(self, kwargs: dict) -> tuple[int, int]:
         if "x" not in kwargs or "y" not in kwargs:
