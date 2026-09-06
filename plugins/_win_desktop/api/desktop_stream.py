@@ -58,6 +58,7 @@ class DesktopStream(ApiHandler):
 
         quality = cfg["capture_jpeg_quality"]
         max_edge = cfg["capture_max_edge"]
+        all_screens = cfg["capture_all_screens"]
 
         def frames():
             deadline = time.time() + STREAM_SECONDS
@@ -66,7 +67,9 @@ class DesktopStream(ApiHandler):
                 started = time.time()
                 try:
                     frame = capture.capture_frame(
-                        max_edge=max_edge, jpeg_quality=quality
+                        max_edge=max_edge,
+                        jpeg_quality=quality,
+                        all_screens=all_screens,
                     )
                 except Exception:
                     # A transient grab failure (screen locked, display mode

@@ -22,7 +22,8 @@ from plugins._win_desktop.helpers import capture
 
 
 def _fake_grab(size=(1920, 1080), mode="RGB"):
-    def _grab():
+    # _grab takes all_screens now, so the stub must accept it.
+    def _grab(all_screens: bool = True):
         return Image.new(mode, size, color=(10, 20, 30))
 
     return _grab
@@ -99,7 +100,7 @@ def test_lower_quality_produces_a_smaller_payload(monkeypatch):
         (random.randrange(256), random.randrange(256), random.randrange(256))
         for _ in range(400 * 400)
     ])
-    monkeypatch.setattr(capture, "_grab", lambda: noisy)
+    monkeypatch.setattr(capture, "_grab", lambda all_screens=True: noisy)
 
     low = capture.capture_frame(max_edge=0, jpeg_quality=20)
     high = capture.capture_frame(max_edge=0, jpeg_quality=90)
@@ -143,3 +144,49 @@ def test_config_values_are_coerced(monkeypatch):
     assert cfg["capture_max_edge"] == 800
     assert cfg["capture_jpeg_quality"] == 45
     assert cfg["control_enabled"] is True
+
+
+# ------------------------------------------------------------------
+# Multi-monitor capture
+# ------------------------------------------------------------------
+
+def test_capture_spans_all_screens_by_default(monkeypatch):
+    """A primary-only grab left the agent unable to see two thirds of a
+    three-monitor desktop."""
+    seen = {}
+
+    def _grab(all_screens: bool = True):
+        seen["all_screens"] = all_screens
+        return Image.new("RGB", (5760, 1080))
+
+    monkeypatch.setattr(capture, "_grab", _grab)
+    frame = capture.capture_frame(max_edge=1920)
+    assert seen["all_screens"] is True
+    assert (frame.screen_width, frame.screen_height) == (5760, 1080)
+
+
+def test_wide_virtual_desktop_scales_by_its_long_edge(monkeypatch):
+    monkeypatch.setattr(capture, "_grab", _fake_grab((5760, 1080)))
+    frame = capture.capture_frame(max_edge=1920)
+    assert (frame.width, frame.height) == (1920, 360)
+    # Scale must reflect the virtual desktop, or clicks land a monitor off.
+    assert frame.scale == pytest.approx(3.0)
+
+
+def test_primary_only_capture_can_be_requested(monkeypatch):
+    seen = {}
+
+    def _grab(all_screens: bool = True):
+        seen["all_screens"] = all_screens
+        return Image.new("RGB", (1920, 1080))
+
+    monkeypatch.setattr(capture, "_grab", _grab)
+    capture.capture_frame(max_edge=0, all_screens=False)
+    assert seen["all_screens"] is False
+
+
+def test_all_screens_config_defaults_to_true(monkeypatch):
+    from helpers import plugins
+
+    monkeypatch.setattr(plugins, "get_plugin_config", lambda *a, **k: {})
+    assert capture.get_config()["capture_all_screens"] is True

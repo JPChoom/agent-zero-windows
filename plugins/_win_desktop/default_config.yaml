@@ -5,7 +5,7 @@ capture_enabled: true
 # encoding. Full 1920x1080 frames cost ~50ms to resize and are rarely
 # needed for the model to read a screen; smaller is faster and cheaper in
 # context tokens. 0 disables scaling (send native resolution).
-capture_max_edge: 1280
+capture_max_edge: 1920
 
 # JPEG quality for captured frames (1-95).
 capture_jpeg_quality: 60
@@ -21,3 +21,9 @@ capture_jpeg_quality: 60
 # When enabled, input is still refused while the kill switch is tripped
 # (helpers/kill_switch.py) and every action is written to the audit log.
 control_enabled: false
+
+# Capture every monitor as one image rather than just the primary screen.
+# With this off, a multi-monitor desktop is only partly visible and only
+# the primary screen is clickable. Coordinates always span whatever is
+# captured, with (0, 0) at its top-left.
+capture_all_screens: true

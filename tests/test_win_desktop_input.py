@@ -22,7 +22,7 @@ def sent(monkeypatch):
     """Capture events instead of delivering them, with a fixed screen size."""
     captured: list = []
     monkeypatch.setattr(ic, "_send", lambda *events: captured.extend(events))
-    monkeypatch.setattr(ic, "get_screen_size", lambda: (1920, 1080))
+    monkeypatch.setattr(ic, "get_virtual_bounds", lambda: (0, 0, 1920, 1080))
     return captured
 
 
@@ -31,26 +31,26 @@ def sent(monkeypatch):
 # ------------------------------------------------------------------
 
 def test_origin_maps_to_zero(monkeypatch):
-    monkeypatch.setattr(ic, "get_screen_size", lambda: (1920, 1080))
+    monkeypatch.setattr(ic, "get_virtual_bounds", lambda: (0, 0, 1920, 1080))
     assert ic._to_absolute(0, 0) == (0, 0)
 
 
 def test_bottom_right_pixel_maps_to_full_range(monkeypatch):
     """The last addressable pixel must reach 65535; rounding short of it
     leaves the true screen edge unclickable."""
-    monkeypatch.setattr(ic, "get_screen_size", lambda: (1920, 1080))
+    monkeypatch.setattr(ic, "get_virtual_bounds", lambda: (0, 0, 1920, 1080))
     assert ic._to_absolute(1919, 1079) == (65535, 65535)
 
 
 def test_centre_maps_to_about_half(monkeypatch):
-    monkeypatch.setattr(ic, "get_screen_size", lambda: (1920, 1080))
+    monkeypatch.setattr(ic, "get_virtual_bounds", lambda: (0, 0, 1920, 1080))
     ax, ay = ic._to_absolute(960, 540)
     assert abs(ax - 32768) < 40 and abs(ay - 32768) < 40
 
 
 @pytest.mark.parametrize("x,y", [(-1, 10), (10, -1), (1920, 10), (10, 1080), (5000, 5000)])
 def test_out_of_range_coordinates_are_rejected(monkeypatch, x, y):
-    monkeypatch.setattr(ic, "get_screen_size", lambda: (1920, 1080))
+    monkeypatch.setattr(ic, "get_virtual_bounds", lambda: (0, 0, 1920, 1080))
     with pytest.raises(ic.InputError):
         ic._to_absolute(x, y)
 
@@ -62,7 +62,20 @@ def test_out_of_range_coordinates_are_rejected(monkeypatch, x, y):
 def test_move_emits_a_single_absolute_move(sent):
     ic.move(100, 200)
     assert len(sent) == 1
-    assert sent[0].union.mi.dwFlags == ic.MOUSEEVENTF_MOVE | ic.MOUSEEVENTF_ABSOLUTE
+    assert sent[0].union.mi.dwFlags == (
+        ic.MOUSEEVENTF_MOVE | ic.MOUSEEVENTF_ABSOLUTE | ic.MOUSEEVENTF_VIRTUALDESK
+    )
+
+
+def test_absolute_moves_span_the_virtual_desktop(sent):
+    """Without MOUSEEVENTF_VIRTUALDESK an absolute move can only ever
+    address the primary monitor, leaving the other screens unclickable."""
+    ic.move(10, 10)
+    ic.click(10, 10)
+    moves = [e for e in sent if e.union.mi.dwFlags & ic.MOUSEEVENTF_MOVE]
+    assert moves, "expected at least one absolute move"
+    for event in moves:
+        assert event.union.mi.dwFlags & ic.MOUSEEVENTF_VIRTUALDESK
 
 
 def test_click_moves_then_presses_and_releases(sent):
@@ -239,3 +252,63 @@ def test_sendinput_signature_is_declared():
     user32 = ic._user32()
     assert user32.SendInput.argtypes is not None
     assert user32.SendInput.restype is not None
+
+
+# ------------------------------------------------------------------
+# Multi-monitor coordinate space
+# ------------------------------------------------------------------
+#
+# The development machine has three 1920x1080 screens spanning 5760x1080
+# with SM_XVIRTUALSCREEN == -1920, i.e. a monitor to the LEFT of primary.
+# Before this, capture and input both used the primary screen only: the
+# agent could see, and click, one third of the desktop. A negative origin
+# is the case naive coordinate maths gets wrong silently.
+
+def _three_screens(monkeypatch, origin_x=-1920):
+    monkeypatch.setattr(ic, "get_virtual_bounds", lambda: (origin_x, 0, 5760, 1080))
+
+
+def test_coordinate_space_is_the_whole_virtual_desktop(monkeypatch):
+    _three_screens(monkeypatch)
+    assert ic.get_screen_size() == (5760, 1080)
+
+
+def test_far_monitor_is_addressable(monkeypatch):
+    """A point beyond the primary screen's width must map, not raise -
+    this is exactly what previously made two of three screens unreachable."""
+    _three_screens(monkeypatch)
+    assert ic._to_absolute(5000, 500) == (
+        round(5000 * 65535 / 5759),
+        round(500 * 65535 / 1079),
+    )
+
+
+def test_edges_of_the_virtual_desktop_map_to_the_full_range(monkeypatch):
+    _three_screens(monkeypatch)
+    assert ic._to_absolute(0, 0) == (0, 0)
+    assert ic._to_absolute(5759, 1079) == (65535, 65535)
+
+
+def test_negative_origin_does_not_shift_the_mapping(monkeypatch):
+    """MOUSEEVENTF_VIRTUALDESK makes 0..65535 span the virtual desktop
+    itself, so its zero already means SM_XVIRTUALSCREEN. Applying the
+    origin again would shift every click by a whole monitor."""
+    _three_screens(monkeypatch, origin_x=-1920)
+    shifted = ic._to_absolute(2880, 540)
+    _three_screens(monkeypatch, origin_x=0)
+    unshifted = ic._to_absolute(2880, 540)
+    assert shifted == unshifted
+
+
+def test_out_of_range_is_still_rejected_on_the_wider_space(monkeypatch):
+    _three_screens(monkeypatch)
+    with pytest.raises(ic.InputError):
+        ic._to_absolute(5760, 0)
+    with pytest.raises(ic.InputError):
+        ic._to_absolute(0, 1080)
+
+
+def test_primary_screen_size_is_still_available(monkeypatch):
+    """Kept distinct from the coordinate space: callers that genuinely want
+    the primary monitor should not silently get the virtual desktop."""
+    assert hasattr(ic, "get_primary_screen_size")

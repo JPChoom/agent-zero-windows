@@ -20,6 +20,11 @@ from dataclasses import dataclass
 
 JPEG_MIME = "image/jpeg"
 
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
+
 
 @dataclass(frozen=True)
 class CapturedFrame:
@@ -27,9 +32,10 @@ class CapturedFrame:
     mime: str
     width: int
     height: int
-    # Native screen size before any downscale - the stream endpoint needs
-    # this to map click coordinates from the scaled image back to the real
-    # desktop.
+    # Native size of the captured area before any downscale - the stream
+    # endpoint needs this to map click coordinates from the scaled image
+    # back to the real desktop. This is the whole virtual desktop when
+    # multiple monitors are present, not just the primary screen.
     screen_width: int
     screen_height: int
 
@@ -41,25 +47,48 @@ class CapturedFrame:
         return self.screen_width / self.width
 
 
-def _grab():
+def get_virtual_bounds() -> tuple[int, int, int, int]:
+    """(origin_x, origin_y, width, height) of the whole virtual desktop.
+
+    The origin is NOT always (0, 0): a monitor arranged to the left of the
+    primary one gives a negative SM_XVIRTUALSCREEN (measured -1920 on the
+    development machine). Callers work in 0-based capture coordinates and
+    this offset is what converts them to Windows' virtual-screen space.
+    """
+    import ctypes
+
+    user32 = ctypes.WinDLL("user32")
+    return (
+        user32.GetSystemMetrics(SM_XVIRTUALSCREEN),
+        user32.GetSystemMetrics(SM_YVIRTUALSCREEN),
+        user32.GetSystemMetrics(SM_CXVIRTUALSCREEN),
+        user32.GetSystemMetrics(SM_CYVIRTUALSCREEN),
+    )
+
+
+def _grab(all_screens: bool = True):
     # Imported lazily so this module can be imported on non-Windows hosts
     # (e.g. to run the tests) without a display present.
     from PIL import ImageGrab
 
-    return ImageGrab.grab()
+    # all_screens spans every monitor. Without it a multi-monitor desktop is
+    # captured as the primary screen only - which left the agent unable to
+    # see, or to click on, two thirds of a three-monitor setup.
+    return ImageGrab.grab(all_screens=all_screens)
 
 
 def capture_frame(
     max_edge: int = 1280,
     jpeg_quality: int = 60,
+    all_screens: bool = True,
 ) -> CapturedFrame:
-    """Grab the primary desktop and return it as JPEG bytes.
+    """Grab the desktop and return it as JPEG bytes.
 
-    max_edge <= 0 keeps the native resolution.
+    Spans every monitor by default. max_edge <= 0 keeps native resolution.
     """
     from PIL import Image
 
-    image = _grab()
+    image = _grab(all_screens)
     screen_width, screen_height = image.size
 
     if max_edge and max(image.size) > max_edge:
@@ -95,5 +124,6 @@ def get_config(agent=None) -> dict:
         "capture_enabled": bool(cfg.get("capture_enabled", True)),
         "capture_max_edge": int(cfg.get("capture_max_edge", 1280) or 0),
         "capture_jpeg_quality": int(cfg.get("capture_jpeg_quality", 60) or 60),
+        "capture_all_screens": bool(cfg.get("capture_all_screens", True)),
         "control_enabled": bool(cfg.get("control_enabled", False)),
     }

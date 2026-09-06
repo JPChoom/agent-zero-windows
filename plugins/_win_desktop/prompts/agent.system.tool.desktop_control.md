@@ -23,8 +23,11 @@ targeting the right window:
   `desktop_screenshot` and use `focus` before typing
 
 rules:
-- coordinates are in screen space at the resolution reported by
+- coordinates are in desktop space at the size reported by
   `desktop_screenshot`, NOT the size of the attached image
+- that space covers ALL monitors as one area, so it can be much wider than a
+  single screen. (0, 0) is the top-left of the screenshot, and an x larger
+  than one monitor's width is normal and valid
 - always call `desktop_screenshot` first to see where things are, and again
   afterwards to confirm the action did what you expected
 - this drives the user's real machine: it can close windows, discard unsaved

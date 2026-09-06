@@ -47,6 +47,7 @@ class DesktopScreenshot(Tool):
             self.frame = capture.capture_frame(
                 max_edge=cfg["capture_max_edge"],
                 jpeg_quality=cfg["capture_jpeg_quality"],
+                all_screens=cfg["capture_all_screens"],
             )
         except Exception as exc:
             return Response(
@@ -60,8 +61,9 @@ class DesktopScreenshot(Tool):
             "Desktop screenshot captured.\n"
             f"Screen resolution: {self.frame.screen_width}x{self.frame.screen_height}\n"
             f"Image attached at: {self.frame.width}x{self.frame.height}\n"
-            "Any click or move coordinates must be given in screen space "
-            f"({self.frame.screen_width}x{self.frame.screen_height})."
+            "Any click or move coordinates must be given in desktop space "
+            f"({self.frame.screen_width}x{self.frame.screen_height}), where (0, 0) "
+            "is the top-left of this image."
         )
         return Response(message=message, break_loop=False)
 

@@ -37,12 +37,20 @@ MOUSEEVENTF_MIDDLEDOWN = 0x0020
 MOUSEEVENTF_MIDDLEUP = 0x0040
 MOUSEEVENTF_WHEEL = 0x0800
 MOUSEEVENTF_ABSOLUTE = 0x8000
+# Normalises absolute coordinates against the whole virtual desktop rather
+# than the primary monitor. Without it, an absolute move can only ever
+# address the primary screen.
+MOUSEEVENTF_VIRTUALDESK = 0x4000
 
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 
 SM_CXSCREEN = 0
 SM_CYSCREEN = 1
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
 
 WHEEL_DELTA = 120
 
@@ -139,11 +147,38 @@ def _user32():
     return _USER32
 
 
-def get_screen_size() -> tuple[int, int]:
+def get_primary_screen_size() -> tuple[int, int]:
     user32 = _user32()
     return int(user32.GetSystemMetrics(SM_CXSCREEN)), int(
         user32.GetSystemMetrics(SM_CYSCREEN)
     )
+
+
+def get_virtual_bounds() -> tuple[int, int, int, int]:
+    """(origin_x, origin_y, width, height) of the whole virtual desktop.
+
+    The origin is not always (0, 0): a monitor placed left of the primary
+    gives a negative SM_XVIRTUALSCREEN (-1920 on the development machine,
+    which has three screens spanning 5760x1080).
+    """
+    user32 = _user32()
+    return (
+        int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN)),
+        int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN)),
+        int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)),
+        int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)),
+    )
+
+
+def get_screen_size() -> tuple[int, int]:
+    """Size of the addressable coordinate space (the whole virtual desktop).
+
+    Callers pass 0-based coordinates within this space, matching what a
+    capture of the virtual desktop looks like, rather than Windows' own
+    virtual-screen coordinates which can be negative.
+    """
+    _, _, width, height = get_virtual_bounds()
+    return width, height
 
 
 def _send(*inputs: _INPUT) -> None:
@@ -177,14 +212,27 @@ def _key_input(vk: int, flags: int = 0, scan: int = 0) -> _INPUT:
 
 
 def _to_absolute(x: int, y: int) -> tuple[int, int]:
-    """Convert screen pixels to SendInput's 0..65535 absolute range."""
-    width, height = get_screen_size()
+    """Convert 0-based virtual-desktop pixels to SendInput's 0..65535 range.
+
+    Input coordinates are 0-based within the captured virtual desktop, so
+    (0, 0) is its top-left corner whichever monitor that happens to be on.
+    Windows' own virtual-screen space can start at a negative x, so the
+    origin is added back here rather than exposed to callers - a screenshot
+    has no negative pixels, and asking a model to reason about them would
+    invite exactly the off-by-a-monitor errors this avoids.
+    """
+    _, _, width, height = get_virtual_bounds()
     if not (0 <= x < width and 0 <= y < height):
         raise InputError(
-            f"({x}, {y}) is outside the {width}x{height} screen"
+            f"({x}, {y}) is outside the {width}x{height} virtual desktop"
         )
+    # No origin offset is applied: MOUSEEVENTF_VIRTUALDESK makes the
+    # 0..65535 range span the virtual desktop itself, so its 0 already means
+    # the left edge - i.e. SM_XVIRTUALSCREEN, not Windows' absolute 0. The
+    # origin still matters for callers converting window positions, which is
+    # why get_virtual_bounds() exposes it.
     # The -1 divisor maps the last pixel to exactly 65535 rather than
-    # rounding short of the screen edge.
+    # rounding short of the edge.
     return (
         int(round(x * 65535 / max(1, width - 1))),
         int(round(y * 65535 / max(1, height - 1))),
@@ -193,7 +241,7 @@ def _to_absolute(x: int, y: int) -> tuple[int, int]:
 
 def move(x: int, y: int) -> None:
     ax, ay = _to_absolute(int(x), int(y))
-    _send(_mouse_input(ax, ay, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE))
+    _send(_mouse_input(ax, ay, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK))
 
 
 def click(x: int, y: int, button: str = "left", clicks: int = 1) -> None:
@@ -209,7 +257,7 @@ def click(x: int, y: int, button: str = "left", clicks: int = 1) -> None:
 
     down, up = MOUSE_BUTTONS[button]
     ax, ay = _to_absolute(int(x), int(y))
-    _send(_mouse_input(ax, ay, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE))
+    _send(_mouse_input(ax, ay, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK))
     for index in range(clicks):
         if index:
             # Stay inside the double-click interval so consecutive clicks
@@ -221,7 +269,7 @@ def click(x: int, y: int, button: str = "left", clicks: int = 1) -> None:
 def scroll(x: int, y: int, amount: int) -> None:
     """Positive amount scrolls up, negative down (in wheel notches)."""
     ax, ay = _to_absolute(int(x), int(y))
-    _send(_mouse_input(ax, ay, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE))
+    _send(_mouse_input(ax, ay, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK))
     _send(_mouse_input(0, 0, MOUSEEVENTF_WHEEL, int(amount) * WHEEL_DELTA))
 
 

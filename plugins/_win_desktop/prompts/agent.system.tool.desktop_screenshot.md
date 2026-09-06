@@ -10,8 +10,11 @@ use when:
 
 notes:
 - this is the live desktop of the signed-in user, not a virtual display
-- coordinates you report or pass to `desktop_control` must be in screen
-  space (the resolution stated in the result), not the attached image's size
+- it covers every monitor as a single wide image, so the desktop size in the
+  result can be several screens wide
+- coordinates you report or pass to `desktop_control` must be in desktop
+  space (the size stated in the result), not the attached image's size,
+  measured from the top-left of the image
 - do not call it repeatedly in a loop; take one screenshot, act, then take
   another to verify
 
