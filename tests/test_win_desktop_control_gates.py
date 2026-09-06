@@ -58,8 +58,16 @@ def _no_real_input(monkeypatch):
     return performed
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def audited(monkeypatch):
+    """Capture audit records instead of appending them.
+
+    autouse, not opt-in: the tool audits before dispatching, so any test
+    that reaches a known action would otherwise append to the real
+    usr/audit_log.jsonl. That log is hash-chained user data - polluting it
+    from a test run is not something a later cleanup can undo without
+    breaking the chain.
+    """
     records: list[dict] = []
 
     async def fake_append(record):
@@ -201,6 +209,30 @@ async def test_non_integer_coordinates_are_reported(monkeypatch, _no_real_input)
     )
     assert "invalid request" in response.message.lower()
     assert _no_real_input == []
+
+
+@pytest.mark.asyncio
+async def test_tests_never_touch_the_real_audit_log(monkeypatch, _no_real_input, audited):
+    """Guard against the autouse fixture being weakened later: exercising
+    every action must leave the on-disk log untouched."""
+    import os
+
+    from helpers import audit_log as real_audit_log
+
+    path = real_audit_log.get_audit_log_path()
+    before = os.path.getsize(path) if os.path.exists(path) else 0
+
+    _allow(monkeypatch)
+    for args in [
+        dict(action="click", x=1, y=1),
+        dict(action="type", text="x"),
+        dict(action="key", keys="enter"),
+    ]:
+        await _tool(**args).execute(**args)
+
+    after = os.path.getsize(path) if os.path.exists(path) else 0
+    assert after == before, "a test wrote to the real audit log"
+    assert len(audited) == 3
 
 
 @pytest.mark.asyncio
