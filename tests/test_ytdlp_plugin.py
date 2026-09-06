@@ -253,3 +253,123 @@ def test_list_formats_drops_storyboards_and_flags_progressive(monkeypatch):
     assert [r["format_id"] for r in rows] == ["137", "18"]
     assert {r["format_id"]: r["progressive"] for r in rows} == {"18": True, "137": False}
     assert next(r for r in rows if r["format_id"] == "18")["filesize_mb"] == 5.0
+
+
+# ------------------------------------------------------------------
+# Failure explanation
+# ------------------------------------------------------------------
+#
+# YouTube stopped publishing progressive formats: a listing that once had
+# one now reports 24 formats, none of them playable without merging. With
+# ffmpeg absent the format selector matches nothing, and yt-dlp says only
+# "Requested format is not available", which names neither the cause nor
+# the fix.
+
+def test_missing_format_without_ffmpeg_explains_the_real_cause(monkeypatch):
+    monkeypatch.setattr(d, "ffmpeg_available", lambda: False)
+    text = d._explain(
+        Exception("ERROR: Requested format is not available. Use --list-formats"),
+        {"format": d.PROGRESSIVE_FORMAT},
+        None,
+    )
+    assert "ffmpeg is not installed" in text
+    assert "video-only or audio-only" in text
+    # It must say what to do, not just what went wrong.
+    assert "format_id" in text or "Install ffmpeg" in text
+
+
+def test_missing_format_with_ffmpeg_is_not_blamed_on_ffmpeg(monkeypatch):
+    monkeypatch.setattr(d, "ffmpeg_available", lambda: True)
+    text = d._explain(
+        Exception("Requested format is not available"), {"format": "999"}, "999"
+    )
+    assert "ffmpeg is not installed" not in text
+
+
+def test_403_is_described_as_anti_bot_not_a_bad_url(monkeypatch):
+    monkeypatch.setattr(d, "ffmpeg_available", lambda: True)
+    text = d._explain(Exception("HTTP Error 403: Forbidden"), {}, None)
+    assert "403" in text and "anti-bot" in text
+
+
+def test_other_errors_mention_the_attempted_format(monkeypatch):
+    monkeypatch.setattr(d, "ffmpeg_available", lambda: True)
+    text = d._explain(Exception("boom"), {"format": "best"}, None)
+    assert "boom" in text and "best" in text
+
+
+def test_download_raises_our_error_type(tmp_path, monkeypatch):
+    """yt-dlp raises its own DownloadError; callers should only ever see
+    ours, so the tool's except clauses stay meaningful."""
+    monkeypatch.setattr(d.files, "get_abs_path", lambda *p: str(tmp_path / "dl"))
+
+    class Boom:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download=True):
+            raise RuntimeError("Requested format is not available")
+
+    monkeypatch.setattr(d, "_ydl", lambda options: Boom())
+    monkeypatch.setattr(d, "ffmpeg_available", lambda: False)
+    with pytest.raises(d.DownloadError):
+        d.download("https://example.com/v")
+
+
+# ------------------------------------------------------------------
+# ffmpeg discovery
+# ------------------------------------------------------------------
+#
+# winget installed Gyan.FFmpeg but did not create its Links shim, so the
+# binary existed while `where ffmpeg` found nothing and the plugin
+# concluded ffmpeg was absent. Searching the install location and passing
+# it to yt-dlp's own ffmpeg_location avoids editing the user's PATH.
+
+def test_path_lookup_wins_when_ffmpeg_is_on_path(monkeypatch):
+    monkeypatch.setattr(d.shutil, "which", lambda name: r"C:\bin\ffmpeg.exe")
+    assert d.find_ffmpeg() == r"C:\bin\ffmpeg.exe"
+
+
+def test_winget_install_is_found_when_not_on_path(tmp_path, monkeypatch):
+    nested = tmp_path / "Microsoft" / "WinGet" / "Packages" / "Gyan.FFmpeg_x" / "bin"
+    nested.mkdir(parents=True)
+    (nested / "ffmpeg.exe").write_bytes(b"")
+    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert d.find_ffmpeg() == str(nested / "ffmpeg.exe")
+    assert d.ffmpeg_available() is True
+
+
+def test_absent_ffmpeg_reports_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(d.shutil, "which", lambda name: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    assert d.find_ffmpeg() is None
+    assert d.ffmpeg_available() is False
+
+
+def test_ffmpeg_location_is_the_directory_not_the_binary(tmp_path, monkeypatch):
+    """yt-dlp's ffmpeg_location wants a directory (or the binary path); the
+    directory is what also lets it find ffprobe alongside."""
+    binary = tmp_path / "bin" / "ffmpeg.exe"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"")
+    monkeypatch.setattr(d, "find_ffmpeg", lambda: str(binary))
+    assert d.ffmpeg_directory() == str(tmp_path / "bin")
+
+
+def test_options_carry_ffmpeg_location_when_found(tmp_path, monkeypatch):
+    monkeypatch.setattr(d, "ffmpeg_directory", lambda: r"C:\ff\bin")
+    monkeypatch.setattr(d, "ffmpeg_available", lambda: True)
+    assert d.build_options(tmp_path, d.Limits())["ffmpeg_location"] == r"C:\ff\bin"
+
+
+def test_options_omit_ffmpeg_location_when_absent(tmp_path, monkeypatch):
+    """An empty value would break yt-dlp's own discovery, so the key is
+    left out entirely rather than set to a blank string."""
+    monkeypatch.setattr(d, "ffmpeg_directory", lambda: None)
+    monkeypatch.setattr(d, "ffmpeg_available", lambda: False)
+    assert "ffmpeg_location" not in d.build_options(tmp_path, d.Limits())
