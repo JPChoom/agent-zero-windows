@@ -587,7 +587,21 @@ def _resolve_path(*relative_paths):
             if drive or path.startswith("\\\\"):
                 return path
             if path.startswith("/") or path.startswith("\\"):
-                return os.path.join(_base_dir, path.lstrip("/\\"))
+                # "/a0/..." is this app's own base dir under the container
+                # convention, and normalize_a0_path() hands exactly that
+                # shape to the model - skill listings, prompts and tool
+                # output are full of it. Stripping only the leading slash
+                # turned "/a0/skills/x" into "<base>/a0/skills/x", so every
+                # path the framework showed the agent failed when the agent
+                # passed it back. Drop the redundant "a0" segment instead.
+                stripped = path.lstrip("/\\")
+                head, sep, tail = stripped.replace("\\", "/").partition("/")
+                if head.lower() == "a0":
+                    # join even when tail is empty, so "/a0" yields exactly
+                    # what get_abs_path("") yields and callers comparing
+                    # strings see one form, not two.
+                    return os.path.join(_base_dir, tail)
+                return os.path.join(_base_dir, stripped)
         elif os.path.isabs(path):
             return path
     return os.path.join(_base_dir, *relative_paths)
