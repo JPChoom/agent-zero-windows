@@ -9,7 +9,7 @@
   <!--
     Reusable model configuration field set.
     Parent x-data scope must provide:
-      model       — reactive object with provider, name, api_key, api_base, ctx_length, ctx_history, ctx_input, vision, max_embeds, rl_requests, rl_input, rl_output, kwargs, _kwargs_text
+      model       — reactive object with provider, name, api_key, api_base, ctx_length, ctx_history, ctx_output, ctx_input, vision, max_embeds, rl_requests, rl_input, rl_output, kwargs, _kwargs_text
       modelType   — 'chat' | 'utility' | 'embedding'
       providers   — array of { value, label }
       searchType  — 'chat' | 'embedding'
@@ -175,7 +175,7 @@
           </div>
         </div>
 
-        <!-- Chat-specific: ctx_history, max_embeds -->
+        <!-- Chat-specific: ctx_history, ctx_output, max_embeds -->
         <template x-if="modelType === 'chat'">
           <div>
             <div class="field">
@@ -186,6 +186,16 @@
               <div class="field-control">
                 <input type="range" min="0.01" max="1" step="0.01" x-model.number="model.ctx_history" />
                 <span class="range-value" x-text="model.ctx_history"></span>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Context window reserved for the reply</div>
+                <div class="field-description">Portion of the context window held back for the model's own output. History compression treats it as unavailable, so a reasoning model has room to think and still emit a tool call in one turn. Raise it if replies get cut off or stop before making a tool call.</div>
+              </div>
+              <div class="field-control">
+                <input type="range" min="0.05" max="0.5" step="0.01" x-model.number="model.ctx_output" x-init="if (model.ctx_output === undefined || model.ctx_output === null) model.ctx_output = 0.1" />
+                <span class="range-value" x-text="model.ctx_output"></span>
               </div>
             </div>
             <template x-if="model.vision">

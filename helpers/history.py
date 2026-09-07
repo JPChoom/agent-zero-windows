@@ -23,7 +23,7 @@ LARGE_MESSAGE_TO_CURRENT_TOPIC_RATIO = 0.5
 LARGE_MESSAGE_TO_HISTORY_TOPIC_RATIO = 0.2
 RAW_MESSAGE_OUTPUT_TEXT_TRIM = 100
 COMPRESSION_TARGET_RATIO = 0.8
-OUTPUT_RESERVE_RATIO = 0.1  # leave room for the model's own reply in the window
+DEFAULT_OUTPUT_RESERVE_RATIO = 0.1  # fallback when ctx_output is unset
 MIN_HISTORY_RATIO = 0.2  # never squeeze history below this, however large the prompt
 
 
@@ -620,6 +620,17 @@ class History(Record):
         await bulk.summarize()
         return bulk
 
+    @staticmethod
+    def _get_ctx_output(chat_cfg: dict) -> float:
+        try:
+            ratio = float(chat_cfg.get("ctx_output", DEFAULT_OUTPUT_RESERVE_RATIO))
+        except (TypeError, ValueError):
+            return DEFAULT_OUTPUT_RESERVE_RATIO
+        # A reserve at or above 1.0 leaves no window at all; a negative one
+        # would hand history more room than exists. Neither is a setting the
+        # UI can produce, but config files are edited by hand.
+        return min(max(ratio, 0.0), 0.9)
+
     def set_measured_overhead(self, overhead: int) -> None:
         self.measured_overhead = max(int(overhead), 0)
 
@@ -636,11 +647,12 @@ class History(Record):
         # exceed it, so history stays "under limit" while the real prompt is
         # already over. Subtract what the prompt actually measured instead.
         if self.measured_overhead > 0:
-            available = (
-                ctx_length
-                - self.measured_overhead
-                - int(ctx_length * OUTPUT_RESERVE_RATIO)
-            )
+            # A reasoning model needs room to think *and* emit a tool call
+            # within one turn; too little and it produces output without ever
+            # reaching the call. How much is model-specific, so ctx_output is
+            # configurable per model rather than a fixed constant.
+            reserve = int(ctx_length * self._get_ctx_output(chat_cfg))
+            available = ctx_length - self.measured_overhead - reserve
             budget = min(budget, available)
 
         # Floor it: an overhead approaching the whole window would otherwise

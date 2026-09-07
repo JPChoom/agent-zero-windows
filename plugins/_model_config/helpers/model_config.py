@@ -552,6 +552,17 @@ def get_ctx_history(agent=None) -> float:
     return float(cfg.get("ctx_history", 0.7))
 
 
+def get_ctx_output(agent=None) -> float:
+    """Portion of the chat window held back for the model's own reply.
+
+    History compression treats this as unavailable, so a model that needs
+    room to reason before emitting a tool call can be given it without
+    lowering ctx_history and losing conversation instead.
+    """
+    cfg = get_chat_model_config(agent)
+    return float(cfg.get("ctx_output", 0.1))
+
+
 def get_ctx_input(agent=None) -> float:
     """Get the utility model context input ratio."""
     cfg = get_utility_model_config(agent)

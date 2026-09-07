@@ -24,6 +24,7 @@ chat_model:
   api_base: ""
   ctx_length: 32000
   ctx_history: 0.7
+  ctx_output: 0.1
   vision: false
   max_embeds: 10
   rl_requests: 0
