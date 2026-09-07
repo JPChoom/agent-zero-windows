@@ -161,6 +161,40 @@ const model = {
     }
   },
 
+  async renameChat(id) {
+    if (!id) return;
+    const current = this.contexts.find((ctx) => ctx.id === id);
+    const proposed = globalThis.prompt(
+      "Rename chat",
+      current ? this.displayName(current) : ""
+    );
+    // null means cancelled; an empty string is a mistake rather than an
+    // instruction to clear the name, so both leave the chat untouched.
+    if (proposed === null || !proposed.trim()) return;
+
+    try {
+      const response = await sendJsonData("/chat_rename", {
+        context: id,
+        name: proposed,
+      });
+      if (response && response.ok === false) {
+        justToast(response.error || "Could not rename chat", "error", 3000);
+        return;
+      }
+      // Reflect the server's version: it collapses whitespace and truncates,
+      // so echoing the raw input would briefly show a name that is not what
+      // was stored.
+      const stored = (response && response.name) || proposed.trim();
+      this.contexts = this.contexts.map((ctx) =>
+        ctx.id === id ? { ...ctx, name: stored } : ctx
+      );
+      justToast("Chat renamed", "success", 1000, "chat-rename");
+    } catch (e) {
+      console.error("Error renaming chat:", e);
+      toastFetchError("Error renaming chat", e);
+    }
+  },
+
   // Switch from a context that's being deleted
   async switchFromContext(id) {
     // Find an alternate chat to switch to
