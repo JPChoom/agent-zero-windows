@@ -1,0 +1,43 @@
+# How much the agent checks with you before acting.
+#
+#   auto          works freely; rules and the safety policy still apply
+#   manual        asks before anything that changes state
+#   accept_edits  file edits proceed; anything that executes still asks
+#   plan          refuses state changes outright, so a plan comes first
+#   bypass        stops asking entirely
+#
+# "auto" matches how Agent Zero behaved before this plugin existed, so
+# enabling it changes nothing until you choose otherwise.
+mode: auto
+
+# Rules are matched before the mode is consulted, in the order
+# deny > ask > allow - so a specific prohibition is never overridden by a
+# broader permission, whichever order they appear in.
+#
+# Write them as `tool_name` (the whole tool) or `tool_name(pattern)`,
+# where the pattern is a case-insensitive glob matched against the call's
+# identifying argument: the command for code_execution_tool, action:path
+# for text_editor, action:url for ytdlp, and so on.
+#
+#   code_execution_tool(git status*)
+#   text_editor(read:*)
+#   desktop_control
+#
+# One rule per line.
+
+# Never run these, whatever the mode. Deny rules bind even in bypass.
+deny: ""
+
+# Always check with the user first.
+ask: ""
+
+# Run without asking, even in manual mode.
+allow: ""
+
+# How long an approval prompt waits for an answer before being treated as
+# denied. Matches the safety policy's own timeout.
+approval_timeout_seconds: 300
+
+# Write every ask/deny decision to the audit log. Allowed calls are not
+# logged: in auto mode that would be nearly every tool call.
+audit_decisions: true

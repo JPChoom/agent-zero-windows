@@ -1,0 +1,9 @@
+name: _permissions
+title: Permissions
+description: Controls which tool calls run, ask first, or are refused - with modes and per-tool rules.
+version: 1.0.0
+always_enabled: false
+settings_sections:
+  - agent
+per_project_config: true
+per_agent_config: false
