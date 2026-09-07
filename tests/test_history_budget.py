@@ -140,3 +140,50 @@ def test_the_shipped_default_matches_the_yaml():
     found = re.search(r"^  ctx_output:\s*([0-9.]+)", yaml_text, re.MULTILINE)
     assert found, "ctx_output missing from default_config.yaml"
     assert float(found.group(1)) == history_mod.DEFAULT_OUTPUT_RESERVE_RATIO
+
+
+# ------------------------------------------------------------------
+# The measurement itself
+# ------------------------------------------------------------------
+
+def test_overhead_is_measured_against_the_prompt_snapshot(monkeypatch):
+    """Regression: history compression runs on a background thread and can
+    shrink history *while* prepare_prompt is assembling the prompt. If the
+    overhead is computed by re-reading history rather than from the same
+    snapshot the prompt was built from, it absorbs whatever compression
+    just removed. That inflated overhead shrinks the next budget, which
+    triggers more compression - a runaway that hammers the utility model
+    and collapses history to the floor.
+    """
+    import agent as agent_mod
+    import inspect
+
+    source = inspect.getsource(agent_mod.Agent.prepare_prompt)
+    assert "set_measured_overhead" in source
+    measurement = source.split("set_measured_overhead", 1)[1]
+    # The subtracted term must come from the snapshot, not from history.
+    assert "self.history.get_tokens()" not in measurement, (
+        "overhead must not be measured by re-reading history - see the "
+        "runaway described above"
+    )
+
+
+def test_a_snapshot_measurement_is_stable_under_concurrent_compression(hist):
+    """The arithmetic the fix relies on: overhead derived from one snapshot
+    does not move when history changes underneath it."""
+    snapshot_prompt_tokens = 60000
+    snapshot_history_tokens = 46000
+
+    overhead = snapshot_prompt_tokens - snapshot_history_tokens
+    hist.set_measured_overhead(overhead)
+    stable = hist._get_ctx_size_for_history()
+
+    # Had it re-read history mid-compression it would have seen, say, 20k,
+    # producing a far larger overhead and a collapsed budget.
+    hist.set_measured_overhead(snapshot_prompt_tokens - 20000)
+    collapsed = hist._get_ctx_size_for_history()
+
+    # Roughly halved, and far below what ctx_history alone would allow -
+    # each such turn would compress history hard and re-inflate next turn.
+    assert collapsed < stable / 2
+    assert collapsed < int(CTX * 0.7) / 2

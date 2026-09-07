@@ -677,9 +677,21 @@ class Agent:
 
         # Tell history what the rest of the prompt costs, so its compression
         # budget is the room actually left rather than a fixed fraction of the
-        # window. Both counts come from the same estimator, so the difference
-        # is the system prompt, protocol, extras and chat formatting.
-        self.history.set_measured_overhead(prompt_tokens - self.history.get_tokens())
+        # window. The difference is the system prompt, protocol, extras and
+        # chat formatting.
+        #
+        # Both sides must be measured from history_output, the same snapshot
+        # full_text was built from - never by re-reading history itself.
+        # Compression runs on a background thread (message_loop_end starts it,
+        # message_loop_prompts_before only waits for it when already over
+        # limit), so history can shrink *while* this function runs. Re-reading
+        # it would subtract a post-compression size from a pre-compression
+        # prompt, inflating the overhead by whatever compression just removed,
+        # which shrinks the next budget, which triggers more compression.
+        history_tokens = tokens.approximate_prompt_tokens(
+            history.output_text(loop_data.history_output)
+        )
+        self.history.set_measured_overhead(prompt_tokens - history_tokens)
 
         return full_prompt
 
