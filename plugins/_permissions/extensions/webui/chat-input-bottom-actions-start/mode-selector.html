@@ -1,0 +1,58 @@
+<html>
+<head>
+  <title>Permission Mode Selector</title>
+  <script type="module" src="/plugins/_permissions/webui/mode-store.js"></script>
+</head>
+<body>
+  <div x-data class="permissions-mode-wrap" style="position:relative;">
+    <template x-if="$store.permissionsMode">
+      <div>
+        <button
+          class="text-button"
+          @click="$store.permissionsMode.open = !$store.permissionsMode.open"
+          :disabled="$store.permissionsMode.loading"
+          title="How much Agent Zero checks with you before acting"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+               stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+            <path d="M12 3l7 4v5c0 4.4-3 8.3-7 9-4-.7-7-4.6-7-9V7l7-4z" />
+          </svg>
+          <span x-text="$store.permissionsMode.label()"></span>
+        </button>
+
+        <div
+          x-show="$store.permissionsMode.open"
+          @click.outside="$store.permissionsMode.open = false"
+          x-transition
+          class="permissions-mode-menu"
+          style="position:absolute; bottom:100%; left:0; z-index:60; min-width:260px;
+                 margin-bottom:.35rem; padding:.35rem; border-radius:.5rem;
+                 background:var(--color-panel, #1b2333);
+                 border:1px solid var(--color-border, #33405a);
+                 box-shadow:0 8px 24px rgba(0,0,0,.45);"
+        >
+          <template x-for="m in $store.permissionsMode.modes" :key="m.id">
+            <button
+              type="button"
+              class="permissions-mode-option"
+              @click="$store.permissionsMode.select(m.id)"
+              style="display:block; width:100%; text-align:left; padding:.4rem .5rem;
+                     border:0; background:transparent; color:inherit; cursor:pointer;
+                     border-radius:.35rem;"
+              :style="m.id === $store.permissionsMode.mode
+                        ? 'background:var(--color-panel-hover, #26324a);' : ''"
+            >
+              <span style="display:flex; align-items:center; gap:.4rem;">
+                <span x-text="m.label" style="font-weight:600;"></span>
+                <span x-show="m.id === $store.permissionsMode.mode" aria-hidden="true">✓</span>
+              </span>
+              <span x-text="m.description" style="opacity:.7; font-size:.8em;"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+</body>
+</html>
