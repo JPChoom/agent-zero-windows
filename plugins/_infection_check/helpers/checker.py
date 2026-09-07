@@ -1,12 +1,14 @@
 import re
 import json
 import time
+import uuid
 import asyncio
 from typing import TYPE_CHECKING
 
 from helpers import plugins
 from helpers import history as history_helpers
 from helpers.errors import HandledException
+from plugins._safety_policy.helpers import approval_registry
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 if TYPE_CHECKING:
@@ -76,6 +78,13 @@ class InfectionChecker:
         self.prompt: str = config.get("prompt", "")
         self.history_size: int = int(config.get("history_size", 10))
         self.max_clarifications: int = int(config.get("max_clarifications", 3))
+        # Who answers a <clarify>. "user" puts the question to a human;
+        # "agent" is the original behaviour, kept for headless runs where
+        # nobody is there to answer and a prompt would only ever time out.
+        self.clarify_mode: str = str(config.get("clarify_mode", "user")).lower()
+        self.clarification_timeout_seconds: float = float(
+            config.get("clarification_timeout_seconds", 300)
+        )
         self.iteration = iteration
 
         # Accumulated text from stream callbacks
@@ -255,6 +264,111 @@ class InfectionChecker:
         return action, detail, response
 
     async def _clarify_loop(
+        self, agent: "Agent", clarify_text: str, log_item: "LogItem"
+    ) -> tuple[str, str, str]:
+        if self.clarify_mode != "agent":
+            return await self._clarify_with_user(agent, clarify_text, log_item)
+        return await self._clarify_with_agent(agent, clarify_text, log_item)
+
+    async def _clarify_with_user(
+        self, agent: "Agent", clarify_text: str, log_item: "LogItem"
+    ) -> tuple[str, str, str]:
+        """Put the safety model's question to the human and wait for a decision.
+
+        The questions this control produces are addressed to a person -
+        "Are you okay with...", "should it add an exception first?" - and
+        were previously answered by the main model, which replied in the
+        user's voice ("Go ahead and run it") and cleared its own gate.
+        Observed live: safety_policy denied Invoke-WebRequest, the agent
+        moved the same request into a node script, the check caught the
+        workaround, and then the agent authorised itself past it. A control
+        that any sufficiently persuasive answer can clear is not a control,
+        and the model writing the answer is the same one being gated.
+
+        Fails closed. No answer within the timeout is a denial, because the
+        alternative - proceeding when nobody confirmed - is what this
+        exists to prevent.
+        """
+        approval_id = str(uuid.uuid4())
+        question = clarify_text or "The safety check needs confirmation before this runs."
+        tool_args = ""
+        try:
+            tool_args = json.dumps(self._tool_args, indent=2, default=str)[:2000]
+        except Exception:
+            tool_args = str(self._tool_args)[:2000]
+
+        timeout = self.clarification_timeout_seconds
+        log_item.update(
+            heading="Infection check: waiting for your decision",
+            content=(
+                f"Safety concern:\n{question}\n\n"
+                f"Waiting up to {int(timeout)}s for you to Allow or Block."
+            ),
+        )
+        request_item = None
+        try:
+            request_item = agent.context.log.log(
+                type="infection_check_clarification_request",
+                content=question,
+                kvps={
+                    "approval_id": approval_id,
+                    "question": question,
+                    "tool_name": self._tool_name or "",
+                    "tool_args": tool_args,
+                    "resolved": False,
+                },
+            )
+        except Exception:
+            pass
+
+        try:
+            # register() inside the try, not before it: gate() swallows any
+            # exception from here as non-fatal and returns, which would let
+            # the gated call proceed. A failure to even set up the decision
+            # must block, not pass.
+            future = approval_registry.register(approval_id)
+            approved = await asyncio.wait_for(future, timeout=timeout)
+        except (TimeoutError, asyncio.TimeoutError):
+            approval_registry.cleanup(approval_id)
+            self._finish_clarification(request_item, outcome="timeout")
+            return (
+                "terminate",
+                f"No answer to the safety question within {int(timeout)}s - treated as blocked.",
+                f"Q: {question}\nA: (no response from the user)",
+            )
+        except Exception as exc:
+            # Never let a registry problem become an open gate.
+            approval_registry.cleanup(approval_id)
+            self._finish_clarification(request_item, outcome="error")
+            return (
+                "terminate",
+                f"Could not obtain a decision on the safety question: {exc}",
+                f"Q: {question}",
+            )
+
+        self._finish_clarification(
+            request_item, outcome="allowed" if approved else "blocked"
+        )
+        if approved:
+            return "ok", "", f"Q: {question}\nA: allowed by the user"
+        return (
+            "terminate",
+            "The user blocked this action at the safety check.",
+            f"Q: {question}\nA: blocked by the user",
+        )
+
+    @staticmethod
+    def _finish_clarification(request_item, outcome: str) -> None:
+        if request_item is None:
+            return
+        try:
+            # kwargs merge into kvps; kvps= would replace the whole dict and
+            # drop the approval_id the frontend keys off.
+            request_item.update(resolved=True, outcome=outcome)
+        except Exception:
+            pass
+
+    async def _clarify_with_agent(
         self, agent: "Agent", clarify_text: str, log_item: "LogItem"
     ) -> tuple[str, str, str]:
         cot_parts: list[str] = []

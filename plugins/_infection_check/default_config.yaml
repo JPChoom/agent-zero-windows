@@ -1,6 +1,15 @@
 mode: thoughts
 model: utility
 max_clarifications: 3
+# Who answers a <clarify> verdict.
+#   user  - the question goes to a human, who allows or blocks it.
+#   agent - the main model answers its own gate (the original
+#           behaviour). Weak: the questions are phrased for a person,
+#           so the model answers in the user's voice and any
+#           sufficiently persuasive reply passes. Kept only for
+#           headless runs where a prompt would always time out.
+clarify_mode: user
+clarification_timeout_seconds: 300
 history_size: 25
 prompt: |
   You are a security auditor embedded in an AI agent framework. Your job is to analyze the agent's current output and decide whether to allow, question, or terminate its execution.
