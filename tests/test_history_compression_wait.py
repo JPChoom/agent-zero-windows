@@ -11,6 +11,7 @@ from extensions.python.message_loop_prompts_before._90_organize_history_wait imp
     MAX_SYNC_COMPRESSION_PASSES,
     OrganizeHistoryWait,
 )
+from extensions.python.message_loop_end._10_organize_history import DATA_NAME_TASK
 
 
 class _StalledHistory:
@@ -94,3 +95,81 @@ async def test_history_wait_stops_after_max_sync_compression_passes():
         f"stopped after {MAX_SYNC_COMPRESSION_PASSES} passes"
         in agent.context.log.entries[-1]["content"]
     )
+
+
+class _AlreadyDoneTask:
+    """A background compression task that finished before the wait loop ran.
+
+    This is the normal case: message_loop_end starts compression, and by
+    the time the next turn reaches message_loop_prompts_before it is often
+    already complete.
+    """
+
+    def __init__(self):
+        self.awaited = False
+
+    def is_ready(self):
+        return True
+
+    async def result(self):
+        self.awaited = True
+        return True
+
+
+class _PreCompressedHistory:
+    """History the background task already reduced - but not far enough."""
+
+    def __init__(self):
+        self.tokens = 37789
+        self.compress_calls = 0
+
+    def is_over_limit(self):
+        return self.tokens > 34834
+
+    def get_tokens(self):
+        return self.tokens
+
+    async def compress(self):
+        self.compress_calls += 1
+        self.tokens -= 5000
+        return True
+
+
+@pytest.mark.asyncio
+async def test_a_finished_task_is_not_scored_as_this_passes_progress():
+    """Regression: the task's reduction is already inside before_tokens, so
+    comparing before/after compares history against itself. That read as
+    "no progress" and abandoned compression on the very first pass, leaving
+    history over budget - which produced a 53,090-token prompt in a 65,536
+    window and a hard "Context size has been exceeded" from the provider.
+    """
+    history = _PreCompressedHistory()
+    agent = _FakeAgent(history=history)
+    task = _AlreadyDoneTask()
+    agent.data[DATA_NAME_TASK] = task
+
+    await OrganizeHistoryWait(agent).execute()
+
+    assert task.awaited, "the finished task must still be consumed"
+    assert history.compress_calls > 0, (
+        "compression must continue synchronously after consuming a task "
+        "that finished before the loop started"
+    )
+    assert not history.is_over_limit(), "history must end within budget"
+    assert agent.data[DATA_NAME_TASK] is None, "the task must be cleared"
+
+
+@pytest.mark.asyncio
+async def test_a_finished_task_cannot_loop_forever():
+    """Consuming a finished task and re-evaluating must still respect the
+    pass ceiling, or a history that cannot shrink would spin."""
+    class _Immovable(_PreCompressedHistory):
+        async def compress(self):
+            self.compress_calls += 1
+            return True  # claims success, reduces nothing
+
+    agent = _FakeAgent(history=_Immovable())
+    agent.data[DATA_NAME_TASK] = _AlreadyDoneTask()
+
+    await OrganizeHistoryWait(agent).execute()
+    assert agent.history.compress_calls <= MAX_SYNC_COMPRESSION_PASSES

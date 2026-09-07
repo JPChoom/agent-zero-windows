@@ -22,7 +22,8 @@ class OrganizeHistoryWait(Extension):
 
             # Check if the task is already done
             if task:
-                if not task.is_ready():
+                already_done = task.is_ready()
+                if not already_done:
                     self.agent.context.log.set_progress("Compressing history...")
 
                 # Wait for the task to complete
@@ -30,6 +31,24 @@ class OrganizeHistoryWait(Extension):
 
                 # Clear the coroutine data after it's done
                 self.agent.set_data(DATA_NAME_TASK, None)
+
+                if already_done:
+                    # The task finished before this loop even started, so its
+                    # reduction is already inside before_tokens. Scoring this
+                    # pass by it compares history against itself, reads as "no
+                    # progress" and abandons compression on the very first
+                    # pass - leaving history over budget and the prompt
+                    # oversized. Consume it and re-evaluate instead; the next
+                    # pass finds no task and compresses synchronously, which
+                    # can be measured honestly.
+                    if passes < MAX_SYNC_COMPRESSION_PASSES:
+                        continue
+                    self._log_compression_stalled(
+                        before_tokens,
+                        self.agent.history.get_tokens(),
+                        max_passes=True,
+                    )
+                    break
             else:
                 # no task was running, start and wait
                 self.agent.context.log.set_progress("Compressing history...")

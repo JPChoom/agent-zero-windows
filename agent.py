@@ -653,6 +653,11 @@ class Agent:
         loop_data.protocol_temporary.clear()
         loop_data.extras_temporary.clear()
 
+        # Last line of defence before the provider sees this.
+        loop_data.history_output = self._fit_history_to_window(
+            system_text, protocol, extras, loop_data.history_output
+        )
+
         # convert protocol + history + extras to LLM format
         history_langchain: list[BaseMessage] = history.output_langchain(
             protocol + loop_data.history_output + extras
@@ -694,6 +699,89 @@ class Agent:
         self.history.set_measured_overhead(prompt_tokens - history_tokens)
 
         return full_prompt
+
+    def _fit_history_to_window(
+        self,
+        system_text: str,
+        protocol: list[history.OutputMessage],
+        extras: list[history.OutputMessage],
+        history_output: list[history.OutputMessage],
+    ) -> list[history.OutputMessage]:
+        """Drop oldest history messages until this prompt fits the window.
+
+        Compression is what normally keeps history inside its budget, but
+        nothing guaranteed it succeeded. When it could not reduce far
+        enough the oversized prompt went to the provider anyway and came
+        back as a hard error ("Context size has been exceeded"), losing
+        the turn. Observed live: history stuck 3k above budget produced a
+        53,090-token prompt in a 65,536 window, leaving too little room
+        for the reply.
+
+        This trims the rendered output only - self.history is untouched,
+        so nothing is permanently lost and a later turn with a smaller
+        prompt sees the full conversation again. It is a safety net, not
+        a compression strategy: reaching it means compression already
+        failed, which is why it says so in the log.
+        """
+        # via history: it already imports this at module level, so there is
+        # no new import edge from agent.py into the model-config plugin.
+        #
+        # Fails open. This runs on the path that builds every prompt, so a
+        # config that cannot be resolved must cost at most the safety net,
+        # never the turn itself.
+        try:
+            cfg = history.get_chat_model_config(self)
+            ctx_length = int(cfg.get("ctx_length", 128000))
+            reserve = int(ctx_length * history.History._get_ctx_output(cfg))
+        except Exception:
+            return history_output
+        budget = (
+            ctx_length
+            - reserve
+            - tokens.approximate_prompt_tokens(
+                system_text + history.output_text(protocol + extras)
+            )
+        )
+        if budget <= 0 or not history_output:
+            # Even an empty history would not fit; dropping messages cannot
+            # help and would only discard context for nothing.
+            return history_output
+
+        sizes = [
+            tokens.approximate_prompt_tokens(history.output_text([message]))
+            for message in history_output
+        ]
+        total = sum(sizes)
+        if total <= budget:
+            return history_output
+
+        # Keep the newest, drop from the oldest. Always leave one message:
+        # a prompt with no conversation at all cannot be answered.
+        first = 0
+        while first < len(history_output) - 1 and total > budget:
+            total -= sizes[first]
+            first += 1
+
+        dropped = first
+        self.context.log.log(
+            type="warning",
+            heading="Prompt trimmed to fit the context window",
+            content=(
+                f"History compression left the prompt larger than the "
+                f"context window allows, so {dropped} of "
+                f"{len(history_output)} message(s) were left out of this "
+                f"request. The conversation itself is unchanged."
+            ),
+        )
+        notice = history.Message(  # type: ignore[abstract]
+            False,
+            content=(
+                f"[{dropped} earlier message(s) omitted from this request "
+                f"only, to fit the context window. They remain in the "
+                f"conversation history.]"
+            ),
+        ).output()
+        return notice + history_output[first:]
 
     def _build_context_message(
         self,
