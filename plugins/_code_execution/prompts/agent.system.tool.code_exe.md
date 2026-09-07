@@ -1,7 +1,7 @@
 ﻿### code_execution_tool
 run terminal, python, or nodejs commands
 args:
-- `runtime`: `terminal`, `python`, `nodejs`, or `output`
+- `runtime`: `terminal`, `python`, `nodejs`, `input`, or `output`
 - `code`: command or script code
 - `session`: terminal session id; default `0`
 - `reset`: kill a session before running; `true` or `false`
@@ -9,7 +9,8 @@ args:
 rules:
 - place the command or script in `code`
 - use `runtime=output` to poll running work
-- use `input` for interactive terminal prompts
+- use `runtime=input` to answer an interactive prompt in a running session; put just the answer in `code` (e.g. `Y`), it is typed at the prompt rather than run as a command
+- on Windows `curl` is an alias for `Invoke-WebRequest`, which asks to confirm before parsing a page; pass `-UseBasicParsing`, or use `curl.exe`, to avoid the prompt entirely
 - if a session is stuck, call again with the same `session` and `reset=true`
 - to work on a project outside the default working directory (e.g. C:\Projects\MyApp), set `cwd` to its absolute path when starting the session (`session` not already running); it is rejected unless it is inside the default working directory or an admin-approved folder in the plugin's "Allowed Project Folders" setting; `cwd` only takes effect when the session is created or reset, not on later calls with the same running session
 - check dependencies before running code

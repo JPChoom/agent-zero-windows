@@ -112,7 +112,7 @@ class CodeExecution(Tool):
         # _safety_policy plugin doesn't bypass the kill switch. "output"
         # (reading previous output) and "reset" (clearing a session, no
         # new code) don't execute anything new, so they're not blocked.
-        if runtime_arg in ("python", "nodejs", "terminal") and kill_switch.is_tripped():
+        if runtime_arg in ("python", "nodejs", "terminal", "input") and kill_switch.is_tripped():
             return Response(message=kill_switch.denial_message(), break_loop=False)
 
         cfg = _get_config(self.agent)
@@ -129,6 +129,10 @@ class CodeExecution(Tool):
             elif runtime_arg == "terminal":
                 response = await self.execute_terminal_command(
                     cfg, command=self.args["code"], session=session, reset=reset
+                )
+            elif runtime_arg == "input":
+                response = await self.send_terminal_input(
+                    cfg, text=self.args["code"], session=session
                 )
             elif runtime_arg == "output":
                 response = await self.get_terminal_output(
@@ -237,8 +241,30 @@ class CodeExecution(Tool):
         )
         return await self.terminal_session(cfg, session, command, reset, prefix)
 
+    async def send_terminal_input(self, cfg: dict, session: int, text: str):
+        """Type text at a prompt an already-running command is waiting on.
+
+        The tool prompt has always told the agent to "use `input` for
+        interactive terminal prompts", but the runtime was never
+        implemented - it fell through to runtime_wrong. So the only way to
+        answer a prompt was runtime=terminal, which appends the Windows
+        completion marker and turns "Y" into
+        "Y; Write-Output '__A0_COMMAND_DONE__'". PowerShell re-asks, nothing
+        matches, and the session hangs until it times out. Every `curl` here
+        hit this: PowerShell 5.1 aliases curl to Invoke-WebRequest, which
+        asks "[Y] Yes [N] No" unless -UseBasicParsing is passed.
+
+        Sent raw, and without the running-session guard - the session is
+        supposed to be busy; that is what makes this a prompt to answer.
+        """
+        self.allow_running = True
+        prefix = "input>" + self.format_command_for_output(text) + "\n\n"
+        return await self.terminal_session(
+            cfg, session=session, command=text, reset=False, prefix=prefix, raw=True
+        )
+
     async def terminal_session(
-        self, cfg: dict, session: int, command: str, reset: bool = False, prefix: str = "", timeouts: dict | None = None
+        self, cfg: dict, session: int, command: str, reset: bool = False, prefix: str = "", timeouts: dict | None = None, raw: bool = False
     ):
         self.state = await self.prepare_state(cfg, reset=reset, session=session)
 
@@ -258,7 +284,7 @@ class CodeExecution(Tool):
         for i in range(2):
             try:
                 self.state.shells[session].running = True
-                await self.state.shells[session].session.send_command(command)
+                await self.state.shells[session].session.send_command(command, raw=raw)
 
                 locl = (
                     " (local)"

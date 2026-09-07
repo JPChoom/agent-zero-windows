@@ -51,6 +51,12 @@ class SafetyCommandPolicy(Extension):
             return
 
         runtime = str(tool_args.get("runtime", "")).strip().lower()
+        # "input" is classified as a terminal command on purpose: it is
+        # sent to the same shell, and when that shell sits at an ordinary
+        # prompt rather than a question, whatever is sent simply runs.
+        # Exempting it would leave a way to run any command unchecked.
+        if runtime == "input":
+            runtime = "terminal"
         if runtime != "terminal" and runtime not in _SOURCE_RUNTIMES:
             return
 

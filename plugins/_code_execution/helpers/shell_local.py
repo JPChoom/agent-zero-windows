@@ -82,13 +82,21 @@ class LocalInteractiveSession:
                 except Exception:
                     pass
 
-    async def send_command(self, command: str):
+    async def send_command(self, command: str, raw: bool = False):
         if not self.session:
             raise Exception("Shell not connected")
         self.full_output = ""
         # Native Windows PowerShell completion marker.
         # Allows Agent Zero to detect deterministic command completion.
-        if runtime.is_windows():
+        #
+        # raw=True skips it, for text typed at an interactive prompt rather
+        # than run as a command. Appending the marker to an answer corrupts
+        # it: PowerShell asking "[Y] Yes [N] No" receives
+        # "Y; Write-Output '...'", which is not one of the choices, so the
+        # prompt re-asks and the session wedges until it times out. Observed
+        # on every `curl` here, which PowerShell 5.1 aliases to
+        # Invoke-WebRequest and guards with exactly such a prompt.
+        if runtime.is_windows() and not raw:
             command = f"{command}; Write-Output '__A0_COMMAND_DONE__'"
 
         await self.session.sendline(command)

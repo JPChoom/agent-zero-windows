@@ -113,7 +113,10 @@ class SSHInteractiveSession:
         if self.client:
             self.client.close()
 
-    async def send_command(self, command: str):
+    async def send_command(self, command: str, raw: bool = False):
+        # `raw` exists to match LocalInteractiveSession's signature.
+        # No completion marker is appended here, so there is nothing
+        # for it to suppress.
         if not self.shell:
             raise Exception("Shell not connected")
         self.full_output = b""
