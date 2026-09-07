@@ -48,6 +48,19 @@ def _save_pre_compaction_backup(context, full_text: str) -> dict[str, str]:
     return {"json": json_path, "txt": txt_path}
 
 
+def _max_input_tokens(resolved_cfg: dict | None) -> int:
+    """Input budget for one compaction call.
+
+    Uses the model's own ctx_history rather than a hardcoded 0.7, so a user
+    who lowered it because their server loaded the model at a smaller
+    context is respected here too.
+    """
+    cfg = resolved_cfg or {}
+    ctx_length = int(cfg.get("ctx_length", 128000))
+    ctx_history = float(cfg.get("ctx_history", 0.7))
+    return max(int(ctx_length * ctx_history), MIN_COMPACTION_TOKENS)
+
+
 def _build_model(use_chat_model: bool, preset_name: str | None, agent):
     """Build the LLM model for compaction based on user selection.
 
@@ -107,8 +120,13 @@ async def run_compaction(
         token_count = tokens.approximate_tokens(full_text)
 
         resolved_cfg, model = _build_model(use_chat_model, preset_name, agent)
-        ctx_length = int(resolved_cfg.get("ctx_length", 128000)) if resolved_cfg else 128000
-        max_input_tokens = int(ctx_length * 0.7)
+        max_input_tokens = _max_input_tokens(resolved_cfg)
+
+        # The conversation is not the whole request: compact.sys.md and
+        # compact.msg.md ride along with it. Comparing the bare conversation
+        # against the budget sent a chat that only just fit down the
+        # single-pass path, where the assembled prompt then overflowed.
+        token_count_with_prompt = token_count + _compaction_input_tokens(agent, "")
         
         # Step 3: Create progress log item (count user-visible messages only)
         visible_types = {"user", "response"}
@@ -120,7 +138,7 @@ async def run_compaction(
         )
         
         # Step 4: Handle large histories by chunking if necessary
-        if token_count > max_input_tokens:
+        if token_count_with_prompt > max_input_tokens:
             summary = await _compact_large_history(
                 agent, full_text, token_count, max_input_tokens, log_item, model
             )

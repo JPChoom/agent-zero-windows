@@ -23,6 +23,8 @@ LARGE_MESSAGE_TO_CURRENT_TOPIC_RATIO = 0.5
 LARGE_MESSAGE_TO_HISTORY_TOPIC_RATIO = 0.2
 RAW_MESSAGE_OUTPUT_TEXT_TRIM = 100
 COMPRESSION_TARGET_RATIO = 0.8
+OUTPUT_RESERVE_RATIO = 0.1  # leave room for the model's own reply in the window
+MIN_HISTORY_RATIO = 0.2  # never squeeze history below this, however large the prompt
 
 
 class RawMessage(TypedDict):
@@ -206,15 +208,11 @@ class Topic(Record):
         return self.summary
 
     def compress_large_messages(self, message_ratio: float = CURRENT_TOPIC_RATIO * LARGE_MESSAGE_TO_CURRENT_TOPIC_RATIO) -> bool:
-        from plugins._model_config.helpers.model_config import get_chat_model_config
-        chat_cfg = get_chat_model_config()
-        ctx_length = int(chat_cfg.get("ctx_length", 128000))
-        ctx_history = float(chat_cfg.get("ctx_history", 0.7))
-        msg_max_size = (
-            ctx_length
-            * ctx_history
-            * message_ratio
-        )
+        # Sized off the same budget the rest of compression works against, so
+        # a shrinking budget also shrinks the per-message cap. It previously
+        # recomputed this from the *global* model config, ignoring both the
+        # agent's own scoped ctx_length and the measured prompt overhead.
+        msg_max_size = self.history._get_ctx_size_for_history() * message_ratio
         large_msgs = []
         for m in (m for m in self.messages if not m.summary):
             # TODO refactor this
@@ -354,6 +352,10 @@ class History(Record):
         self.topics: list[Topic] = []
         self.current = Topic(history=self)
         self.agent: Agent = agent
+        # Tokens the prompt costs *besides* history - system prompt, tool
+        # prompts, protocol, extras, chat formatting. Measured in
+        # prepare_prompt each turn; 0 until the first one has been built.
+        self.measured_overhead = 0
 
     def get_tokens(self) -> int:
         return (
@@ -618,11 +620,33 @@ class History(Record):
         await bulk.summarize()
         return bulk
 
+    def set_measured_overhead(self, overhead: int) -> None:
+        self.measured_overhead = max(int(overhead), 0)
+
     def _get_ctx_size_for_history(self) -> int:
         chat_cfg = get_chat_model_config(self.agent)
         ctx_length = int(chat_cfg.get("ctx_length", 128000))
         ctx_history = float(chat_cfg.get("ctx_history", 0.7))
-        return int(ctx_length * ctx_history)
+        budget = int(ctx_length * ctx_history)
+
+        # ctx_history alone assumes everything that is not history fits in the
+        # remaining fraction. It often does not: the system prompt carries one
+        # section per enabled tool, plus skills, memories and extras. At a
+        # 65k window the default 0.7 leaves 19k for a system prompt that can
+        # exceed it, so history stays "under limit" while the real prompt is
+        # already over. Subtract what the prompt actually measured instead.
+        if self.measured_overhead > 0:
+            available = (
+                ctx_length
+                - self.measured_overhead
+                - int(ctx_length * OUTPUT_RESERVE_RATIO)
+            )
+            budget = min(budget, available)
+
+        # Floor it: an overhead approaching the whole window would otherwise
+        # drive the budget to zero and make compression loop forever against
+        # a target it can never reach.
+        return max(budget, int(ctx_length * MIN_HISTORY_RATIO))
 
     def _get_max_embeds(self) -> int:
         chat_cfg = get_chat_model_config(self.agent)

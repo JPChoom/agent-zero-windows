@@ -666,13 +666,20 @@ class Agent:
         full_text = ChatPromptTemplate.from_messages(full_prompt).format()
 
         # store as last context window content
+        prompt_tokens = tokens.approximate_prompt_tokens(full_text)
         self.set_data(
             Agent.DATA_NAME_CTX_WINDOW,
             {
                 "text": full_text,
-                "tokens": tokens.approximate_prompt_tokens(full_text),
+                "tokens": prompt_tokens,
             },
         )
+
+        # Tell history what the rest of the prompt costs, so its compression
+        # budget is the room actually left rather than a fixed fraction of the
+        # window. Both counts come from the same estimator, so the difference
+        # is the system prompt, protocol, extras and chat formatting.
+        self.history.set_measured_overhead(prompt_tokens - self.history.get_tokens())
 
         return full_prompt
 
