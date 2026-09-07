@@ -9,7 +9,10 @@ from typing import Coroutine, Literal, TypedDict, cast, Union, Dict, List, Any
 from helpers import messages, tokens, settings, call_llm
 from enum import Enum
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
-from plugins._model_config.helpers.model_config import get_chat_model_config
+from plugins._model_config.helpers.model_config import (
+    get_chat_model_config,
+    get_utility_model_config,
+)
 
 
 BULK_MERGE_COUNT = 3
@@ -25,6 +28,8 @@ RAW_MESSAGE_OUTPUT_TEXT_TRIM = 100
 COMPRESSION_TARGET_RATIO = 0.8
 DEFAULT_OUTPUT_RESERVE_RATIO = 0.1  # fallback when ctx_output is unset
 MIN_HISTORY_RATIO = 0.2  # never squeeze history below this, however large the prompt
+DEFAULT_UTILITY_CTX_INPUT = 0.7  # fallback when ctx_input is unset
+MIN_SUMMARY_INPUT_TOKENS = 500  # always send the summarizer something
 
 
 class RawMessage(TypedDict):
@@ -269,13 +274,7 @@ class Topic(Record):
 
     async def summarize_messages(self, messages: list[Message]):
         msg_txt = [m.output_text() for m in messages]
-        summary = await self.history.agent.call_utility_model(
-            system=self.history.agent.read_prompt("fw.topic_summary.sys.md"),
-            message=self.history.agent.read_prompt(
-                "fw.topic_summary.msg.md", content=msg_txt
-            ),
-        )
-        return summary
+        return await summarize_content(self.history.agent, "\n".join(msg_txt))
 
     def to_dict(self):
         return {
@@ -319,11 +318,8 @@ class Bulk(Record):
         return False
 
     async def summarize(self):
-        self.summary = await self.history.agent.call_utility_model(
-            system=self.history.agent.read_prompt("fw.topic_summary.sys.md"),
-            message=self.history.agent.read_prompt(
-                "fw.topic_summary.msg.md", content=self.output_text()
-            ),
+        self.summary = await summarize_content(
+            self.history.agent, self.output_text()
         )
         return self.summary
 
@@ -341,6 +337,63 @@ class Bulk(Record):
         cls = data["_cls"]
         bulk.records = [Record.from_dict(r, history=history) for r in data["records"]]
         return bulk
+
+
+async def summarize_content(agent, content: str) -> str:
+    """Summarize text with the utility model, trimmed to what it can read.
+
+    call_utility_model does no trimming of its own, so before this guard a
+    summarization request was bounded only by the history budget - roughly
+    35k tokens on a 65k window. That fits only because the utility model
+    here happens to be loaded larger than Agent Zero was told. Configure a
+    genuinely smaller utility model and history compression would fail on
+    the oversized request, precisely when the history most needs it.
+
+    The middle is dropped rather than either end: a summary needs the
+    request that opened the topic and the outcome that closed it, and the
+    working detail between them is the most compressible part.
+    """
+    system = agent.read_prompt("fw.topic_summary.sys.md")
+    overhead = tokens.approximate_tokens(system) + tokens.approximate_tokens(
+        agent.read_prompt("fw.topic_summary.msg.md", content="")
+    )
+    budget = max(
+        _get_utility_input_budget(agent) - overhead, MIN_SUMMARY_INPUT_TOKENS
+    )
+    return await agent.call_utility_model(
+        system=system,
+        message=agent.read_prompt(
+            "fw.topic_summary.msg.md", content=_trim_middle(content, budget)
+        ),
+    )
+
+
+def _get_utility_input_budget(agent) -> int:
+    """Input tokens the utility model can be given, per its own config.
+
+    ctx_input was previously read by nothing at all - the setting existed
+    in the UI and controlled no behaviour. This is its consumer.
+    """
+    cfg = get_utility_model_config(agent)
+    ctx_length = int(cfg.get("ctx_length", 128000))
+    try:
+        ctx_input = float(cfg.get("ctx_input", DEFAULT_UTILITY_CTX_INPUT))
+    except (TypeError, ValueError):
+        ctx_input = DEFAULT_UTILITY_CTX_INPUT
+    ctx_input = min(max(ctx_input, 0.0), 1.0)
+    return max(int(ctx_length * ctx_input), MIN_SUMMARY_INPUT_TOKENS)
+
+
+def _trim_middle(text: str, max_tokens: int) -> str:
+    """Keep the head and tail of text, eliding the middle."""
+    if tokens.approximate_tokens(text) <= max_tokens:
+        return text
+
+    half = max(max_tokens // 2, 1)
+    head = tokens.trim_to_tokens(text, half, "start", ellipsis="")
+    tail = tokens.trim_to_tokens(text, half, "end", ellipsis="")
+    elided = "[... middle of this section omitted to fit the summarizer's context ...]"
+    return f"{head}\n\n{elided}\n\n{tail}"
 
 
 class History(Record):

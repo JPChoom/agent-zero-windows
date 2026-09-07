@@ -217,7 +217,7 @@
           <div class="field">
             <div class="field-label">
               <div class="field-title">Context window space for utility model input</div>
-              <div class="field-description">Portion of context window used for utility model input messages.</div>
+              <div class="field-description">Portion of the utility model's context window used for input. Caps how much history is sent for summarization; oversized sections keep their start and end and have the middle trimmed out.</div>
             </div>
             <div class="field-control">
               <input type="range" min="0.01" max="1" step="0.01" x-model.number="model.ctx_input" />
