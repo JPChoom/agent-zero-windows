@@ -4,62 +4,84 @@
  * The mode lives in plugin config on the server, not in the browser: it
  * governs what the agent is allowed to do, so a value cached per-tab would
  * let two windows disagree about whether a tool needs approval.
+ *
+ * Registered through createStore rather than a hand-rolled alpine:init
+ * listener. createStore registers immediately when Alpine is already
+ * running and defers only when it is not; a bare alpine:init listener
+ * covers just the second case, so the store silently failed to exist
+ * whenever this module loaded after Alpine had started - which is what
+ * happens for a plugin extension.
  */
+import { createStore } from "/js/AlpineStore.js";
 import { callJsonApi } from "/js/api.js";
 
-document.addEventListener("alpine:init", () => {
-  Alpine.store("permissionsMode", {
-    mode: "auto",
-    modes: [],
-    open: false,
-    loading: false,
+export const store = createStore("permissionsMode", {
+  mode: "auto",
+  modes: [],
+  open: false,
+  loading: false,
+  loaded: false,
 
-    async init() {
-      await this.refresh();
-    },
-
-    async refresh() {
-      try {
-        const data = await callJsonApi("permissions_mode", {});
-        if (data?.ok) {
-          this.mode = data.mode || "auto";
-          this.modes = data.modes || [];
-        }
-      } catch (error) {
-        // The selector simply shows its last known value; a failed read
-        // must not block the input box it sits under.
-        console.error("permissions: could not read mode", error);
+  async refresh() {
+    try {
+      const data = await callJsonApi("permissions_mode", {});
+      if (data?.ok) {
+        this.mode = data.mode || "auto";
+        this.modes = data.modes || [];
+        this.loaded = true;
       }
-    },
+    } catch (error) {
+      // The selector keeps showing its last known value; a failed read
+      // must not break the input box it sits under.
+      console.error("permissions: could not read mode", error);
+    }
+  },
 
-    label() {
-      const found = this.modes.find((m) => m.id === this.mode);
-      return found ? found.label : this.mode;
-    },
-
-    async select(id) {
-      this.open = false;
-      if (id === this.mode) return;
-      const previous = this.mode;
-      this.mode = id;                       // optimistic, for responsiveness
+  label() {
+    // Fetch on first render rather than at import time: the endpoint
+    // requires auth, and this module is loaded on the login page too.
+    if (!this.loaded && !this.loading) {
       this.loading = true;
-      try {
-        const data = await callJsonApi("permissions_mode", { mode: id });
-        if (!data?.ok) {
-          this.mode = previous;             // roll back on refusal
-          window.toastFrontendError?.(data?.error || "Could not change mode", "Permissions");
-          return;
-        }
-        this.mode = data.mode;
-        window.justToast?.(`Permission mode: ${this.label()}`, "success", 1500, "perm-mode");
-      } catch (error) {
-        this.mode = previous;
-        window.toastFrontendError?.(error?.message || "Could not change mode", "Permissions");
-      } finally {
-        this.loading = false;
-      }
-    },
-  });
+      this.refresh().finally(() => (this.loading = false));
+    }
+    const found = this.modes.find((m) => m.id === this.mode);
+    return found ? found.label : titleCase(this.mode);
+  },
 
-  Alpine.store("permissionsMode").init();
+  async select(id) {
+    this.open = false;
+    if (id === this.mode) return;
+    const previous = this.mode;
+    this.mode = id; // optimistic, so the menu closes on a chosen value
+    try {
+      const data = await callJsonApi("permissions_mode", { mode: id });
+      if (!data?.ok) {
+        this.mode = previous; // roll back on refusal
+        globalThis.toastFrontendError?.(
+          data?.error || "Could not change mode",
+          "Permissions"
+        );
+        return;
+      }
+      this.mode = data.mode;
+      globalThis.justToast?.(
+        `Permission mode: ${this.label()}`,
+        "success",
+        1500,
+        "perm-mode"
+      );
+    } catch (error) {
+      this.mode = previous;
+      globalThis.toastFrontendError?.(
+        error?.message || "Could not change mode",
+        "Permissions"
+      );
+    }
+  },
 });
+
+function titleCase(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
