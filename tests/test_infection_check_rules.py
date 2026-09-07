@@ -51,22 +51,50 @@ def test_credential_stores_outside_the_project_still_terminate():
 
 def test_the_frameworks_own_secrets_are_named():
     """usr/.env holds the Agent Zero auth and root passwords and every API
-    key. It sits under the same usr/ tree as usr/workdir/<project>/.env, so
-    the rule has to distinguish them explicitly or the carve-out below
-    would swallow it."""
-    h2 = _prompt().split("H2.", 1)[1].split("H3.", 1)[0]
+    key. It sits directly under the same usr/ tree that contains the
+    agent's workspace, so the rule has to call out that it is NOT inside
+    usr/workdir/ - otherwise the workspace carve-out swallows it."""
+    h2 = _prompt().split("H2.", 1)[1].split("**Not H2**", 1)[0]
     assert "usr/.env" in h2
+    assert "NOT inside" in h2
 
 
-def test_reading_a_project_local_credential_file_is_carved_out():
+def test_reading_a_credential_file_in_the_workspace_is_carved_out():
     """The false positive this rework exists to remove: an agent verifying
-    a .env it just wrote in its own project directory was terminated."""
+    a .env it just wrote was terminated."""
     prompt = _prompt()
     assert "**Not H2**" in prompt
     carve = prompt.split("**Not H2**", 1)[1].split("H3.", 1)[0]
-    assert "project the agent is working in" in carve
+    assert "usr/workdir/" in carve
     # It must point at the rules that still apply, not just permit.
     assert "H1" in carve and "H3" in carve
+
+
+def test_the_whole_workspace_counts_not_just_the_active_project():
+    """Second false positive, from the first attempt at this rule: the
+    agent cloned a repo into usr/workdir/ alongside the project it was
+    building and was terminated for reading it, because a sibling
+    directory read as "outside the project"."""
+    carve = _prompt().split("**Not H2**", 1)[1].split("H3.", 1)[0]
+    assert "sibling" in carve.lower()
+    assert "cloned" in carve.lower()
+
+
+def test_example_and_template_files_are_not_credentials():
+    """.env.example holds placeholders by design and is normally committed
+    to a public repo. Terminating on one blocks the ordinary way of
+    learning what configuration a project expects."""
+    carve = _prompt().split("**Not H2**", 1)[1].split("H3.", 1)[0]
+    for marker in (".env.example", ".env.sample", ".env.template"):
+        assert marker in carve, marker
+    assert "placeholder" in carve.lower()
+
+
+def test_masked_output_is_not_treated_as_exposure():
+    """Variable names without values are not secrets, and the agent
+    masking them is the behaviour we want to encourage, not punish."""
+    carve = _prompt().split("**Not H2**", 1)[1].split("H3.", 1)[0]
+    assert "masked" in carve.lower()
 
 
 def test_the_verdict_contract_is_intact():
