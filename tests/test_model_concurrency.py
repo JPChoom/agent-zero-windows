@@ -2,14 +2,18 @@
 that serializes concurrent Main/Utility model calls, and its wiring into
 models.py's unified_call()/_astream().
 
-State is scoped per running event loop (a dict keyed by loop id), not a
-single global singleton - see the module docstring for why: a bare
-module-level asyncio.Semaphore crashed for real
-("RuntimeError: ... is bound to a different event loop") the first time
-plugins/_memory's end-of-turn "memorize solutions" extension (which runs
-on its own background thread via helpers/defer.py's DeferredTask, with
-its own event loop) contended for the same semaphore instance the main
-server loop had already bound. Reproduced from a real user log.
+The semaphore is process-wide and thread-safe. A bare module-level
+asyncio.Semaphore crashed for real ("RuntimeError: ... is bound to a
+different event loop") when plugins/_memory's end-of-turn "memorize
+solutions" extension - which runs on its own background thread via
+helpers/defer.py's DeferredTask, with its own event loop - contended for
+the instance the main server loop had already bound.
+
+Keying state by loop id fixed the crash but gave each loop its own
+independent limit, so the case that most needed serializing (a background
+extension calling the model while the main loop is mid-request) was never
+serialized at all. These tests now assert the opposite of that: one
+semaphore, shared across threads and loops.
 """
 
 import asyncio
@@ -22,11 +26,15 @@ from helpers import model_concurrency
 
 @pytest.fixture(autouse=True)
 def _reset_semaphore_state():
-    """Each test gets a clean slate - the module caches per-loop state,
+    """Each test gets a clean slate - the module caches the semaphore,
     and tests deliberately vary the configured limit."""
-    model_concurrency._loop_state.clear()
+    def _clear():
+        model_concurrency._state["semaphore"] = None
+        model_concurrency._state["limit"] = None
+
+    _clear()
     yield
-    model_concurrency._loop_state.clear()
+    _clear()
 
 
 def _patch_limit(monkeypatch, limit: int) -> None:
@@ -137,12 +145,12 @@ async def test_semaphore_recreated_when_configured_limit_changes(monkeypatch):
     _patch_limit(monkeypatch, 1)
     async with model_concurrency.model_call_slot():
         pass
-    first_semaphore = model_concurrency._get_loop_state()["semaphore"]
+    first_semaphore = model_concurrency._state["semaphore"]
 
     _patch_limit(monkeypatch, 3)
     async with model_concurrency.model_call_slot():
         pass
-    second_semaphore = model_concurrency._get_loop_state()["semaphore"]
+    second_semaphore = model_concurrency._state["semaphore"]
 
     assert first_semaphore is not second_semaphore
     assert second_semaphore._value == 3
@@ -154,17 +162,15 @@ async def test_semaphore_recreated_when_configured_limit_changes(monkeypatch):
 # extension crashing the main server's next model call)
 # ------------------------------------------------------------------
 
-def test_get_loop_state_is_isolated_per_event_loop():
-    """The real crash: a bare module-level asyncio.Semaphore permanently
-    binds to whichever loop first contends on it (asyncio.Semaphore's
-    _get_loop() check), and a second loop touching the same instance
-    raises "bound to a different event loop". Each loop must get its own
-    independent state, never a shared instance, so this can't happen."""
+def test_every_loop_shares_one_semaphore():
+    """The regression that mattered: per-loop state meant a background
+    thread and the main loop each had their own limit, so neither ever
+    waited for the other."""
     results = {}
 
     def run_in_new_loop(key):
         async def go():
-            results[key] = id(model_concurrency._get_loop_state())
+            results[key] = id(model_concurrency._get_semaphore())
 
         asyncio.run(go())
 
@@ -175,7 +181,84 @@ def test_get_loop_state_is_isolated_per_event_loop():
     t2.start()
     t2.join()
 
-    assert results["loop_a"] != results["loop_b"]
+    assert results["loop_a"] == results["loop_b"]
+
+
+def test_a_background_thread_waits_for_the_main_loop(monkeypatch):
+    """The live failure this fixes: plugins/_memory's "memorize solutions"
+    extension ran on its own loop and called the model while the main loop
+    was mid-request. Both hit LM Studio at once and both came back
+    "Context size has been exceeded", though either alone fits the window.
+    With one limit=1 semaphore across the process, the second call must
+    wait rather than overlap."""
+    _patch_limit(monkeypatch, 1)
+    overlapped = []
+    active = []
+    started = threading.Event()
+
+    async def hold(tag, seconds):
+        async with model_concurrency.model_call_slot():
+            active.append(tag)
+            if len(active) > 1:
+                overlapped.append(tuple(active))
+            await asyncio.sleep(seconds)
+            active.remove(tag)
+
+    def background():
+        started.wait(timeout=5)
+        asyncio.run(hold("background", 0.05))
+
+    thread = threading.Thread(target=background)
+    thread.start()
+
+    async def main_loop_work():
+        async with model_concurrency.model_call_slot():
+            active.append("main")
+            started.set()          # let the other thread try while we hold it
+            await asyncio.sleep(0.2)
+            if len(active) > 1:
+                overlapped.append(tuple(active))
+            active.remove("main")
+
+    asyncio.run(main_loop_work())
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert overlapped == [], f"calls overlapped across threads: {overlapped}"
+
+
+def test_acquiring_does_not_block_the_event_loop(monkeypatch):
+    """A blocking acquire inside a coroutine would freeze the whole loop -
+    including the coroutine holding the slot being waited on, which is a
+    deadlock rather than a delay. Other tasks must keep running while a
+    call waits for its slot."""
+    _patch_limit(monkeypatch, 1)
+
+    async def scenario():
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            for _ in range(20):
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        async def holder():
+            async with model_concurrency.model_call_slot():
+                await asyncio.sleep(0.15)
+
+        async def waiter():
+            await asyncio.sleep(0.02)   # ensure holder goes first
+            async with model_concurrency.model_call_slot():
+                pass
+
+        t = asyncio.ensure_future(ticker())
+        await asyncio.gather(holder(), waiter())
+        t.cancel()
+        return ticks
+
+    ticks = asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+    assert ticks > 5, f"loop appears to have stalled while waiting (ticks={ticks})"
 
 
 def test_model_call_slot_works_from_a_background_thread_with_its_own_loop(monkeypatch):
