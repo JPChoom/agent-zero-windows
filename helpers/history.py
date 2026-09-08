@@ -30,6 +30,7 @@ DEFAULT_OUTPUT_RESERVE_RATIO = 0.1  # fallback when ctx_output is unset
 MIN_HISTORY_RATIO = 0.2  # never squeeze history below this, however large the prompt
 DEFAULT_UTILITY_CTX_INPUT = 0.7  # fallback when ctx_input is unset
 MIN_SUMMARY_INPUT_TOKENS = 500  # always send the summarizer something
+OVERHEAD_DECAY = 0.98  # peak-hold on overhead: rise at once, forget slowly
 
 
 class RawMessage(TypedDict):
@@ -685,7 +686,24 @@ class History(Record):
         return min(max(ratio, 0.0), 0.9)
 
     def set_measured_overhead(self, overhead: int) -> None:
-        self.measured_overhead = max(int(overhead), 0)
+        """Hold the recent peak rather than the last reading.
+
+        The budget is set from the previous turn's overhead, but the
+        prompt is assembled from this turn's. Extras are not constant -
+        skills, recalled memories and tool results all move between turns
+        - so a turn whose overhead grows leaves history already compressed
+        against a budget that is now too generous, and _fit_history_to_window
+        has to drop messages to make the request fit.
+
+        The two errors are not equal. Underestimating costs conversation:
+        the guard silently withholds messages from the model. Overestimating
+        only costs a little history headroom. So track upward immediately
+        and decay downward slowly, absorbing a spike instead of paying for
+        it on the turn after.
+        """
+        observed = max(int(overhead), 0)
+        decayed = int(self.measured_overhead * OVERHEAD_DECAY)
+        self.measured_overhead = max(observed, decayed)
 
     def _get_ctx_size_for_history(self) -> int:
         chat_cfg = get_chat_model_config(self.agent)

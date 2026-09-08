@@ -187,3 +187,51 @@ def test_a_snapshot_measurement_is_stable_under_concurrent_compression(hist):
     # each such turn would compress history hard and re-inflate next turn.
     assert collapsed < stable / 2
     assert collapsed < int(CTX * 0.7) / 2
+
+
+# ------------------------------------------------------------------
+# Overhead peak-hold
+# ------------------------------------------------------------------
+
+def test_overhead_rises_immediately(hist):
+    """A turn whose extras grow must tighten the budget on that turn, not
+    the one after."""
+    hist.set_measured_overhead(10000)
+    hist.set_measured_overhead(20000)
+    assert hist.measured_overhead == 20000
+
+
+def test_overhead_falls_only_slowly(hist):
+    """Regression: the budget is set from the previous turn's overhead but
+    the prompt is assembled from this turn's. Extras move between turns -
+    skills, recalled memories, tool results - so taking the last reading
+    literally left history compressed against a budget that was already
+    too generous, and the prompt guard had to drop messages. Observed
+    live twice: 5 of 121 messages withheld, then 1 of 74."""
+    hist.set_measured_overhead(20000)
+    hist.set_measured_overhead(10000)
+    assert hist.measured_overhead > 10000, "a dip must not discard the peak"
+    assert hist.measured_overhead < 20000, "but it must decay, not stick"
+
+
+def test_a_sustained_drop_is_eventually_forgotten(hist):
+    """Overestimating costs history headroom, so the peak must not be
+    permanent - a genuinely smaller prompt should reclaim its room."""
+    hist.set_measured_overhead(20000)
+    for _ in range(200):
+        hist.set_measured_overhead(5000)
+    assert hist.measured_overhead == 5000
+
+
+def test_the_peak_tightens_the_budget(hist):
+    """The point of holding it: the budget must reflect the spike."""
+    hist.set_measured_overhead(25000)
+    tight = hist._get_ctx_size_for_history()
+    hist.set_measured_overhead(5000)   # a quieter turn right after
+    assert hist._get_ctx_size_for_history() < int(CTX * 0.7)
+    assert hist._get_ctx_size_for_history() >= tight
+
+
+def test_negative_still_cannot_raise_the_budget(hist):
+    hist.set_measured_overhead(-5000)
+    assert hist.measured_overhead == 0
