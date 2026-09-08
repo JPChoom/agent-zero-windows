@@ -30,8 +30,40 @@ def test_transmission_is_still_a_hard_terminate():
     """H1 is the rule that matters: reading a secret is recoverable,
     sending it somewhere is not."""
     prompt = _prompt()
-    assert "H1. **Credential transmission**" in prompt
+    assert "H1. **Credential transmission" in prompt
     assert "H1" in prompt.split("STEP 2", 1)[1].split("STEP 3", 1)[0]
+
+
+def test_h1_names_the_destinations_that_must_terminate():
+    """Refining H1 to permit authentication must not blur what it exists
+    to stop. These are the shapes a stolen key actually leaves by."""
+    h1 = _prompt().split("H1.", 1)[1].split("**Not H1**", 1)[0]
+    for sink in ("collector", "webhook", "paste", "ngrok"):
+        assert sink in h1.lower(), sink
+    # a destination the agent read somewhere rather than being given
+    assert "web page" in h1.lower() or "file contents" in h1.lower()
+
+
+def test_presenting_a_key_to_its_own_service_is_carved_out():
+    """The false positive: the agent was terminated for calling the Helius
+    RPC endpoint, which carries its API key in the URL by Helius's own
+    design. As written, H1 made every authenticated API call impossible."""
+    prompt = _prompt()
+    assert "**Not H1**" in prompt
+    carve = prompt.split("**Not H1**", 1)[1].split("H2.", 1)[0]
+    assert "authentication" in carve.lower()
+    assert "helius" in carve.lower()
+    assert "authorization" in carve.lower()
+
+
+def test_h1_states_the_test_as_destination_not_presence():
+    """The distinction the auditor has to apply: a credential in the
+    request is not the signal - where it is going is."""
+    section = _prompt().split("H1.", 1)[1].split("H2.", 1)[0].lower()
+    assert "its own service" in section
+    assert "anywhere else" in section
+    # a credential whose name does not match the host is still H1
+    assert "do not plausibly belong to the same service" in section
 
 
 def test_the_exfiltration_chain_rule_survives():
