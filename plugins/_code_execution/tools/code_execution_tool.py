@@ -23,6 +23,15 @@ def _is_closed_pty_error(exc: BaseException) -> bool:
         message = str(exc)
         if "TTYSpawn PTY is closed" in message or "TTYSpawn process has exited" in message:
             return True
+    # A session that is gone entirely, not merely closed underneath us:
+    # shell_local/shell_ssh raise this bare Exception when self.session is
+    # None. It happens after a server restart, where contexts are reloaded
+    # from disk but the shells they referenced are not - the agent then
+    # polls runtime=output for a session that no longer exists. Same
+    # recovery as a closed PTY: reset the session and say so, rather than
+    # surfacing a Python traceback the agent cannot act on.
+    if type(exc) is Exception and "Shell not connected" in str(exc):
+        return True
     if isinstance(exc, OSError) and exc.errno in (errno.EBADF, errno.EIO, errno.EINVAL):
         return True
     cause = getattr(exc, "__cause__", None)

@@ -173,3 +173,42 @@ def test_input_is_covered_by_the_kill_switch():
     ).read_text(encoding="utf-8")
     guard = source.split("kill_switch.is_tripped()", 1)[0].splitlines()[-1]
     assert '"input"' in guard
+
+
+# ------------------------------------------------------------------
+# Recovering a session that no longer exists
+# ------------------------------------------------------------------
+
+def test_a_missing_shell_is_treated_as_recoverable():
+    """Observed live: after a server restart, contexts reload from disk but
+    their shells do not. The agent polled runtime=output for one and got
+
+        Exception: Shell not connected
+
+    straight out of read_output - surfaced as "Critical error occurred" with
+    a Python traceback, which the agent cannot act on. A closed PTY, one
+    line away in the same handler, resets the session and says so. This is
+    the same situation and needs the same answer."""
+    from plugins._code_execution.tools import code_execution_tool as cet
+
+    assert cet._is_closed_pty_error(Exception("Shell not connected"))
+
+
+def test_an_unrelated_exception_is_still_raised():
+    """The check keys off a bare Exception with that exact message, so it
+    must not swallow real errors and silently reset a working session."""
+    from plugins._code_execution.tools import code_execution_tool as cet
+
+    assert not cet._is_closed_pty_error(Exception("something else entirely"))
+    assert not cet._is_closed_pty_error(ValueError("Shell not connected"))
+    assert not cet._is_closed_pty_error(RuntimeError("unrelated"))
+
+
+def test_a_wrapped_missing_shell_is_still_recognised():
+    """__cause__ chains are followed, as they are for PTY errors."""
+    from plugins._code_execution.tools import code_execution_tool as cet
+
+    inner = Exception("Shell not connected")
+    outer = RuntimeError("tool failed")
+    outer.__cause__ = inner
+    assert cet._is_closed_pty_error(outer)
