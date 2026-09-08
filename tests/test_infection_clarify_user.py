@@ -30,14 +30,21 @@ class _LogItem:
 
 class _Log:
     def __init__(self):
-        self.items = []
+        # Named `logs` to match helpers/log.py - _retire_stale_requests walks
+        # context.log.logs, and a fake with a different attribute name would
+        # make that pass vacuously.
+        self.logs = []
+
+    @property
+    def items(self):
+        return self.logs
 
     def log(self, **kw):
         item = _LogItem()
         item.kvps.update(kw.get("kvps", {}))
         item.type = kw.get("type")
         item.content = kw.get("content")
-        self.items.append(item)
+        self.logs.append(item)
         return item
 
     def set_progress(self, *a, **k):
@@ -68,10 +75,19 @@ def _checker(**cfg):
 
 
 def _pending_id(agent):
-    """The approval_id the checker published for the UI."""
-    for item in agent.context.log.items:
-        if getattr(item, "type", "") == "infection_check_clarification_request":
-            return item.kvps.get("approval_id")
+    """The approval_id of the request actually awaiting an answer.
+
+    Newest-first and unresolved-only. A chat can hold retired prompts from
+    earlier attempts, and answering one of those resolves nothing - so a
+    first-match lookup would let a test pass while the real prompt quietly
+    timed out.
+    """
+    for item in reversed(agent.context.log.logs):
+        if getattr(item, "type", "") != "infection_check_clarification_request":
+            continue
+        if item.kvps.get("resolved"):
+            continue
+        return item.kvps.get("approval_id")
     return None
 
 
@@ -229,3 +245,68 @@ def test_the_shipped_default_is_user_mode():
     data = yaml_helper.loads(path.read_text(encoding="utf-8")) or {}
     assert data.get("clarify_mode") == "user"
     assert _checker().clarify_mode == "user"
+
+
+# ------------------------------------------------------------------
+# Stale prompts
+# ------------------------------------------------------------------
+
+class _LoggedItem(_LogItem):
+    def __init__(self, type_, kvps):
+        super().__init__()
+        self.type = type_
+        self.kvps = dict(kvps)
+
+
+@pytest.mark.asyncio
+async def test_an_earlier_open_prompt_is_retired():
+    """After a timeout the agent re-asks on its next attempt, and every ask
+    used to publish a fresh request. Observed live: the same question
+    asked three times, one left sitting unresolved with Allow/Block still
+    rendered. Its future is gone, so those buttons resolve nothing."""
+    agent = _Agent()
+    stale = _LoggedItem("infection_check_clarification_request",
+                        {"approval_id": "old-id", "resolved": False})
+    agent.context.log.logs.append(stale)
+
+    ch = _checker()
+    task = asyncio.ensure_future(ch._clarify_loop(agent, "same question?", _LogItem()))
+    await _answer(agent, True)
+    await task
+
+    assert stale.kvps.get("resolved") is True
+    assert stale.kvps.get("outcome") == "superseded"
+
+
+@pytest.mark.asyncio
+async def test_an_already_resolved_prompt_is_left_alone():
+    """A prompt someone actually answered keeps its real outcome."""
+    agent = _Agent()
+    done = _LoggedItem("infection_check_clarification_request",
+                       {"approval_id": "done-id", "resolved": True,
+                        "outcome": "allowed"})
+    agent.context.log.logs.append(done)
+
+    ch = _checker()
+    task = asyncio.ensure_future(ch._clarify_loop(agent, "q?", _LogItem()))
+    await _answer(agent, True)
+    await task
+
+    assert done.kvps.get("outcome") == "allowed"
+
+
+def test_the_timeout_default_matches_the_yaml():
+    """get_plugin_config returns only explicitly-set values, so the code
+    fallback is what most installs actually use."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    yaml_text = (root / "plugins/_infection_check/default_config.yaml").read_text(
+        encoding="utf-8"
+    )
+    found = re.search(r"^clarification_timeout_seconds:\s*(\d+)", yaml_text, re.M)
+    assert found
+    # A config with the key absent is what an existing install produces.
+    ch = C.InfectionChecker(config={"prompt": "p"}, iteration=0)
+    assert ch.clarification_timeout_seconds == float(found.group(1))

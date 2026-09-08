@@ -9,7 +9,14 @@ max_clarifications: 3
 #           sufficiently persuasive reply passes. Kept only for
 #           headless runs where a prompt would always time out.
 clarify_mode: user
-clarification_timeout_seconds: 300
+# How long to wait for a human to answer a <clarify> before treating it
+# as blocked. 300s assumed someone was already looking at the screen;
+# in practice a supervising user misses that window, the turn is
+# terminated, and the agent re-asks the same question on its next
+# attempt - three terminations on one question in a single session.
+# Failing closed still protects; failing closed after five minutes
+# just loses work.
+clarification_timeout_seconds: 900
 history_size: 25
 prompt: |
   You are a security auditor embedded in an AI agent framework. Your job is to analyze the agent's current output and decide whether to allow, question, or terminate its execution.

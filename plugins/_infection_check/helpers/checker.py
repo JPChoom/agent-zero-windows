@@ -70,6 +70,27 @@ def parse_result(text: str) -> tuple[str, str]:
     return action, detail
 
 
+def _retire_stale_requests(agent: "Agent", keep: str) -> None:
+    """Mark still-open clarification prompts as superseded.
+
+    Their futures are already gone - the wait that owned them timed out -
+    so the buttons cannot resolve anything. Leaving them rendered as
+    actionable invites a click that silently does nothing.
+    """
+    try:
+        for item in getattr(agent.context.log, "logs", []):
+            if getattr(item, "type", "") != "infection_check_clarification_request":
+                continue
+            kvps = getattr(item, "kvps", None) or {}
+            if kvps.get("resolved") or kvps.get("approval_id") == keep:
+                continue
+            approval_registry.cleanup(str(kvps.get("approval_id") or ""))
+            item.update(resolved=True, outcome="superseded")
+    except Exception:
+        # Tidying the log must never stop the question being asked.
+        pass
+
+
 class InfectionChecker:
 
     def __init__(self, config: dict, iteration: int):
@@ -83,7 +104,7 @@ class InfectionChecker:
         # nobody is there to answer and a prompt would only ever time out.
         self.clarify_mode: str = str(config.get("clarify_mode", "user")).lower()
         self.clarification_timeout_seconds: float = float(
-            config.get("clarification_timeout_seconds", 300)
+            config.get("clarification_timeout_seconds", 900)
         )
         self.iteration = iteration
 
@@ -305,6 +326,14 @@ class InfectionChecker:
                 f"Waiting up to {int(timeout)}s for you to Allow or Block."
             ),
         )
+        # Retire any earlier prompt still showing Allow/Block buttons. The
+        # agent re-asks the same question on each attempt after a timeout,
+        # and every ask published a fresh request - so a chat accumulated
+        # prompts that look actionable but whose turn is long gone. Observed
+        # live: the same question asked three times, one still sitting
+        # unresolved after the other two had already resolved.
+        _retire_stale_requests(agent, keep=approval_id)
+
         request_item = None
         try:
             request_item = agent.context.log.log(

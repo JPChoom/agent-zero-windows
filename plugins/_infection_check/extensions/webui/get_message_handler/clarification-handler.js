@@ -79,6 +79,8 @@ function outcomeLabel(outcome) {
       return "blocked";
     case "timeout":
       return "no answer - blocked";
+    case "superseded":
+      return "superseded by a newer prompt";
     case "error":
       return "could not be answered - blocked";
     default:
