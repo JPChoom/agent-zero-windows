@@ -207,11 +207,24 @@ def register_api_route(app: Flask, lock: ThreadLockType) -> None:
     from helpers.modules import load_classes_from_file
     from helpers import plugins
 
+    def _method_not_allowed(path: str) -> BaseResponse:
+        return Response(f"Method {request.method} not allowed for: {path}", 405)
+
     async def _dispatch(path: str) -> BaseResponse:
-        # Return cached wrapped handler if available
+        # Return cached wrapped handler if available.
+        #
+        # The cache stores the allowed methods alongside the handler, and
+        # they are re-checked here. They used to be validated only on the
+        # miss path, below - so once any request cached a handler, every
+        # later request for that path skipped the check and any method was
+        # accepted. api/csrf_token.py is GET-only on purpose; it was
+        # answering POSTs for as long as the cache was warm.
         cached = cache.get(CACHE_AREA, path)
         if cached is not None:
-            return await cached()
+            methods, handler_fn = cached
+            if request.method not in methods:
+                return _method_not_allowed(path)
+            return await handler_fn()
 
         # Resolve file path for the handler
         # Try built-in api folder first, then plugin api folders
@@ -243,8 +256,9 @@ def register_api_route(app: Flask, lock: ThreadLockType) -> None:
             return Response(f"API endpoint not found: {path}", 404)
 
         # Check method is allowed
-        if request.method not in handler_cls.get_methods():
-            return Response(f"Method {request.method} not allowed for: {path}", 405)
+        methods = handler_cls.get_methods()
+        if request.method not in methods:
+            return _method_not_allowed(path)
 
         # Build handler call, wrapping with security decorators as required
         async def call_handler() -> BaseResponse:
@@ -261,7 +275,7 @@ def register_api_route(app: Flask, lock: ThreadLockType) -> None:
         if handler_cls.requires_loopback():
             handler_fn = requires_loopback(handler_fn)
 
-        cache.add(CACHE_AREA, path, handler_fn)
+        cache.add(CACHE_AREA, path, (methods, handler_fn))
         return await handler_fn()
 
     app.add_url_rule(
