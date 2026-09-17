@@ -75,20 +75,28 @@ class RecallMemories(Extension):
         # try:
 
         # get system message and chat history for util llm
-        system = self.agent.read_prompt("memory.memories_query.sys.md")
+        try:
+            system = self.agent.read_prompt("memory.memories_query.sys.md")
 
-        # # log query streamed by LLM
-        # async def log_callback(content):
-        #     log_item.stream(query=content)
+            # # log query streamed by LLM
+            # async def log_callback(content):
+            #     log_item.stream(query=content)
 
-        # call util llm to summarize conversation
-        user_instruction = (
-            loop_data.user_message.output_text() if loop_data.user_message else "None"
-        )
-        history = self.agent.history.output_text()[-set["memory_recall_history_len"]:]
-        message = self.agent.read_prompt(
-            "memory.memories_query.msg.md", history=history, message=user_instruction
-        )
+            # call util llm to summarize conversation
+            user_instruction = (
+                loop_data.user_message.output_text() if loop_data.user_message else "None"
+            )
+            history = self.agent.history.output_text()[-set["memory_recall_history_len"]: ]
+            message = self.agent.read_prompt(
+                "memory.memories_query.msg.md", history=history, message=user_instruction
+            )
+        except Exception as e:
+            err = errors.format_error(e)
+            self.agent.context.log.log(
+                type="warning", heading="Recall memories extension error:", content=err
+            )
+            log_item.update(heading="Failed to read memory query prompts")
+            return
 
         # if query preparation by AI is enabled
         if set["memory_recall_query_prep"]:
