@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from plugins._time_travel.helpers.time_travel import snapshot_for_path_hint
 
 
 class TimeTravelWorkdirFileMutationSnapshot(Extension):
+    @best_effort("Time travel snapshot (workdir mutation)")
     async def execute(self, data: dict[str, Any] | None = None, **kwargs: Any):
         payload = data or {}
         paths = payload.get("paths")

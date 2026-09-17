@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from plugins._office.api.ws_office import WsOffice
 
 
 class OfficeWebuiWsDisconnect(Extension):
+    @best_effort("Office websocket disconnect")
     async def execute(
         self,
         instance: Any = None,

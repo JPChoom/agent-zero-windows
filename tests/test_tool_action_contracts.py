@@ -194,6 +194,11 @@ class _FakeLoadedSkillAgent:
 def _load_loaded_skills_extension(monkeypatch, skill_root: Path):
     extension_stub = types.ModuleType("helpers.extension")
     extension_stub.Extension = _FakeExtension
+    # Passthrough: this test isolates loaded-skills reattachment logic, not
+    # best_effort's own error-handling (that has its own dedicated tests in
+    # test_extension_best_effort.py) - a no-op decorator keeps that isolation
+    # while satisfying the import the real module now makes.
+    extension_stub.best_effort = lambda heading: (lambda func: func)
     monkeypatch.setitem(sys.modules, "helpers.extension", extension_stub)
 
     agent_stub = types.ModuleType("agent")

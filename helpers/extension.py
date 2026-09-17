@@ -220,6 +220,50 @@ class Extension:
         pass
 
 
+def best_effort(heading: str):
+    """Decorator for an async Extension.execute(): catch any exception,
+    log it as a warning, and let the turn continue.
+
+    call_extensions_async has no per-extension error handling of its own -
+    one exception aborts every extension still queued at that call site.
+    For system_prompt that means every future turn until whatever broke is
+    fixed; for the rest it means the current turn. Most extensions in this
+    codebase are correctly left unguarded, because their failure means the
+    turn genuinely cannot proceed safely (a safety gate, secret masking,
+    core prompt assembly) - this decorator is only for the ones where
+    failure should cost one enrichment, not the turn: something reading
+    live filesystem state, a remote server, or an embedding/DB search
+    behind a "nice to have" addition to the prompt.
+
+    Logging the failure is itself best-effort: a broken log sink must not
+    turn into a second, more confusing crash than the one being caught.
+    """
+
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            try:
+                return await func(self, *args, **kwargs)
+            except Exception as e:
+                agent = getattr(self, "agent", None)
+                if agent is None:
+                    return
+                try:
+                    from helpers import errors as errors_helper
+
+                    agent.context.log.log(
+                        type="warning",
+                        heading=f"{heading} error",
+                        content=errors_helper.format_error(e),
+                    )
+                except Exception:
+                    pass
+
+        return wrapper
+
+    return decorator
+
+
 async def call_extensions_async(
     extension_point: str, agent: "Agent|None" = None, **kwargs
 ):

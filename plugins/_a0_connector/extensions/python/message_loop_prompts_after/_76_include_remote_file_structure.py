@@ -3,12 +3,13 @@ from __future__ import annotations
 import time
 
 from agent import LoopData
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 
 from plugins._a0_connector.helpers.ws_runtime import latest_remote_tree_for_context
 
 
 class IncludeRemoteFileStructure(Extension):
+    @best_effort("Remote file structure")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent:
             return

@@ -1,6 +1,6 @@
 """Inject WhatsApp conversation context into system prompt."""
 
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from helpers import plugins
 from agent import LoopData
 from plugins._whatsapp_integration.helpers.handler import CTX_WA_CHAT_ID, PLUGIN_NAME
@@ -8,6 +8,7 @@ from plugins._whatsapp_integration.helpers.handler import CTX_WA_CHAT_ID, PLUGIN
 
 class WhatsAppContextPrompt(Extension):
 
+    @best_effort("WhatsApp context prompt")
     async def execute(
         self,
         system_prompt: list[str] = [],

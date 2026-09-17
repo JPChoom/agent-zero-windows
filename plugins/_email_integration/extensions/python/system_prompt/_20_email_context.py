@@ -1,6 +1,6 @@
 """Inject email conversation context into system prompt for email sessions."""
 
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from helpers import plugins
 from agent import LoopData
 from plugins._email_integration.helpers.dispatcher import CTX_EMAIL_HANDLER
@@ -11,6 +11,7 @@ PLUGIN_NAME = "_email_integration"
 
 class EmailContextPrompt(Extension):
 
+    @best_effort("Email context prompt")
     async def execute(
         self,
         system_prompt: list[str] = [],

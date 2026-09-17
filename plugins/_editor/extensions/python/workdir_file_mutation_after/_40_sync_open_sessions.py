@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from plugins._editor.helpers import markdown_sessions
 
 
 class SyncOpenEditorSessionsAfterWorkdirMutation(Extension):
+    @best_effort("Editor session sync (workdir mutation)")
     async def execute(self, data: dict[str, Any] | None = None, **kwargs: Any):
         payload = data or {}
         paths = payload.get("paths")

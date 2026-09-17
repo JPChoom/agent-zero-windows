@@ -1,12 +1,13 @@
 from typing import Any
 
-from helpers.extension import Extension, extensible
+from helpers.extension import Extension, extensible, best_effort
 from helpers import projects
 from agent import Agent, LoopData
 
 
 class ProjectPrompt(Extension):
 
+    @best_effort("Project prompt")
     async def execute(
         self,
         system_prompt: list[str] = [],

@@ -1,9 +1,10 @@
 from agent import LoopData
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from helpers import skills as skills_helper
 
 
 class RecallRelevantSkills(Extension):
+    @best_effort("Recall relevant skills")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent or loop_data.iteration != 0:
             return

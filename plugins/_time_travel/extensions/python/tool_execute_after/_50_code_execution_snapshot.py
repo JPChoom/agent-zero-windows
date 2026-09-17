@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from plugins._time_travel.helpers.time_travel import snapshot_for_agent
 
 
 class TimeTravelCodeExecutionSnapshot(Extension):
+    @best_effort("Time travel snapshot (code execution)")
     async def execute(self, tool_name: str = "", response: Any = None, **kwargs: Any):
         if tool_name != "code_execution_tool" or not self.agent:
             return

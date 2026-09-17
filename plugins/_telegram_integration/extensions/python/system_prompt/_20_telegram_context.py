@@ -1,4 +1,4 @@
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from agent import LoopData
 from helpers import integration_commands
 from plugins._telegram_integration.helpers.constants import CTX_TG_BOT, CTX_TG_BOT_CFG
@@ -6,6 +6,7 @@ from plugins._telegram_integration.helpers.constants import CTX_TG_BOT, CTX_TG_B
 
 class TelegramContextPrompt(Extension):
 
+    @best_effort("Telegram context prompt")
     async def execute(
         self,
         system_prompt: list[str] = [],

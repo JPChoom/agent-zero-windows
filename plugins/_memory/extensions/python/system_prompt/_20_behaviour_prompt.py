@@ -1,4 +1,4 @@
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from agent import Agent, LoopData
 from helpers import files
 
@@ -8,6 +8,7 @@ from plugins._memory.helpers import memory
 
 class BehaviourPrompt(Extension):
 
+    @best_effort("Behaviour prompt")
     async def execute(self, system_prompt: list[str]=[], loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent:
             return

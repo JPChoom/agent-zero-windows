@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from plugins._time_travel.helpers.time_travel import snapshot_for_agent
 
 
 class TimeTravelTextEditorPatchSnapshot(Extension):
+    @best_effort("Time travel snapshot (patch)")
     async def execute(self, data: dict[str, Any] | None = None, **kwargs: Any):
         snapshot_for_agent(
             self.agent,

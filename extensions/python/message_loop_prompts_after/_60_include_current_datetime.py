@@ -1,9 +1,10 @@
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from agent import LoopData
 from helpers.localization import Localization
 
 
 class IncludeCurrentDatetime(Extension):
+    @best_effort("Current datetime")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent:
             return

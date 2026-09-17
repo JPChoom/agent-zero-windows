@@ -1,8 +1,9 @@
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from agent import LoopData
 
 
 class IncludeAgentInfo(Extension):
+    @best_effort("Agent info")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent:
             return

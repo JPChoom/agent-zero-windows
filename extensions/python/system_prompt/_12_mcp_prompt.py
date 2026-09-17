@@ -1,12 +1,13 @@
 from typing import Any
 
-from helpers.extension import Extension, extensible
+from helpers.extension import Extension, extensible, best_effort
 from helpers.mcp_handler import MCPConfig
 from agent import Agent, LoopData
 
 
 class MCPToolsPrompt(Extension):
 
+    @best_effort("MCP tools prompt")
     async def execute(
         self,
         system_prompt: list[str] = [],

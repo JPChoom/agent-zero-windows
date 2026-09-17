@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from agent import LoopData
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from plugins._editor.helpers import open_files_context
 
 
 class IncludeEditorOpenFiles(Extension):
+    @best_effort("Editor open files")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent or not self.agent.context:
             return

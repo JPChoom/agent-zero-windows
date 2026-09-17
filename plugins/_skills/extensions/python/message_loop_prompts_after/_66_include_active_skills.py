@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from helpers import skills
 from agent import LoopData
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 
 
 class IncludeActiveSkills(Extension):
+    @best_effort("Active skills")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent:
             return

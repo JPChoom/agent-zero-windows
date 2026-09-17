@@ -1,4 +1,4 @@
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from plugins._coding_controller.helpers import session_state
 from plugins._coding_controller.helpers.config import get_config
 
@@ -7,6 +7,7 @@ class CodingControllerTrackPatch(Extension):
     """Marks the patched file's project root dirty so the completion gate
     (tool_execute_after/_80_completion_gate.py) knows to check it."""
 
+    @best_effort("Coding controller track patch")
     async def execute(self, data: dict | None = None, **kwargs):
         if not self.agent or not data:
             return

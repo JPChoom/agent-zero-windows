@@ -1,4 +1,4 @@
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from agent import LoopData
 from helpers import projects
 from helpers import settings
@@ -7,6 +7,7 @@ from helpers import file_tree
 from helpers import files
 
 class IncludeWorkdirExtras(Extension):
+    @best_effort("Workdir extras")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent:
             return

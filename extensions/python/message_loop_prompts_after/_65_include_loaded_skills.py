@@ -1,4 +1,4 @@
-from helpers.extension import Extension
+from helpers.extension import Extension, best_effort
 from helpers import skills, tokens
 from agent import LoopData
 
@@ -10,6 +10,7 @@ SKILL_REATTACHMENT_HEADER = (
 
 
 class IncludeLoadedSkills(Extension):
+    @best_effort("Include loaded skills")
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         if not self.agent:
             return

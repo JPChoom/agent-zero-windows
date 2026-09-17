@@ -1,12 +1,13 @@
 from typing import Any
 
-from helpers.extension import Extension, extensible
+from helpers.extension import Extension, extensible, best_effort
 from helpers import skills as skills_helper
 from agent import Agent, LoopData
 
 
 class SkillsPrompt(Extension):
 
+    @best_effort("Skills prompt")
     async def execute(
         self,
         system_prompt: list[str] = [],
