@@ -2,7 +2,7 @@ from typing import Any
 from agent import AgentContextType
 from helpers.extension import Extension
 from helpers import files, persist_chat
-import os, re
+import os, re, uuid
 
 LEN_MIN = 500
 
@@ -30,11 +30,13 @@ class SaveToolCallFile(Extension):
         msgs_folder = persist_chat.get_chat_msg_files_folder(self.agent.context.id)
         os.makedirs(msgs_folder, exist_ok=True)
 
-        # count the files in the directory
-        last_num = len(os.listdir(msgs_folder))
-
-        # create new file
-        new_file = files.get_abs_path(msgs_folder, f"{last_num+1}.txt")
+        # A unique filename needs no directory scan to pick, unlike counting
+        # existing files - that scan used to cost O(n) on every large tool
+        # result, turning into O(n^2) work over a long chat's lifetime, and
+        # it also has no real reader depending on sequential numbering
+        # (nothing indexes these files by number; the whole folder is
+        # deleted as a unit by persist_chat.remove_msg_files).
+        new_file = files.get_abs_path(msgs_folder, f"{uuid.uuid4().hex}.txt")
         files.write_file(
             new_file,
             result,
