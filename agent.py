@@ -986,6 +986,19 @@ class Agent:
     def get_embedding_model(self):
         return None
 
+    # Utility-model calls (history compression, memory consolidation, keyword
+    # extraction, ...) have no timeout of their own anywhere below this line -
+    # litellm/the provider is awaited directly. Observed live: a stalled
+    # LM Studio response left a turn stuck on "Compressing history..."
+    # indefinitely, with the event loop parked on a plain await with nothing
+    # scheduled to ever wake it - only cancelling the turn (Nudge) recovered.
+    # This bounds that wait so a stalled provider raises a recoverable
+    # TimeoutError instead of hanging forever. The main chat model call is
+    # deliberately left unbounded - it's interactive and user-watched, so a
+    # slow response there is visible and actionable, unlike this background
+    # path which fails silently from the user's point of view.
+    UTILITY_MODEL_TIMEOUT_SECONDS = 180
+
     @extension.extensible
     async def call_utility_model(
         self,
@@ -1013,14 +1026,22 @@ class Agent:
             if call_data["callback"]:
                 await call_data["callback"](chunk)
 
-        response, _reasoning = await call_data["model"].unified_call(
-            system_message=call_data["system"],
-            user_message=call_data["message"],
-            response_callback=stream_callback if call_data["callback"] else None,
-            rate_limiter_callback=(
-                self.rate_limiter_callback if not call_data["background"] else None
-            ),
-        )
+        try:
+            response, _reasoning = await asyncio.wait_for(
+                call_data["model"].unified_call(
+                    system_message=call_data["system"],
+                    user_message=call_data["message"],
+                    response_callback=stream_callback if call_data["callback"] else None,
+                    rate_limiter_callback=(
+                        self.rate_limiter_callback if not call_data["background"] else None
+                    ),
+                ),
+                timeout=self.UTILITY_MODEL_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutError(
+                f"Utility model call timed out after {self.UTILITY_MODEL_TIMEOUT_SECONDS}s"
+            ) from e
 
         await extension.call_extensions_async(
             "util_model_call_after", self, call_data=call_data, response=response

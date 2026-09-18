@@ -173,3 +173,58 @@ async def test_a_finished_task_cannot_loop_forever():
 
     await OrganizeHistoryWait(agent).execute()
     assert agent.history.compress_calls <= MAX_SYNC_COMPRESSION_PASSES
+
+
+class _StalledProviderHistory:
+    """A synchronous compress() call whose provider stalls - the real
+    incident: agent.call_utility_model used to await the provider with no
+    timeout, leaving this wait stuck on "Compressing history..." forever."""
+
+    def is_over_limit(self):
+        return True
+
+    def get_tokens(self):
+        return 5000
+
+    async def compress(self):
+        raise TimeoutError("Utility model call timed out after 180s")
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_provider_call_does_not_hang_the_turn():
+    """Regression: an unbounded provider wait inside compress() used to
+    block this extension - and the whole turn - indefinitely. A raised
+    TimeoutError must be caught and treated as a stalled pass, not left to
+    propagate out of message_loop_prompts_before."""
+    agent = _FakeAgent(history=_StalledProviderHistory())
+
+    # Must not raise, and must not hang.
+    await OrganizeHistoryWait(agent).execute()
+
+    assert agent.context.log.entries
+    entry = agent.context.log.entries[-1]
+    assert entry["heading"] == "History compression stalled"
+    assert "timed out" in entry["content"]
+
+
+class _StalledTask:
+    """A background compression task whose provider call stalled - the
+    exception surfaces through result(), mirroring a real asyncio.Task."""
+
+    def is_ready(self):
+        return True
+
+    async def result(self):
+        raise TimeoutError("Utility model call timed out after 180s")
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_background_task_does_not_hang_the_turn():
+    agent = _FakeAgent(history=_StalledProviderHistory())
+    agent.data[DATA_NAME_TASK] = _StalledTask()
+
+    await OrganizeHistoryWait(agent).execute()
+
+    assert agent.data[DATA_NAME_TASK] is None, "the stalled task must be cleared"
+    assert agent.context.log.entries
+    assert agent.context.log.entries[-1]["heading"] == "History compression stalled"

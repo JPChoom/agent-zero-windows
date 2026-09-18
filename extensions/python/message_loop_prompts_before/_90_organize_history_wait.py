@@ -26,8 +26,20 @@ class OrganizeHistoryWait(Extension):
                 if not already_done:
                     self.agent.context.log.set_progress("Compressing history...")
 
-                # Wait for the task to complete
-                compressed = bool(await task.result())
+                # Wait for the task to complete. A stalled provider call
+                # inside compress() now raises TimeoutError (agent.py's
+                # call_utility_model) instead of hanging this wait forever -
+                # treat it the same as "compression made no progress" so the
+                # turn continues with whatever history already fits, rather
+                # than aborting prompt assembly for this extension point.
+                try:
+                    compressed = bool(await task.result())
+                except Exception as e:
+                    self.agent.set_data(DATA_NAME_TASK, None)
+                    self._log_compression_stalled(
+                        before_tokens, self.agent.history.get_tokens(), error=e
+                    )
+                    break
 
                 # Clear the coroutine data after it's done
                 self.agent.set_data(DATA_NAME_TASK, None)
@@ -52,7 +64,13 @@ class OrganizeHistoryWait(Extension):
             else:
                 # no task was running, start and wait
                 self.agent.context.log.set_progress("Compressing history...")
-                compressed = await self.agent.history.compress()
+                try:
+                    compressed = await self.agent.history.compress()
+                except Exception as e:
+                    self._log_compression_stalled(
+                        before_tokens, self.agent.history.get_tokens(), error=e
+                    )
+                    break
 
             after_tokens = self.agent.history.get_tokens()
             if not compressed or after_tokens >= before_tokens:
@@ -66,16 +84,21 @@ class OrganizeHistoryWait(Extension):
                 break
 
     def _log_compression_stalled(
-        self, before_tokens: int, after_tokens: int, max_passes: bool = False
+        self,
+        before_tokens: int,
+        after_tokens: int,
+        max_passes: bool = False,
+        error: Exception | None = None,
     ) -> None:
         if not self.agent:
             return
 
-        detail = (
-            f"History compression stopped after {MAX_SYNC_COMPRESSION_PASSES} passes"
-            if max_passes
-            else "History compression could not reduce the prompt history further"
-        )
+        if error is not None:
+            detail = f"History compression failed: {error}"
+        elif max_passes:
+            detail = f"History compression stopped after {MAX_SYNC_COMPRESSION_PASSES} passes"
+        else:
+            detail = "History compression could not reduce the prompt history further"
         self.agent.context.log.log(
             type="warning",
             heading="History compression stalled",
