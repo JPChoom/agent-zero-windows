@@ -42,6 +42,32 @@ SOCKETIO_PING_INTERVAL_SECONDS = 45
 SOCKETIO_PING_TIMEOUT_SECONDS = 120
 
 
+async def _send_file_with_lock_retry(path: str, attempts: int = 3, delay_seconds: float = 0.05):
+    """send_file(), retrying briefly on a Windows file-lock error.
+
+    On Windows, a plain static file read can transiently fail with
+    PermissionError (WinError 5) or OSError (WinError 32) when another
+    process - Windows Defender's real-time scanner and the search
+    indexer are the common culprits - briefly holds the file open right
+    after it was last touched, which is exactly when a freshly started
+    server's own plugin assets get requested for the first time. This
+    has nothing to do with the file's actual ACLs (already verified
+    correct) and clears itself within milliseconds, so a short retry
+    absorbs it instead of surfacing a 500 for something that would have
+    succeeded on the very next request anyway.
+    """
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return send_file(path)
+        except (PermissionError, OSError) as e:
+            last_error = e
+            if attempt < attempts - 1:
+                await asyncio.sleep(delay_seconds)
+    assert last_error is not None
+    raise last_error
+
+
 def _positive_int_env(name: str, default: int) -> int:
     raw_value = os.getenv(name)
     if raw_value is None:
@@ -337,7 +363,7 @@ class UiRouteHandlers:
             if not files.is_file(asset_file):
                 return Response("Asset not found", 404)
 
-            return send_file(str(asset_file))
+            return await _send_file_with_lock_retry(str(asset_file))
         except Exception as e:
             PrintStyle.error(f"Error serving plugin asset: {e}")
             return Response("Error serving asset", 500)
