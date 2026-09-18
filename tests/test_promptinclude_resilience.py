@@ -23,9 +23,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from helpers import debounced
 from plugins._promptinclude.extensions.python.system_prompt import (
     _16_promptinclude as pi_mod,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_debounce_cache():
+    # Every test in this module resolves to the same scan_path/config, so
+    # without clearing between tests a real scan cached by one test would
+    # silently answer a later test's differently-mocked call within the
+    # 10s TTL, hiding whatever that test actually meant to exercise.
+    debounced.clear()
+    yield
+    debounced.clear()
 
 
 class _LogItem:
@@ -124,7 +136,12 @@ async def test_a_broken_logger_does_not_mask_the_original_failure():
 async def test_a_working_scan_is_unaffected(monkeypatch):
     """The guard must only catch, not change behaviour on the happy path."""
 
-    async def fake_scan(*a, **k):
+    def fake_scan(*a, **k):
+        # Sync, not async: the real scan_promptinclude_files is a plain
+        # sync function run via asyncio.to_thread on the debounced path
+        # (see the is_development()/is_windows() branch in _16_promptinclude
+        # .py) - an async fake here would hand back an unawaited coroutine
+        # instead of a result, silently corrupting the happy path.
         return {"files": [], "skipped_count": 0}
 
     monkeypatch.setattr(pi_mod, "scan_promptinclude_files", fake_scan)

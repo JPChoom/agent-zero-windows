@@ -5,6 +5,16 @@ from helpers import settings
 from helpers import runtime
 from helpers import file_tree
 from helpers import files
+from helpers import debounced
+
+# file_tree.file_tree() is a real recursive filesystem walk with no
+# thread offload of its own, called on every single turn regardless of
+# whether the workdir changed since the last one. A0 is a single-process
+# asyncio server, so running it in-line blocked every other agent and
+# every websocket message for the walk's duration, every turn, scaling
+# with the directory's size. The debounce also means a burst of turns in
+# a fast tool-call loop shares one walk instead of repeating it.
+WORKDIR_TREE_TTL_SECONDS = 10.0
 
 class IncludeWorkdirExtras(Extension):
     @best_effort("Workdir extras")
@@ -56,8 +66,18 @@ class IncludeWorkdirExtras(Extension):
 
             files.create_dir(scan_path)
 
+            # Keyed on every parameter that affects the result, so a
+            # settings change (e.g. max_depth) gets a fresh walk rather
+            # than serving a result computed under different limits.
+            cache_key = (
+                f"workdir_extras:{scan_path}:{max_depth}:{max_files}:"
+                f"{max_folders}:{max_lines}:{gitignore_raw}"
+            )
             file_structure = str(
-                file_tree.file_tree(
+                await debounced.run_debounced(
+                    cache_key,
+                    WORKDIR_TREE_TTL_SECONDS,
+                    file_tree.file_tree,
                     scan_path,
                     max_depth=max_depth,
                     max_files=max_files,

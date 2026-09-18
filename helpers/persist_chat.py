@@ -1,3 +1,4 @@
+import asyncio
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any
@@ -44,17 +45,53 @@ def get_chat_folder_path(ctxid: str):
 def get_chat_msg_files_folder(ctxid: str):
     return files.get_abs_path(get_chat_folder_path(ctxid), "messages")
 
-def save_tmp_chat(context: AgentContext):
-    """Save context to the chats folder"""
-    # Skip saving BACKGROUND contexts as they should be ephemeral
-    if context.type == AgentContextType.BACKGROUND:
-        return
+def _prepare_chat_save(context: AgentContext) -> tuple[str, str] | None:
+    """Serialize context to (path, json) ready to write, or None if this
+    context type should not be persisted.
 
+    Kept synchronous and separate from the write: this walks live, mutable
+    context state (history, log, agent.data) that background DeferredTask
+    threads (memorize/recall) can concurrently mutate. Doing that walk on
+    the caller's own thread/loop is what today's code already does, and
+    keeps it that way; only the write of the resulting immutable string is
+    safe to hand to a worker thread.
+    """
+    if context.type == AgentContextType.BACKGROUND:
+        return None
     path = _get_chat_file_path(context.id)
     files.make_dirs(path)
     data = _serialize_context(context)
     js = _safe_json_serialize(data, ensure_ascii=False)
+    return path, js
+
+
+def save_tmp_chat(context: AgentContext):
+    """Save context to the chats folder"""
+    prepared = _prepare_chat_save(context)
+    if prepared is None:
+        return
+    path, js = prepared
     files.write_file(path, js)
+    mark_chat_saved(context)
+
+
+async def save_tmp_chat_async(context: AgentContext):
+    """Same as save_tmp_chat, but the disk write is offloaded to a thread
+    so it does not block the event loop for however long the write takes.
+
+    Every other call site of save_tmp_chat is synchronous code (API
+    handlers, CLI-style helpers) that already expects the save to be
+    complete before it continues - this variant exists for
+    message_loop_end/_90_save_chat.py specifically, which runs on every
+    single turn and previously blocked the whole asyncio process (every
+    other agent, every websocket message) for the full serialize-and-write
+    duration, scaling with the chat's total accumulated size.
+    """
+    prepared = _prepare_chat_save(context)
+    if prepared is None:
+        return
+    path, js = prepared
+    await asyncio.to_thread(files.write_file, path, js)
     mark_chat_saved(context)
 
 

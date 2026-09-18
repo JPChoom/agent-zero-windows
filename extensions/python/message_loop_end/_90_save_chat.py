@@ -12,4 +12,8 @@ class SaveChat(Extension):
         if self.agent.context.type == AgentContextType.BACKGROUND:
             return
 
-        persist_chat.save_tmp_chat(self.agent.context)
+        # save_tmp_chat_async offloads only the disk write to a thread -
+        # this runs on every turn, and the write's cost scales with the
+        # chat's total accumulated size, so a long-running chat was
+        # blocking the whole server for longer and longer on every message.
+        await persist_chat.save_tmp_chat_async(self.agent.context)
