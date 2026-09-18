@@ -10,6 +10,7 @@ from typing import Any, Literal
 import zipfile
 import glob
 import mimetypes
+import time
 from simpleeval import simple_eval
 from helpers import yaml
 
@@ -120,6 +121,34 @@ def parse_file(
         return content
 
 
+def _read_with_lock_retry(read_fn, attempts: int = 3, delay_seconds: float = 0.05):
+    """Call read_fn(), retrying briefly on a transient Windows file-lock error.
+
+    Observed live: a fresh server start hit real PermissionError (WinError 5)
+    failures reading several unrelated files - a core prompt template, a
+    scheduler tasks.json, a plugin's default_config.yaml - all within moments
+    of each other, right as the process first touched them. This is the same
+    Windows Defender/search-indexer file-locking behavior already fixed for
+    plugin asset serving in helpers/ui_server.py, just hitting the plain
+    file-read path here instead of send_file - not a real ACL problem (the
+    same files are readable again immediately after), and not reproducible
+    on demand. A short retry absorbs it instead of surfacing an error for
+    something that would have succeeded on the very next attempt - which
+    matters more here than for a single asset request, since a core prompt
+    file failing to read can abort building the prompt for an entire turn.
+    """
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return read_fn()
+        except (PermissionError, OSError) as e:
+            last_error = e
+            if attempt < attempts - 1:
+                time.sleep(delay_seconds)
+    assert last_error is not None
+    raise last_error
+
+
 def read_prompt_file(
     _file: str, _directories: list[str] | None = None, _encoding="utf-8", **kwargs
 ):
@@ -137,8 +166,11 @@ def read_prompt_file(
     source_dir = os.path.dirname(absolute_path)
 
     # Read the file content
-    with open(absolute_path, "r", encoding=_encoding) as f:
-        content = f.read()
+    def _do_read():
+        with open(absolute_path, "r", encoding=_encoding) as f:
+            return f.read()
+
+    content = _read_with_lock_retry(_do_read)
 
     variables = load_plugin_variables(_file, _directories, **kwargs) or {}  # type: ignore
     variables.update(kwargs)
@@ -214,30 +246,42 @@ def read_file(relative_path: str, encoding="utf-8"):
     absolute_path = get_abs_path(relative_path)
 
     # Read the file content
-    with open(absolute_path, "r", encoding=encoding) as f:
-        return f.read()
+    def _do_read():
+        with open(absolute_path, "r", encoding=encoding) as f:
+            return f.read()
+
+    return _read_with_lock_retry(_do_read)
 
 def read_file_json(relative_path: str, encoding="utf-8"):
     # Try to get the absolute path for the file from the original directory or backup directories
     absolute_path = get_abs_path(relative_path)
 
     # Read the file content
-    with open(absolute_path, "r", encoding=encoding) as f:
-        return json.load(f)
+    def _do_read():
+        with open(absolute_path, "r", encoding=encoding) as f:
+            return json.load(f)
+
+    return _read_with_lock_retry(_do_read)
 
 def read_file_yaml(relative_path: str, encoding="utf-8"):
     absolute_path = get_abs_path(relative_path)
 
-    with open(absolute_path, "r", encoding=encoding) as f:
-        return yaml.loads(f.read())
+    def _do_read():
+        with open(absolute_path, "r", encoding=encoding) as f:
+            return yaml.loads(f.read())
+
+    return _read_with_lock_retry(_do_read)
 
 def read_file_bin(relative_path: str):
     # Try to get the absolute path for the file from the original directory or backup directories
     absolute_path = get_abs_path(relative_path)
 
     # read binary content
-    with open(absolute_path, "rb") as f:
-        return f.read()
+    def _do_read():
+        with open(absolute_path, "rb") as f:
+            return f.read()
+
+    return _read_with_lock_retry(_do_read)
 
 
 def read_file_base64(relative_path):
@@ -245,8 +289,11 @@ def read_file_base64(relative_path):
     absolute_path = get_abs_path(relative_path)
 
     # read binary content and encode to base64
-    with open(absolute_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+    def _do_read():
+        with open(absolute_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+
+    return _read_with_lock_retry(_do_read)
 
 
 def is_probably_binary_bytes(data: bytes, threshold: float = 0.3) -> bool:
