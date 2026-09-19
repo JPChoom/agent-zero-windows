@@ -53,18 +53,23 @@ class LogFromStream(Extension):
         if parsed is not None and "tool_name" in parsed and parsed["tool_name"]:
             kvps["step"] = f"Using {parsed['tool_name']}..." # using tool XY
             if parsed["tool_name"]=="code_execution_tool":
-                if "tool_args" in parsed and "runtime" in parsed["tool_args"]:
+                # tool_args streams in as a separate key before its value is
+                # filled in, so mid-stream it can legitimately be None here
+                # rather than absent - a partial-JSON state, not an error.
+                tool_args = parsed.get("tool_args")
+                if isinstance(tool_args, dict) and "runtime" in tool_args:
                     length = ""
-                    if "code" in parsed["tool_args"]:
-                        length = f"({len(parsed['tool_args']['code'])})"
+                    if "code" in tool_args:
+                        length = f"({len(tool_args['code'])})"
                         kvps["step"] = f"Writing code... {length}"
-                    if parsed["tool_args"]["runtime"] == "python":
+                    if tool_args["runtime"] == "python":
                         kvps["step"] = f"Writing Python code... {length}"
-                    elif parsed["tool_args"]["runtime"] == "nodejs":
+                    elif tool_args["runtime"] == "nodejs":
                         kvps["step"] = f"Writing Node.js code... {length}"
-                    elif parsed["tool_args"]["runtime"] == "terminal":
+                    elif tool_args["runtime"] == "terminal":
                         kvps["step"] = f"Writing terminal command... {length}"
-        kvps.update(parsed)
+        if parsed:
+            kvps.update(parsed)
 
 
 
