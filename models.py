@@ -534,7 +534,8 @@ class LiteLLMChatWrapper(SimpleChatModel):
         # unified_call() below - this is the LangChain-compatible async
         # interface (helpers/call_llm.py's chain.astream() reaches it),
         # a separate code path from this fork's own unified_call().
-        async with model_concurrency.model_call_slot():
+        concurrency_key = model_concurrency.backend_key(self.model_name, call_kwargs)
+        async with model_concurrency.model_call_slot(concurrency_key):
             async for parsed in transport.astream():
                 output = result.add_chunk(parsed)
                 if output["response_delta"]:
@@ -615,6 +616,12 @@ class LiteLLMChatWrapper(SimpleChatModel):
         )
 
         result = ChatGenerationResult()
+        # Which backend this call actually contends for - see
+        # helpers/model_concurrency.py's own docstring. A stock config
+        # points chat and utility at the identical local server, so this
+        # still serializes them against each other as before; it only
+        # stops serializing calls that share no backend at all.
+        concurrency_key = model_concurrency.backend_key(self.model_name, call_kwargs)
 
         attempt = 0
         while True:
@@ -627,7 +634,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
                 # so serializing here is the actual fix, not overcaution.
                 # See helpers/model_concurrency.py for why this is needed
                 # at all despite each Agent's own loop being single-threaded.
-                async with model_concurrency.model_call_slot():
+                async with model_concurrency.model_call_slot(concurrency_key):
                     if stream:
                         stop_response: str | None = None
                         stream_iter = transport.astream()

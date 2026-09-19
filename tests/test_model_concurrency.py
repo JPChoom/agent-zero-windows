@@ -26,11 +26,10 @@ from helpers import model_concurrency
 
 @pytest.fixture(autouse=True)
 def _reset_semaphore_state():
-    """Each test gets a clean slate - the module caches the semaphore,
-    and tests deliberately vary the configured limit."""
+    """Each test gets a clean slate - the module caches a semaphore per
+    backend key, and tests deliberately vary the configured limit."""
     def _clear():
-        model_concurrency._state["semaphore"] = None
-        model_concurrency._state["limit"] = None
+        model_concurrency._state.clear()
 
     _clear()
     yield
@@ -145,15 +144,122 @@ async def test_semaphore_recreated_when_configured_limit_changes(monkeypatch):
     _patch_limit(monkeypatch, 1)
     async with model_concurrency.model_call_slot():
         pass
-    first_semaphore = model_concurrency._state["semaphore"]
+    first_semaphore = model_concurrency._state[model_concurrency.DEFAULT_BACKEND_KEY]["semaphore"]
 
     _patch_limit(monkeypatch, 3)
     async with model_concurrency.model_call_slot():
         pass
-    second_semaphore = model_concurrency._state["semaphore"]
+    second_semaphore = model_concurrency._state[model_concurrency.DEFAULT_BACKEND_KEY]["semaphore"]
 
     assert first_semaphore is not second_semaphore
     assert second_semaphore._value == 3
+
+
+# ------------------------------------------------------------------
+# backend_key - identifying which backend a call actually contends for
+# ------------------------------------------------------------------
+
+
+def test_backend_key_uses_api_base_when_configured():
+    assert (
+        model_concurrency.backend_key("lm_studio/qwen", {"api_base": "http://127.0.0.1:1234/v1"})
+        == "http://127.0.0.1:1234/v1"
+    )
+
+
+def test_backend_key_falls_back_to_model_name_without_api_base():
+    assert model_concurrency.backend_key("lm_studio/qwen", {}) == "lm_studio/qwen"
+    assert model_concurrency.backend_key("lm_studio/qwen", None) == "lm_studio/qwen"
+
+
+def test_backend_key_falls_back_to_default_when_nothing_identifies_it():
+    assert model_concurrency.backend_key("", {}) == model_concurrency.DEFAULT_BACKEND_KEY
+
+
+# ------------------------------------------------------------------
+# Per-backend keying - the actual point of this module: two distinct
+# backends must not serialize against each other, only calls that
+# genuinely share one.
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_two_different_backend_keys_run_concurrently(monkeypatch):
+    """The whole point: a stock config points chat and utility at the
+    identical local server (same key, correctly serialized below), but a
+    second, distinct backend - a different model/api_base loaded for
+    utility work - must not be blocked by the first at all."""
+    _patch_limit(monkeypatch, 1)
+
+    active: dict[str, int] = {}
+    max_active: dict[str, int] = {}
+
+    async def _job(key):
+        async with model_concurrency.model_call_slot(key):
+            active[key] = active.get(key, 0) + 1
+            max_active[key] = max(max_active.get(key, 0), active[key])
+            await asyncio.sleep(0.1)
+            active[key] -= 1
+
+    both_active_at_once = []
+
+    async def _watch():
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if active.get("backend-a", 0) and active.get("backend-b", 0):
+                both_active_at_once.append(True)
+
+    await asyncio.gather(_job("backend-a"), _job("backend-b"), _watch())
+
+    assert max_active["backend-a"] == 1
+    assert max_active["backend-b"] == 1
+    assert both_active_at_once, "two distinct backends must be able to overlap in time"
+
+
+@pytest.mark.asyncio
+async def test_the_same_backend_key_still_serializes(monkeypatch):
+    """The regression this keying must not introduce: a stock config where
+    chat and utility share one backend must keep serializing exactly as
+    the old global semaphore did."""
+    _patch_limit(monkeypatch, 1)
+
+    active = 0
+    max_active = 0
+
+    async def _job():
+        nonlocal active, max_active
+        async with model_concurrency.model_call_slot("shared-backend"):
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.05)
+            active -= 1
+
+    await asyncio.gather(_job(), _job(), _job())
+
+    assert max_active == 1
+
+
+@pytest.mark.asyncio
+async def test_default_key_keeps_pre_keying_behavior_for_untagged_callers(monkeypatch):
+    """Callers that don't specify a key (none remain in this codebase, but
+    the parameter has a default) must still get full serialization against
+    each other, matching the original single-global-semaphore behavior."""
+    _patch_limit(monkeypatch, 1)
+
+    active = 0
+    max_active = 0
+
+    async def _job():
+        nonlocal active, max_active
+        async with model_concurrency.model_call_slot():
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.05)
+            active -= 1
+
+    await asyncio.gather(_job(), _job())
+
+    assert max_active == 1
 
 
 # ------------------------------------------------------------------
@@ -170,7 +276,7 @@ def test_every_loop_shares_one_semaphore():
 
     def run_in_new_loop(key):
         async def go():
-            results[key] = id(model_concurrency._get_semaphore())
+            results[key] = id(model_concurrency._get_semaphore(model_concurrency.DEFAULT_BACKEND_KEY))
 
         asyncio.run(go())
 
@@ -332,6 +438,54 @@ async def test_unified_call_holds_model_call_slot(monkeypatch):
     await asyncio.gather(_call(), _call())
 
     assert max_active == 1
+
+
+@pytest.mark.asyncio
+async def test_unified_call_does_not_serialize_across_distinct_backends(monkeypatch):
+    """The actual point of keying by backend: a chat model and a utility
+    model configured with different api_base values (a second, distinct
+    server loaded for utility work) must run concurrently through
+    unified_call - not just at the model_concurrency layer in isolation."""
+    import models
+
+    _patch_limit(monkeypatch, 1)
+
+    active: dict[str, int] = {}
+    both_active_at_once = []
+
+    class _FakeTransport:
+        def __init__(self, *a, kwargs=None, **k):
+            self._api_base = (kwargs or {}).get("api_base", "")
+
+        async def acomplete(self):
+            key = self._api_base
+            active[key] = active.get(key, 0) + 1
+            if active.get("http://a") and active.get("http://b"):
+                both_active_at_once.append(True)
+            await asyncio.sleep(0.1)
+            active[key] -= 1
+            return {"response_delta": "ok", "reasoning_delta": ""}
+
+    monkeypatch.setattr(models, "LiteLLMTransport", _FakeTransport)
+    monkeypatch.setattr(models, "apply_rate_limiter", lambda *a, **k: _noop_async(None))
+    monkeypatch.setattr(models, "configure_litellm", lambda: None)
+    monkeypatch.setattr(
+        models.settings, "get_settings", lambda: {"litellm_global_kwargs": {}}
+    )
+
+    chat_model = models.LiteLLMChatWrapper(
+        model="model-a", provider="fake-provider", api_base="http://a"
+    )
+    utility_model = models.LiteLLMChatWrapper(
+        model="model-b", provider="fake-provider", api_base="http://b"
+    )
+
+    await asyncio.gather(
+        chat_model.unified_call(user_message="hi"),
+        utility_model.unified_call(user_message="hi"),
+    )
+
+    assert both_active_at_once, "distinct backends must be able to run concurrently"
 
 
 async def _noop_async(value):

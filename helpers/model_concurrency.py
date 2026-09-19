@@ -1,6 +1,20 @@
-"""Serializes concurrent Main/Utility model calls through a single
-global semaphore (default 1 - fully serialized), configurable via
-_model_config's own settings.
+"""Serializes concurrent Main/Utility model calls through a semaphore
+per inference backend (default limit 1 per backend - fully serialized
+within a backend), configurable via _model_config's own settings.
+
+Keyed by backend, not global: chat_model and utility_model commonly
+point at the exact same local server (confirmed live - a stock config
+has both set to the identical model/api_base), in which case they
+correctly share one semaphore and stay serialized, since they are
+genuinely the same single-process inference engine underneath. But nothing
+before this keying ever let two *different* backends - a second, smaller
+model loaded for utility work on its own server, or a distinct cloud
+provider - run concurrently: every call anywhere shared the one global
+semaphore regardless of which backend it was actually going to, so a
+slow utility call always blocked the main chat call even when they had
+no server in common to contend over. The key is the model's api_base
+when configured (the actual thing being contended for), falling back to
+the model name for setups with no explicit api_base.
 
 Real-world motivation: a local single-process inference backend (LM
 Studio, etc.) doesn't reliably handle multiple concurrent requests - this
@@ -44,8 +58,8 @@ both failing with LM Studio's "Context size has been exceeded" while
 either alone fits the 65k window comfortably, consistent with the server
 dividing its context across simultaneous requests.
 
-So the semaphore is a threading.Semaphore, shared by the whole process
-and safe to touch from any thread. It is acquired without blocking:
+So each backend's semaphore is a threading.Semaphore, shared by the whole
+process and safe to touch from any thread. It is acquired without blocking:
 blocking a thread inside a coroutine would stall that entire event loop,
 including whichever other coroutine currently holds the slot, so this
 polls with a non-blocking acquire and an awaited sleep between attempts.
@@ -61,13 +75,30 @@ import contextlib
 
 import threading
 
-# Guards the singleton below. A plain threading.Lock because it is touched
+# Guards the dict below. A plain threading.Lock because it is touched
 # from arbitrary threads and held only for a couple of assignments.
 _state_lock = threading.Lock()
-_state: dict = {"semaphore": None, "limit": None}
+# One entry per backend key, each independently tracking its own
+# semaphore and the limit it was built with (so a configured-limit change
+# is detected per backend, same as the old single-entry behavior was).
+_state: dict[str, dict] = {}
 
 _POLL_MIN_SECONDS = 0.02
 _POLL_MAX_SECONDS = 0.2
+
+DEFAULT_BACKEND_KEY = "default"
+
+
+def backend_key(model_name: str, kwargs: dict | None = None) -> str:
+    """The identity of the inference backend a call is actually contending
+    for - its api_base when configured (the real, shared resource for a
+    self-hosted server), else the model name (distinct model names are
+    the closest available proxy for "distinct backend" when no explicit
+    endpoint is set, e.g. most cloud providers)."""
+    api_base = (kwargs or {}).get("api_base")
+    if api_base:
+        return str(api_base)
+    return model_name or DEFAULT_BACKEND_KEY
 
 
 def get_configured_limit() -> int:
@@ -87,11 +118,15 @@ def get_configured_limit() -> int:
     return limit if limit > 0 else 1
 
 
-def _get_semaphore() -> threading.Semaphore:
-    """The one semaphore every thread and every loop shares."""
+def _get_semaphore(key: str) -> threading.Semaphore:
+    """The one semaphore every thread and every loop shares for this
+    backend key. A different key gets its own independent semaphore, so
+    two genuinely different backends can run concurrently while calls to
+    the same backend stay serialized."""
     limit = get_configured_limit()
     with _state_lock:
-        if _state["semaphore"] is None or _state["limit"] != limit:
+        entry = _state.get(key)
+        if entry is None or entry["limit"] != limit:
             # Recreates the semaphore when the configured limit changes
             # rather than trying to mutate an existing one's capacity
             # (Semaphore doesn't support that). A call already holding a
@@ -100,9 +135,9 @@ def _get_semaphore() -> threading.Semaphore:
             # brief, harmless transition window for what is a
             # politeness/contention-avoidance measure, not a hard
             # security control.
-            _state["semaphore"] = threading.Semaphore(limit)
-            _state["limit"] = limit
-        return _state["semaphore"]
+            entry = {"semaphore": threading.Semaphore(limit), "limit": limit}
+            _state[key] = entry
+        return entry["semaphore"]
 
 
 async def _acquire(semaphore: threading.Semaphore) -> None:
@@ -124,11 +159,17 @@ async def _acquire(semaphore: threading.Semaphore) -> None:
 
 
 @contextlib.asynccontextmanager
-async def model_call_slot():
-    """Async context manager: `async with model_call_slot(): ...` around
-    the actual network call. Held only for the duration of the call
-    itself, not message construction or rate-limiter bookkeeping."""
-    semaphore = _get_semaphore()
+async def model_call_slot(key: str = DEFAULT_BACKEND_KEY):
+    """Async context manager: `async with model_call_slot(key=...): ...`
+    around the actual network call. Held only for the duration of the
+    call itself, not message construction or rate-limiter bookkeeping.
+
+    key identifies the inference backend being called - see backend_key().
+    Calls sharing a key are serialized against each other; calls with
+    different keys can run concurrently. Defaults to a single shared key
+    for callers that don't know their backend's identity (matches the
+    pre-keying behavior of full global serialization)."""
+    semaphore = _get_semaphore(key)
     await _acquire(semaphore)
     try:
         yield
