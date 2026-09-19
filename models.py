@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+import asyncio
 import logging
 import os
 from typing import (
@@ -53,6 +54,12 @@ DEFAULT_LITELLM_GLOBAL_KWARGS: dict[str, Any] = {
 # Other entries in litellm_global_kwargs, such as timeout or additional_drop_params,
 # are kept as per-call kwargs instead of becoming arbitrary module attributes.
 LITELLM_MODULE_GLOBAL_KEYS = frozenset({"drop_params"})
+
+# Structural defaults for every unified_call/unified_turn caller - see
+# _run_unified's own comment for why these exist. Override per call via
+# a0_stream_idle_timeout_seconds / a0_total_timeout_seconds in kwargs.
+DEFAULT_STREAM_IDLE_TIMEOUT_SECONDS = 120
+DEFAULT_TOTAL_CALL_TIMEOUT_SECONDS = 300
 
 
 def _normalize_litellm_kwargs(values: dict[str, Any]) -> dict[str, Any]:
@@ -300,6 +307,12 @@ def get_rate_limiter(
 
 def _is_transient_litellm_error(exc: Exception) -> bool:
     """Uses status_code when available, else falls back to exception types"""
+    # A stalled call (see _run_unified's stream-idle/total-call timeouts) is
+    # exactly the kind of one-off hiccup this retry loop exists for - most
+    # observed live stalls cleared on the very next attempt.
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return True
+
     # Prefer explicit status codes if present
     status_code = getattr(exc, "status_code", None)
     if isinstance(status_code, int):
@@ -578,6 +591,22 @@ class LiteLLMChatWrapper(SimpleChatModel):
             call_kwargs["a0_explicit_prompt_caching"] = True
         max_retries: int = int(call_kwargs.pop("a0_retry_attempts", 2))
         retry_delay_s: float = float(call_kwargs.pop("a0_retry_delay_seconds", 1.5))
+        # Every model call used to be a bare await with no bound anywhere in
+        # this chain - a stalled local provider (observed live: LM Studio
+        # accepting a request and then never responding, no error, no more
+        # activity) left a turn stuck indefinitely, recoverable only by
+        # cancelling it (Nudge). These are structural defaults covering every
+        # caller of unified_call/unified_turn, not something each call site
+        # has to opt into. Idle-based for streaming (silence between chunks
+        # is the actual stall signal - reasoning tokens count as chunks too,
+        # so a genuinely working slow generation still keeps producing them),
+        # total-duration for the one-shot non-streaming path.
+        stream_idle_timeout_s: float = float(
+            call_kwargs.pop("a0_stream_idle_timeout_seconds", DEFAULT_STREAM_IDLE_TIMEOUT_SECONDS)
+        )
+        total_call_timeout_s: float = float(
+            call_kwargs.pop("a0_total_timeout_seconds", DEFAULT_TOTAL_CALL_TIMEOUT_SECONDS)
+        )
         stream = reasoning_callback is not None or response_callback is not None or tokens_callback is not None
         transport = LiteLLMTransport(
             model=self.model_name,
@@ -601,7 +630,20 @@ class LiteLLMChatWrapper(SimpleChatModel):
                 async with model_concurrency.model_call_slot():
                     if stream:
                         stop_response: str | None = None
-                        async for parsed in transport.astream():
+                        stream_iter = transport.astream()
+                        while True:
+                            try:
+                                parsed = await asyncio.wait_for(
+                                    stream_iter.__anext__(), timeout=stream_idle_timeout_s
+                                )
+                            except StopAsyncIteration:
+                                break
+                            except asyncio.TimeoutError:
+                                await stream_iter.aclose()
+                                raise TimeoutError(
+                                    f"Model call stalled: no response received for "
+                                    f"{stream_idle_timeout_s}s"
+                                )
                             got_any_chunk = True
                             output = result.add_chunk(parsed)
 
@@ -641,7 +683,9 @@ class LiteLLMChatWrapper(SimpleChatModel):
 
                     # non-stream response
                     else:
-                        parsed = await transport.acomplete()
+                        parsed = await asyncio.wait_for(
+                            transport.acomplete(), timeout=total_call_timeout_s
+                        )
                         output = result.add_chunk(parsed)
                         if limiter:
                             if output["response_delta"]:
@@ -653,8 +697,6 @@ class LiteLLMChatWrapper(SimpleChatModel):
                 return result, transport, msgs_conv
 
             except Exception as e:
-                import asyncio
-
                 # Retry only if no chunks received and error is transient
                 if got_any_chunk or not _is_transient_litellm_error(e) or attempt >= max_retries:
                     raise
