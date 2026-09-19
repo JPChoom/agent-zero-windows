@@ -5,6 +5,10 @@ from agent import Agent, LoopData
 
 
 class MainPrompt(Extension):
+    # Core prompt assembly - if this fails, the turn genuinely cannot
+    # proceed safely, so it must abort loudly rather than continue with
+    # no main prompt at all.
+    FAIL_LOUD = True
 
     async def execute(
         self,

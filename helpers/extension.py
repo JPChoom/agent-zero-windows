@@ -210,6 +210,15 @@ def extensible(func):
 
 
 class Extension:
+    # Isolated by default: call_extensions_sync/async catch and log this
+    # extension's own exception rather than letting it abort every other
+    # extension still queued at that call site. Set True on the handful
+    # of extensions whose failure means the turn genuinely cannot proceed
+    # safely - a safety gate, secret masking, core prompt assembly, or an
+    # exception-handler hook itself (catching there would mask the very
+    # failure being handled) - see best_effort's docstring for the same
+    # list from before isolation was the default.
+    FAIL_LOUD: bool = False
 
     def __init__(self, agent: "Agent|None", **kwargs):
         self.agent: "Agent|None" = agent
@@ -222,18 +231,18 @@ class Extension:
 
 def best_effort(heading: str):
     """Decorator for an async Extension.execute(): catch any exception,
-    log it as a warning, and let the turn continue.
+    log it under a specific, readable heading, and let the turn continue.
 
-    call_extensions_async has no per-extension error handling of its own -
-    one exception aborts every extension still queued at that call site.
-    For system_prompt that means every future turn until whatever broke is
-    fixed; for the rest it means the current turn. Most extensions in this
-    codebase are correctly left unguarded, because their failure means the
-    turn genuinely cannot proceed safely (a safety gate, secret masking,
-    core prompt assembly) - this decorator is only for the ones where
-    failure should cost one enrichment, not the turn: something reading
-    live filesystem state, a remote server, or an embedding/DB search
-    behind a "nice to have" addition to the prompt.
+    Isolation itself is now the dispatcher's default (see Extension.FAIL_LOUD
+    and _log_extension_failure below) - call_extensions_sync/async catch and
+    log a failing extension's own exception rather than letting it abort
+    every other extension still queued at that call site. This decorator
+    remains useful on top of that for extensions that want a specific,
+    readable heading (e.g. "History compression stalled") instead of the
+    dispatcher's generic one, or that need the exception caught before some
+    of their own cleanup code runs. It is a no-op safety net on extensions
+    that already isolate by default; it is never needed for the FAIL_LOUD
+    ones, since those are exactly the extensions that must not catch.
 
     Logging the failure is itself best-effort: a broken log sink must not
     turn into a second, more confusing crash than the one being caught.
@@ -264,6 +273,26 @@ def best_effort(heading: str):
     return decorator
 
 
+def _log_extension_failure(
+    extension_point: str, cls: Type["Extension"], agent: "Agent|None", exc: Exception
+) -> None:
+    """Best-effort log of a failing extension's own exception - matches
+    best_effort's own logging discipline: a broken log sink must not turn
+    into a second, more confusing crash than the one being caught."""
+    if agent is None:
+        return
+    try:
+        from helpers import errors as errors_helper
+
+        agent.context.log.log(
+            type="warning",
+            heading=f"Extension error: {cls.__name__} ({extension_point})",
+            content=errors_helper.format_error(exc),
+        )
+    except Exception:
+        pass
+
+
 async def call_extensions_async(
     extension_point: str, agent: "Agent|None" = None, **kwargs
 ):
@@ -274,9 +303,22 @@ async def call_extensions_async(
 
     # execute unique extensions
     for cls in classes:
-        result = cls(agent=agent).execute(**kwargs)
-        if isinstance(result, Awaitable):
-            await result
+        if cls.FAIL_LOUD:
+            result = cls(agent=agent).execute(**kwargs)
+            if isinstance(result, Awaitable):
+                await result
+            continue
+
+        # Isolated by default: one extension's failure must not abort every
+        # other extension still queued at this call site. For system_prompt
+        # that used to mean every future turn until whatever broke was
+        # fixed; for the rest, the current turn.
+        try:
+            result = cls(agent=agent).execute(**kwargs)
+            if isinstance(result, Awaitable):
+                await result
+        except Exception as e:
+            _log_extension_failure(extension_point, cls, agent, e)
 
 
 def call_extensions_sync(extension_point: str, agent: "Agent|None" = None, **kwargs):
@@ -287,11 +329,22 @@ def call_extensions_sync(extension_point: str, agent: "Agent|None" = None, **kwa
 
     # execute unique extensions
     for cls in classes:
-        result = cls(agent=agent).execute(**kwargs)
-        if isinstance(result, Awaitable):
-            raise ValueError(
-                f"Extension {cls.__name__} returned awaitable in sync mode"
-            )
+        if cls.FAIL_LOUD:
+            result = cls(agent=agent).execute(**kwargs)
+            if isinstance(result, Awaitable):
+                raise ValueError(
+                    f"Extension {cls.__name__} returned awaitable in sync mode"
+                )
+            continue
+
+        try:
+            result = cls(agent=agent).execute(**kwargs)
+            if isinstance(result, Awaitable):
+                raise ValueError(
+                    f"Extension {cls.__name__} returned awaitable in sync mode"
+                )
+        except Exception as e:
+            _log_extension_failure(extension_point, cls, agent, e)
 
 
 def get_webui_extensions(

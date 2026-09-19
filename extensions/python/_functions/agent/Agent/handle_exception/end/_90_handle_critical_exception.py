@@ -8,6 +8,10 @@ from helpers.errors import HandledException
 
 
 class HandleCriticalException(Extension):
+    # The final catch-all exception handler - catching a failure inside
+    # it would mask the original error entirely instead of surfacing it.
+    FAIL_LOUD = True
+
     async def execute(self, data: dict = {}, **kwargs):
         if not self.agent:
             return

@@ -4,6 +4,11 @@ from helpers import parallel_tools
 
 
 class BlockParallelRecursion(Extension):
+    # This extension's entire purpose is raising an exception to block a
+    # dangerous pattern - isolating it would silently swallow the block
+    # itself, defeating the safety control it exists to enforce.
+    FAIL_LOUD = True
+
     async def execute(self, tool_name: str = "", **kwargs) -> None:
         if tool_name != "parallel":
             return

@@ -3,6 +3,9 @@ from helpers.secrets import get_secrets_manager
 
 
 class MaskToolSecrets(Extension):
+    # Security control: if masking crashes, a secret could reach the
+    # utility model unmasked. Fail-open here is worse than aborting.
+    FAIL_LOUD = True
 
     async def execute(self, **kwargs):
         if not self.agent:

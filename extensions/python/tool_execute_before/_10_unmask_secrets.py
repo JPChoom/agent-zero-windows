@@ -3,6 +3,10 @@ from helpers.secrets import get_secrets_manager
 
 
 class UnmaskToolSecrets(Extension):
+    # Paired security control with MaskToolSecrets: if this crashes, a
+    # tool could run with literal placeholder text instead of a real
+    # secret - fail loud rather than silently proceed with the wrong args.
+    FAIL_LOUD = True
 
     async def execute(self, **kwargs):
         if not self.agent:

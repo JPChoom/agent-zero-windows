@@ -4,6 +4,9 @@ from helpers.tool import Response
 
 
 class MaskToolSecrets(Extension):
+    # Security control: if masking crashes, a secret could reach the
+    # model/log unmasked. Fail-open here is worse than aborting the turn.
+    FAIL_LOUD = True
 
     async def execute(self, response: Response | None = None, **kwargs):
         if not self.agent:

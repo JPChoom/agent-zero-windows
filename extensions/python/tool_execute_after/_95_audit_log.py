@@ -30,6 +30,10 @@ _TEXT_EDITOR_WRITE_ACTIONS = {"write", "patch"}
 
 
 class AuditLog(Extension):
+    # Preserving pre-isolation behavior deliberately - see the paired
+    # _95_audit_log_capture.py's FAIL_LOUD comment: whether a broken audit
+    # trail should silently continue is a policy call, not mine to make.
+    FAIL_LOUD = True
 
     async def execute(self, response=None, tool_name: str = "", **kwargs):
         if not self.agent:

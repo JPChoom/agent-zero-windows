@@ -19,6 +19,12 @@ _STACK_KEY = "_audit_log_pending"
 
 
 class AuditLogCapture(Extension):
+    # Preserving pre-isolation behavior deliberately: whether a broken
+    # audit trail should ever be allowed to silently continue (vs. abort
+    # the tool call) is a policy call, not an engineering one - left as
+    # fail-loud, matching how it already behaved before isolation became
+    # the dispatcher's default, rather than deciding this unilaterally.
+    FAIL_LOUD = True
 
     async def execute(self, tool_args: dict | None = None, tool_name: str = "", **kwargs):
         if not self.agent:
