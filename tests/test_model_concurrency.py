@@ -160,11 +160,24 @@ async def test_semaphore_recreated_when_configured_limit_changes(monkeypatch):
 # ------------------------------------------------------------------
 
 
-def test_backend_key_uses_api_base_when_configured():
+def test_backend_key_combines_api_base_and_model_name():
     assert (
         model_concurrency.backend_key("lm_studio/qwen", {"api_base": "http://127.0.0.1:1234/v1"})
-        == "http://127.0.0.1:1234/v1"
+        == "http://127.0.0.1:1234/v1|lm_studio/qwen"
     )
+
+
+def test_backend_key_distinguishes_two_models_on_the_same_server():
+    """The actual bug this must avoid: LM Studio (and similar local
+    servers) serve every loaded model through one shared port, so a chat
+    model and a utility model pointed at two different models on that
+    same server must still get different keys - api_base alone would
+    conflate them and serialize two genuinely independent, concurrently
+    loaded inference engines."""
+    same_base = {"api_base": "http://127.0.0.1:1234/v1"}
+    key_a = model_concurrency.backend_key("qwen3-27b", same_base)
+    key_b = model_concurrency.backend_key("qwen3.5-4b", same_base)
+    assert key_a != key_b
 
 
 def test_backend_key_falls_back_to_model_name_without_api_base():

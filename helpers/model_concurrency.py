@@ -12,9 +12,13 @@ model loaded for utility work on its own server, or a distinct cloud
 provider - run concurrently: every call anywhere shared the one global
 semaphore regardless of which backend it was actually going to, so a
 slow utility call always blocked the main chat call even when they had
-no server in common to contend over. The key is the model's api_base
-when configured (the actual thing being contended for), falling back to
-the model name for setups with no explicit api_base.
+no server in common to contend over. The key combines the model's
+api_base with its model name (see backend_key()) - api_base alone is
+not enough, since a server like LM Studio serves every model it has
+loaded through one shared port, so two different models loaded on the
+same server would otherwise look like one backend and get serialized
+against each other despite being independent, concurrently loaded
+inference engines.
 
 Real-world motivation: a local single-process inference backend (LM
 Studio, etc.) doesn't reliably handle multiple concurrent requests - this
@@ -91,13 +95,23 @@ DEFAULT_BACKEND_KEY = "default"
 
 def backend_key(model_name: str, kwargs: dict | None = None) -> str:
     """The identity of the inference backend a call is actually contending
-    for - its api_base when configured (the real, shared resource for a
-    self-hosted server), else the model name (distinct model names are
-    the closest available proxy for "distinct backend" when no explicit
-    endpoint is set, e.g. most cloud providers)."""
+    for.
+
+    api_base alone is not enough: LM Studio (and similar local servers)
+    serve every loaded model through one shared port, so a chat model and
+    a utility model pointed at two different models on the same server
+    have identical api_base values despite being genuinely independent
+    inference engines that can run concurrently once both are loaded -
+    keying on api_base alone would still serialize them, defeating the
+    reason to load a second model at all. Combining api_base with the
+    model name distinguishes "two requests to the same loaded model"
+    (correctly serialized - the real contention this module exists for)
+    from "two different models on the same server" (correctly
+    concurrent). Falls back to the model name alone when no api_base is
+    configured (most cloud providers)."""
     api_base = (kwargs or {}).get("api_base")
     if api_base:
-        return str(api_base)
+        return f"{api_base}|{model_name or DEFAULT_BACKEND_KEY}"
     return model_name or DEFAULT_BACKEND_KEY
 
 
