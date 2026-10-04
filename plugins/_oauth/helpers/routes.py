@@ -552,14 +552,18 @@ def _proxy_denied_response() -> Response | None:
 
 
 def _proxy_authorized() -> bool:
+    from helpers.access_control import constant_time_equals, is_proxied
+
     cfg = codex_config()
     token = cfg["proxy_token"]
     supplied = _supplied_proxy_token()
-    if token and supplied == token:
+    if token and supplied and constant_time_equals(supplied, token):
         return True
     if cfg["require_proxy_token"]:
         return False
-    return _remote_is_loopback(request.remote_addr)
+    # A tunnel client also connects from loopback; a request carrying proxy
+    # headers is remote and must present the proxy token.
+    return _remote_is_loopback(request.remote_addr) and not is_proxied(request.headers)
 
 
 def _supplied_proxy_token() -> str:

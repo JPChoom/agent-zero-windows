@@ -2705,7 +2705,7 @@ async def test_vision_load_materializes_ephemeral_browser_refs(monkeypatch, tmp_
     monkeypatch.setattr(
         vision_load_module.plugins,
         "get_plugin_config",
-        lambda *args, **kwargs: {"chat_model": {"max_embeds": 10}},
+        lambda *args, **kwargs: {"chat_model": {"max_embeds": 10, "vision": True}},
     )
 
     tool_results = []

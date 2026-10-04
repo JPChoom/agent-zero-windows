@@ -1,0 +1,55 @@
+<html>
+<head>
+  <title>Unlock Bypass permissions</title>
+  <script type="module">
+    import { store } from "/plugins/_permissions/webui/mode-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.permissionsMode">
+      <!-- The password lives only in this component's local x-data, never
+           in the long-lived store, and is gone when the modal closes. -->
+      <form class="perm-unlock" x-data="{ password: '' }"
+            @submit.prevent="$store.permissionsMode.unlock(password).then(() => { password = '' })">
+        <template x-if="!$store.permissionsMode.passwordSet">
+          <div class="perm-unlock-note">
+            No Bypass password is set yet. Set one in
+            <strong>Settings &gt; External services &gt; Security</strong>, then try again.
+          </div>
+        </template>
+        <template x-if="$store.permissionsMode.passwordSet">
+          <div class="perm-unlock-body">
+            <div class="perm-unlock-warn">
+              <span class="material-symbols-outlined">warning</span>
+              <span>Bypass lets this chat run every tool without asking. It turns off by itself after the
+                time set in Settings, on restart, in a new chat, or when the chat switches project.</span>
+            </div>
+            <label class="perm-unlock-label" for="perm-bypass-password">Bypass password</label>
+            <input id="perm-bypass-password" type="password" autocomplete="off"
+                   x-model="password" x-init="$nextTick(() => $el.focus())" />
+            <div class="perm-unlock-error" x-show="$store.permissionsMode.unlockError"
+                 x-text="$store.permissionsMode.unlockError"></div>
+            <div class="perm-unlock-actions">
+              <button type="button" class="btn btn-cancel" @click="password = ''; closeModal()">Cancel</button>
+              <button type="submit" class="btn btn-ok"
+                      :disabled="!password || $store.permissionsMode.unlocking">Unlock Bypass</button>
+            </div>
+          </div>
+        </template>
+      </form>
+    </template>
+  </div>
+
+  <style>
+    .perm-unlock { display: flex; flex-direction: column; gap: 10px; max-width: 460px; }
+    .perm-unlock-body { display: flex; flex-direction: column; gap: 10px; }
+    .perm-unlock-warn { display: flex; gap: 8px; font-size: 0.85rem; opacity: 0.85; }
+    .perm-unlock-warn .material-symbols-outlined { color: #ef4444; }
+    .perm-unlock-label { font-size: 0.8rem; opacity: 0.75; }
+    .perm-unlock-error { color: var(--color-error, #ef4444); font-size: 0.85rem; }
+    .perm-unlock-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .perm-unlock-note { font-size: 0.9rem; }
+  </style>
+</body>
+</html>

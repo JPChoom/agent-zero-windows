@@ -26,7 +26,8 @@
 - `HealthCheck` defines `get_methods(...)`.
 - `HealthCheck` defines `requires_auth(...)`.
 - `HealthCheck` defines `requires_csrf(...)`.
-- Imported dependency areas include: `helpers`, `helpers.api`.
+- Imported dependency areas include: `helpers`, `helpers.api`, `helpers.access_control`.
+- Unauthenticated by design (startup probe, launcher `.bat`, self-update poller). Response: `{"ok": true}` for every caller; `gitinfo`/`error` are added only for local requests (`access_control.is_local_request`: loopback with no proxy/forwarding headers), so tunnel visitors can't fingerprint the version.
 
 ## Key Concepts
 

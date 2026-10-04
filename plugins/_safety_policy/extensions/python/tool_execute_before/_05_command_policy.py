@@ -26,6 +26,7 @@ approval_timeout_seconds before treating an unanswered request as denied.
 """
 
 import asyncio
+import time
 import uuid
 
 from helpers.extension import Extension
@@ -132,6 +133,14 @@ class SafetyCommandPolicy(Extension):
         self, *, decision, code, runtime, subject, context_id, agent_name, timeout
     ) -> None:
         approval_id = str(uuid.uuid4())
+        # Only a downloader match with a readable destination can offer
+        # "Always allow <host>" - there is nothing host-shaped to remember
+        # for any other category.
+        remember_host = (
+            decision.network_destination
+            if decision.category == "downloader" and decision.network_destination
+            else ""
+        )
         audit_log.append_denial(
             {
                 "context_id": context_id,
@@ -167,12 +176,17 @@ class SafetyCommandPolicy(Extension):
                     "runtime": runtime,
                     "resolved": False,
                     "network_destination": decision.network_destination,
+                    "remember_host": remember_host,
+                    # Lets the UI skip popping up a request whose wait
+                    # already ended (e.g. an unresolved item left in a
+                    # chat log from before a restart).
+                    "expires_at": time.time() + timeout,
                 },
             )
         except Exception:
             pass
 
-        future = approval_registry.register(approval_id)
+        future = approval_registry.register(approval_id, meta={"remember_host": remember_host})
         try:
             approved = await asyncio.wait_for(future, timeout=timeout)
         except TimeoutError:

@@ -63,6 +63,7 @@ Direct child DOX files:
 | [_examples/AGENTS.md](_examples/AGENTS.md) | Reference component and store examples. |
 | [canvas/AGENTS.md](canvas/AGENTS.md) | Right-canvas component surface and store. |
 | [chat/AGENTS.md](chat/AGENTS.md) | Chat composer, attachments, queue, navigation, and top-section components. |
+| [color-picker/AGENTS.md](color-picker/AGENTS.md) | Shared themed color picker popover and store. |
 | [dropdown/AGENTS.md](dropdown/AGENTS.md) | Shared dropdown component. |
 | [messages/AGENTS.md](messages/AGENTS.md) | Message rendering helpers, action buttons, process groups, and resize behavior. |
 | [modals/AGENTS.md](modals/AGENTS.md) | Modal component workflows loaded through the shared modal stack. |

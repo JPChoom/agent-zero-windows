@@ -36,7 +36,7 @@ class DesktopInput(ApiHandler):
                 "ok": False,
                 "error": (
                     "Desktop control is disabled. Enable 'control_enabled' in "
-                    "the Windows Desktop plugin settings."
+                    "the Desktop plugin settings."
                 ),
             }
         if kill_switch.is_tripped():

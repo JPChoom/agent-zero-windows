@@ -22,6 +22,8 @@
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: scheduler state.
+- Every `SLEEP_TIME` (60s) pass runs `TaskScheduler.tick()` and the `job_loop` extension point (e.g. the stall watchdog), unless paused.
+- The development-instance pause (`pause_loop` via `runtime.call_development_function`) is sent only when `is_development() and not is_windows()`, i.e. only when that call actually reaches a separate container instance over RFC. On native Windows it would run locally and pause the only instance on every pass, so scheduled tasks and job-loop extensions would never run.
 - Imported dependency areas include: `asyncio`, `datetime`, `helpers`, `helpers.print_style`, `helpers.task_scheduler`, `time`.
 
 ## Key Concepts

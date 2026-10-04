@@ -428,6 +428,7 @@ img {
 
 /* Right Panel */
 #right-panel {
+  position: relative;
   display: -webkit-flex;
   display: flex;
   width: auto;
@@ -447,11 +448,14 @@ img {
   min-height: 0;
 }
 
-/* Chat Navigation Buttons – vertical, floating bottom-right of chat area */
+/* Chat Navigation Buttons – vertical, floating bottom-right of chat area.
+   bottom offset cleared the floating input overlay's height + blur zone
+   (chat-bar.html #input-section is now position: absolute over the
+   bottom of the chat) so these buttons don't sit on top of it. */
 #chat-nav-buttons {
   position: absolute;
   right: var(--spacing-md);
-  bottom: var(--spacing-md);
+  bottom: calc(var(--composer-height, 6rem) + 0.5rem);
   display: flex;
   flex-direction: column;
   align-items: center;

@@ -1052,3 +1052,185 @@ async def test_extension_denial_message_includes_destination_note(monkeypatch, t
     record = json.loads(lines[-1])
     assert record["network_destination"] == "evil.example"
     assert record["network_destination_allowed"] is False
+
+
+# ------------------------------------------------------------------
+# "Always allow <host>" - approve-tier downloads remember their host
+# ------------------------------------------------------------------
+
+from plugins._safety_policy.helpers import config as safety_config
+
+
+@pytest.mark.asyncio
+async def test_approval_registry_meta_is_available_while_pending_and_dropped_after():
+    approval_registry.register("meta-1", meta={"remember_host": "example.com"})
+    assert approval_registry.get_meta("meta-1") == {"remember_host": "example.com"}
+
+    approval_registry.resolve("meta-1", True)
+    assert approval_registry.get_meta("meta-1") == {}
+
+
+@pytest.mark.asyncio
+async def test_approval_registry_has_pending_tracks_outstanding_decisions():
+    approval_registry.register("pend-1")
+    assert approval_registry.has_pending() is True
+    approval_registry.resolve("pend-1", False)
+    assert approval_registry.has_pending() is False
+
+
+@pytest.mark.asyncio
+async def test_approval_registry_register_without_meta_stays_compatible():
+    approval_registry.register("meta-2")
+    assert approval_registry.get_meta("meta-2") == {}
+    approval_registry.cleanup("meta-2")
+
+
+@pytest.mark.asyncio
+async def test_approve_tier_download_records_host_for_always_allow(monkeypatch):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(
+        monkeypatch, module, enforce_policy=True,
+        approval_categories={"downloader"},
+        enable_network_destination_allowlist=True,
+        network_destination_allowlist=["pypi.org"],
+    )
+    approval_id = _fix_uuid(monkeypatch, module, 50)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    seen_meta = {}
+
+    async def _approve_shortly():
+        await asyncio.sleep(0.05)
+        seen_meta.update(approval_registry.get_meta(approval_id))
+        approval_registry.resolve(approval_id, True)
+
+    await asyncio.gather(
+        ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "terminal", "code": "curl https://files.example.org/a.wsz -o a.wsz"},
+        ),
+        _approve_shortly(),
+    )
+
+    item = agent.context.log.items[-1]
+    assert item.kvps["remember_host"] == "files.example.org"
+    assert item.kvps["expires_at"] > 0
+    assert seen_meta == {"remember_host": "files.example.org"}
+
+
+@pytest.mark.asyncio
+async def test_non_downloader_approval_offers_no_host(monkeypatch):
+    import plugins._safety_policy.extensions.python.tool_execute_before._05_command_policy as module
+
+    _patch_config(monkeypatch, module, enforce_policy=True)
+    approval_id = _fix_uuid(monkeypatch, module, 51)
+    agent = _FakeAgent()
+    ext = SafetyCommandPolicy(agent=agent)
+
+    async def _approve_shortly():
+        await asyncio.sleep(0.05)
+        approval_registry.resolve(approval_id, True)
+
+    await asyncio.gather(
+        ext.execute(
+            tool_name="code_execution_tool",
+            tool_args={"runtime": "terminal", "code": _APPROVE_TIER_COMMAND},
+        ),
+        _approve_shortly(),
+    )
+
+    assert agent.context.log.items[-1].kvps["remember_host"] == ""
+
+
+@pytest.mark.asyncio
+async def test_approve_api_remembers_the_server_side_host_not_a_client_value(monkeypatch):
+    from api.safety_policy_approve import SafetyPolicyApprove
+
+    saved = []
+    monkeypatch.setattr(safety_config, "add_allowed_host", lambda host: saved.append(host) or host)
+
+    future = approval_registry.register("api-1", meta={"remember_host": "files.example.org"})
+    handler = SafetyPolicyApprove.__new__(SafetyPolicyApprove)
+    result = await handler.process(
+        # A client-supplied host must be ignored.
+        {"approval_id": "api-1", "approved": True, "remember": True, "remember_host": "evil.example"},
+        None,
+    )
+
+    assert saved == ["files.example.org"]
+    assert result == {"resolved": True, "approved": True, "remembered": "files.example.org", "error": ""}
+    assert future.result() is True
+
+
+@pytest.mark.asyncio
+async def test_approve_api_does_not_remember_on_deny(monkeypatch):
+    from api.safety_policy_approve import SafetyPolicyApprove
+
+    saved = []
+    monkeypatch.setattr(safety_config, "add_allowed_host", lambda host: saved.append(host) or host)
+
+    future = approval_registry.register("api-2", meta={"remember_host": "files.example.org"})
+    handler = SafetyPolicyApprove.__new__(SafetyPolicyApprove)
+    result = await handler.process({"approval_id": "api-2", "approved": False, "remember": True}, None)
+
+    assert saved == []
+    assert result["remembered"] == ""
+    assert future.result() is False
+
+
+def test_add_allowed_host_appends_once_and_enables_allowlist(monkeypatch):
+    stored = {"network_destination_allowlist": ["pypi.org"], "enable_network_destination_allowlist": False}
+
+    monkeypatch.setattr(
+        safety_config.plugins, "get_plugin_config",
+        lambda name, **kw: dict(stored),
+    )
+
+    def _save(name, project, profile, settings):
+        assert (project, profile) == ("", "")
+        stored.clear()
+        stored.update(settings)
+
+    monkeypatch.setattr(safety_config.plugins, "save_plugin_config", _save)
+
+    assert safety_config.add_allowed_host("Files.Example.org.") == "files.example.org"
+    safety_config.add_allowed_host("files.example.org")
+
+    assert stored["network_destination_allowlist"] == ["pypi.org", "files.example.org"]
+    assert stored["enable_network_destination_allowlist"] is True
+
+
+def test_python_http_download_to_unlisted_host_goes_through_downloader_tier():
+    code = 'import requests\nBASE = "https://files.example.org/skins"\nr = requests.get(BASE + "/a.wsz")'
+    d = policy.classify_source_code(code, approval_categories={"downloader"},
+                                    enable_network_allowlist=True, network_allowlist=["pypi.org"])
+    assert d.allowed is False and d.category == "downloader" and d.tier == "approve"
+    assert d.network_destination == "files.example.org"
+
+
+def test_python_http_to_allowlisted_hosts_only_is_allowed():
+    code = 'import requests\nrequests.get("https://api.github.com/repos")\nrequests.get("http://localhost:5000/x")'
+    d = policy.classify_source_code(code, enable_network_allowlist=True,
+                                    network_allowlist=["github.com", "localhost"])
+    assert d.allowed is True
+
+
+def test_node_fetch_is_covered_and_runtime_urls_are_not_guessed():
+    d = policy.classify_source_code("await fetch('https://evil.example/x')", approval_categories=set())
+    assert d.allowed is False and d.tier == "deny"
+    # URL built at runtime: nothing textual to judge.
+    d = policy.classify_source_code("requests.get(url)", approval_categories={"downloader"})
+    assert d.allowed is True
+
+
+def test_source_without_http_client_is_untouched():
+    d = policy.classify_source_code('print("see https://example.com")')
+    assert d.allowed is True and d.category == ""
+
+
+@pytest.mark.parametrize("bad", ["", "  ", "http://x.org", "x.org/path", "*.x.org", "a b.org"])
+def test_add_allowed_host_rejects_non_host_values(bad):
+    with pytest.raises(ValueError):
+        safety_config.add_allowed_host(bad)

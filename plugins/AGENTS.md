@@ -40,6 +40,7 @@
 - Community discovery cards should use `type: "feature"`; reserve `hero` cards for core system features.
 - Supported discovery CTA actions are `open-plugin-config:<plugin_folder_name>`, `open-plugin-hub`, and `open-url:<url>`.
 - Plugin deletion or disablement should not leave unmanaged services, symlinks, or files outside plugin-owned paths unless explicitly documented with cleanup.
+- Third-party installs (`_plugin_installer`) land with a `.review-pending` marker (`helpers/plugins.py REVIEW_PENDING_FILE_NAME`): the plugin counts as disabled even with `always_enabled`, its `hooks.py` is never imported, and its API/WebSocket handlers are not routed until the user enables it globally, which runs the deferred install hook and removes the marker.
 
 ## Work Guidance
 
@@ -85,10 +86,12 @@ Direct child DOX files:
 | [_office/AGENTS.md](_office/AGENTS.md) | LibreOffice office artifacts and office canvas sessions. |
 | [_onboarding/AGENTS.md](_onboarding/AGENTS.md) | First-time model onboarding wizard. |
 | [_orchestrator/AGENTS.md](_orchestrator/AGENTS.md) | Load-on-demand skill for delegating coding work to external terminal coding agent CLIs. |
+| [_permissions/AGENTS.md](_permissions/AGENTS.md) | Per-tool permission gate, per-chat in-memory modes, and the password-locked Bypass mode. |
 | [_plugin_installer/AGENTS.md](_plugin_installer/AGENTS.md) | Plugin install and update flows from ZIP, Git, and Plugin Index. |
 | [_plugin_scan/AGENTS.md](_plugin_scan/AGENTS.md) | LLM-guided security scanner for third-party plugins. |
 | [_plugin_validator/AGENTS.md](_plugin_validator/AGENTS.md) | Plugin manifest, structure, convention, and security validator. |
-| [_promptinclude/AGENTS.md](_promptinclude/AGENTS.md) | Promptinclude scanning and prompt injection. |
+| [_promptinclude/AGENTS.md](_promptinclude/AGENTS.md) | Promptinclude scanning (trusted folder + project root only) and prompt injection. |
+| [_safety_policy/AGENTS.md](_safety_policy/AGENTS.md) | Deterministic high-risk command floor, download-host allowlist, and shared approval registry. |
 | [_skills/AGENTS.md](_skills/AGENTS.md) | Active and hidden skill configuration and prompt injection. |
 | [_telegram_integration/AGENTS.md](_telegram_integration/AGENTS.md) | Telegram bot integration and per-user chat sessions. |
 | [_text_editor/AGENTS.md](_text_editor/AGENTS.md) | Native text read, write, and patch tool. |

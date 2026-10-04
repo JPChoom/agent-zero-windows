@@ -13,7 +13,15 @@
   padding-left: var(--spacing-sm) !important;
   padding-right: var(--spacing-md) !important;
   padding-top: 4rem !important;
-  padding-bottom: 4rem !important;
+  /* Just enough room that the last message rests above the solid input
+     pill (chat-bar.html #input-section is position: absolute over the
+     bottom of the chat, not in normal flow) - content scrolling past this
+     point should pass THROUGH the progressive-blur zone above the pill,
+     not stop short of it, or the blur never has anything to blur. */
+  /* --composer-height is the live height of #input-section, published by
+     chat-bar.html's ResizeObserver; it grows when the composer or its
+     bottom actions row wraps, so the last message can never hide under it. */
+  padding-bottom: calc(var(--composer-height, 5rem) + 1rem) !important;
   -webkit-transition: all 0.3s ease;
   transition: all 0.3s ease;
 }
@@ -99,7 +107,9 @@
   margin-bottom: 0;
 }
 
-/* Update message types for dark mode */
+/* Message body text: theme-aware so it stays readable in light mode too
+   (this used to be a hardcoded #e0e0e0 light gray, which was fine on the
+   dark background but nearly invisible on light/pastel backgrounds). */
 .message-default,
 .message-agent,
 .message-agent-response,
@@ -110,7 +120,7 @@
 .message-info,
 .message-util,
 .message-warning {
-  color: #e0e0e0;
+  color: var(--color-message-text);
   background-color: transparent;
   border-radius: 0;
   box-shadow: none;
@@ -594,7 +604,6 @@
     padding-left: var(--spacing-sm) !important;
     padding-right: var(--spacing-md) !important;
     padding-top: 4rem !important;
-    padding-bottom: 3rem !important;
   }
 }
 

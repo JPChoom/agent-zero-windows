@@ -223,7 +223,7 @@ async def test_promptinclude_does_not_rescan_within_ttl(monkeypatch):
     monkeypatch.setattr(pi_mod, "scan_promptinclude_files", fake_scan)
     monkeypatch.setattr(pi_mod.runtime, "is_development", lambda: False)
     monkeypatch.setattr(pi_mod.plugins, "get_plugin_config", lambda name, agent=None: {})
-    monkeypatch.setattr(pi_mod, "_resolve_workdir", lambda agent: "C:\\somewhere")
+    monkeypatch.setattr(pi_mod, "_resolve_scan_roots", lambda agent: ["C:\\somewhere"])
 
     class _Agent:
         def read_prompt(self, name, **k):
@@ -260,7 +260,7 @@ async def test_promptinclude_dev_non_windows_branch_bypasses_debounce(monkeypatc
     monkeypatch.setattr(pi_mod.runtime, "is_windows", lambda: False)
     monkeypatch.setattr(pi_mod.runtime, "call_development_function", fake_rfc)
     monkeypatch.setattr(pi_mod.plugins, "get_plugin_config", lambda name, agent=None: {})
-    monkeypatch.setattr(pi_mod, "_resolve_workdir", lambda agent: "C:\\somewhere")
+    monkeypatch.setattr(pi_mod, "_resolve_scan_roots", lambda agent: ["C:\\somewhere"])
 
     class _Agent:
         def read_prompt(self, name, **k):

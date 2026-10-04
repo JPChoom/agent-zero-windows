@@ -4,6 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass
 import os
 import subprocess
+import time
 import base64
 import re
 from urllib.parse import urlparse, urlunparse
@@ -379,7 +380,23 @@ def get_repo_release_info(repo_path: str) -> GitRepoReleaseInfo:
         )
 
 
+# get_git_info() is read on every settings load and page serve; each uncached
+# read spawns several git processes (and a gc.collect() per Repo on Windows).
+_GIT_INFO_TTL_SECONDS = 30.0
+_git_info_cache: tuple[float, dict] | None = None
+
+
 def get_git_info():
+    global _git_info_cache
+    now = time.monotonic()
+    if _git_info_cache and now - _git_info_cache[0] < _GIT_INFO_TTL_SECONDS:
+        return dict(_git_info_cache[1])
+    info = _read_git_info()
+    _git_info_cache = (now, info)
+    return dict(info)
+
+
+def _read_git_info():
     # Get the current working directory (assuming the repo is in the same folder as the script)
     repo_path = files.get_base_dir()
 

@@ -14,7 +14,9 @@
 - `VisionLoad` (`Tool`)
   - `async execute(self, paths: list[str]=..., **kwargs) -> Response`
   - `async after_execution(self, response: Response, **kwargs)`
-- Notable constants/configuration names: `TOKENS_ESTIMATE`.
+  - `async _describe_via_sidecar(self, path: str, image_path: str) -> dict` - captions one image through the vision sidecar model (`plugins._model_config.helpers.model_config.build_vision_model`) when the Main model itself has no vision; always returns a `text` content block (a failure still tells the agent the image couldn't be described, rather than silently dropping it or sending an image_url the Main model can't read).
+- Notable constants/configuration names: `TOKENS_ESTIMATE`, `VISION_SIDECAR_TIMEOUT_SECONDS`, `VISION_SIDECAR_SYSTEM_PROMPT`.
+- Per-image content routing in `after_execution`: raw `image_url` block when the Main model's `vision` config flag is true (unchanged prior behavior); a sidecar-captioned `text` block when Main lacks vision but `_model_config.is_vision_model_configured()` is true; otherwise a plain `text` notice explaining the image could not be shown. Previously every loaded image was sent as a raw `image_url` block regardless of Main's vision capability - silently unusable content for a non-vision model.
 
 ## Runtime Contracts
 

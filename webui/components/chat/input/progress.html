@@ -45,7 +45,13 @@
 
 
     <style>
-    #progress-bar-box { background-color: var(--color-panel); padding: var(--spacing-xs) var(--spacing-md) 0 var(--spacing-md); display: flex; flex-wrap: nowrap; justify-content: flex-start; align-items: center; z-index: 1001; gap: var(--spacing-sm); min-height: 0; }
+    /* No padding of its own: with the model/agent switcher moved down into
+       the bottom-actions row, this box is now empty most of the time (only
+       the goal-strip and chat-nav-after extensions still use it) - fixed
+       padding here used to render as a bare dark strip above the input
+       even with nothing in it. Content-bearing extensions (e.g. goal-strip)
+       own their own padding, so an empty box now collapses to 0 height. */
+    #progress-bar-box { background-color: transparent; padding: 0 var(--spacing-md); display: flex; flex-wrap: nowrap; justify-content: flex-start; align-items: center; z-index: 1001; gap: var(--spacing-sm); min-height: 0; }
     #progress-bar-box > x-extension { display: contents; }
     #progress-bar-box h4 { margin: 0; }
     #progress-bar-right { display: flex; align-items: center; gap: var(--spacing-sm); flex-shrink: 0; margin-left: auto;}

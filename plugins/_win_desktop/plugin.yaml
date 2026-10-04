@@ -1,5 +1,5 @@
 name: _win_desktop
-title: Windows Desktop
+title: Desktop
 description: Lets the agent see (and optionally control) the real Windows desktop, and streams it to a live panel.
 version: 1.0.0
 always_enabled: false

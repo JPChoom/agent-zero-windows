@@ -551,6 +551,27 @@ const model = {
     return path.startsWith("/") ? path : `/${path}`;
   },
 
+  get breadcrumbSegments() {
+    // No synthetic leading "/" crumb: the agent-facing browser is
+    // hard-restricted to the configured workdir, so the bare OS root is
+    // not a navigable target here - the first real path segment is the
+    // effective root for this view.
+    const normalized = this.normalizePath(this.browser.currentPath || "").replace(/\/+$/, "");
+    const parts = normalized.split("/").filter(Boolean);
+    const segments = [];
+    let accumulated = "";
+    for (const part of parts) {
+      accumulated += `/${part}`;
+      segments.push({ name: part, path: accumulated });
+    }
+    return segments;
+  },
+
+  async navigateToBreadcrumb(path) {
+    if (path === this.browser.currentPath) return;
+    await this.navigateToFolder(path);
+  },
+
   fileExtension(file = {}) {
     const name = String(file?.name || file?.path || "").split(/[?#]/, 1)[0].toLowerCase();
     const index = name.lastIndexOf(".");

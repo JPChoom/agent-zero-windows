@@ -12,6 +12,18 @@
     <template x-if="$store.sidebar">
       <div class="sidebar-shell">
         <x-component path="sidebar/top-section/header-icons.html"></x-component>
+        <!-- Edge tab: the only show/hide control. Sits just right of the
+             header pill while open, at the screen edge while hidden. -->
+        <button type="button"
+                class="sidebar-edge-toggle"
+                :class="{ 'is-closed': !$store.sidebar.isOpen }"
+                @click="$store.sidebar.toggle()"
+                :aria-expanded="$store.sidebar.isOpen"
+                :aria-label="$store.sidebar.isOpen ? 'Hide sidebar' : 'Show sidebar'"
+                :title="$store.sidebar.isOpen ? 'Hide sidebar' : 'Show sidebar'">
+          <span class="material-symbols-outlined" aria-hidden="true"
+                x-text="$store.sidebar.isOpen ? 'chevron_left' : 'chevron_right'"></span>
+        </button>
         <div id="left-panel" class="panel" x-data :class="{'hidden': !$store.sidebar.isOpen}">
           <x-extension id="sidebar-start"></x-extension>
           <!--Sidebar upper elements-->
@@ -78,6 +90,44 @@
       margin-left: -250px;
     }
 
+    /* Show/hide edge tab. --sidebar-gap (theme.css) insets the floating
+       panel; without the theme it is 0. Same timing as the panel slide. */
+    .sidebar-edge-toggle {
+      position: fixed;
+      top: calc(var(--spacing-md) + 1.35rem);
+      left: calc(250px + var(--sidebar-gap, 0px) + 6px);
+      z-index: 1004;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.35rem;
+      height: 2.6rem;
+      padding: 0;
+      border: 1px solid var(--line-strong, var(--color-border));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--s2, var(--color-panel)) var(--mat-alpha, 100%), transparent);
+      -webkit-backdrop-filter: var(--mat-filter, none);
+      backdrop-filter: var(--mat-filter, none);
+      box-shadow: var(--shadow-soft, 0 2px 8px rgba(0, 0, 0, 0.3));
+      color: var(--t1, var(--color-text));
+      cursor: pointer;
+      opacity: 0.75;
+      transition: left var(--transition-speed) ease-in-out, opacity 0.15s ease,
+                  color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+    }
+    .sidebar-edge-toggle.is-closed {
+      left: 6px;
+    }
+    .sidebar-edge-toggle:hover,
+    .sidebar-edge-toggle:focus-visible {
+      opacity: 1;
+      color: var(--accent-ui, var(--color-text));
+      border-color: color-mix(in srgb, var(--accent, var(--color-border)) 50%, transparent);
+    }
+    .sidebar-edge-toggle .material-symbols-outlined {
+      font-size: 18px;
+    }
+
     .left-panel-top {
       flex: 1 1 auto;
       /* Take available space */
@@ -87,8 +137,13 @@
       min-height: 0;
       /* Critical for allowing flex children to shrink */
       overflow: hidden;
-      justify-content: space-between;
-      margin-top: 6.5rem;
+      /* flex-start (not space-between): now that #chats-section sizes to
+         its content instead of flex-growing to fill this box, space-between
+         was spreading the leftover height as gaps BETWEEN children (Quick
+         Actions/Chats/Tasks) instead of leaving it after the last one -
+         Chats should sit right under the header, not float mid-sidebar. */
+      justify-content: flex-start;
+      margin-top: 4.75rem;
       padding: var(--spacing-md) var(--spacing-md) 0 var(--spacing-md);
     }
 
@@ -99,15 +154,18 @@
       /* Prevent bottom from growing */
     }
 
-    /* Chats section container inside sidebar */
+    /* Chats section container inside sidebar. Sized to content (not
+       flex-grown) so a short chat list sits right under the header, with
+       Tasks pinned at the bottom (margin-top: auto); still capped so a long
+       chat list scrolls internally instead of pushing Tasks/Preferences
+       off-screen. */
     #chats-section {
       display: -webkit-flex;
       display: flex;
       flex-direction: column;
       min-height: 0;
-      flex: 1 1 auto;
-      /* Take all available space */
-      max-height: 100%;
+      flex: 0 1 auto;
+      max-height: 45vh;
       overflow: hidden;
     }
 
@@ -121,7 +179,9 @@
       /* Shrink to content, no reserved space */
       max-height: 40%;
       /* Limit to 40% of viewport height when expanded */
-      margin-top: 0;
+      /* Pinned to the bottom of .left-panel-top, i.e. directly above
+         Preferences; the spare height sits between Chats and Tasks. */
+      margin-top: auto;
       padding-top: var(--spacing-md);
       overflow: hidden;
     }

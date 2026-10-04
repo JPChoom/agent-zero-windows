@@ -13,5 +13,10 @@ class RFC(ApiHandler):
         return False
 
     async def process(self, input: dict, request: Request) -> dict | Response:
+        # RFC is the bridge from a development host to its Docker twin.
+        # Native Windows has no twin (runtime.call_development_function runs
+        # everything locally there), so the endpoint is pure attack surface.
+        if runtime.is_windows():
+            return Response("Not Found", 404)
         result = await runtime.handle_rfc(input) # type: ignore
         return result

@@ -121,7 +121,7 @@
       align-items: center;
       justify-content: space-between;
       width: 100%;
-      min-height: 40px;
+      min-height: 30px;
       border-radius: 4px;
       overflow: hidden;
       cursor: pointer;
@@ -146,7 +146,7 @@
     }
 
     .chat-child-container {
-      min-height: 34px;
+      min-height: 26px;
     }
 
     .chat-child-indent {
@@ -197,9 +197,10 @@
       display: flex;
       align-items: center;
       flex-grow: 1;
-      padding: 8px;
+      padding: 5px 6px;
       overflow: hidden;
-      gap: 0.5em;
+      gap: 0.4em;
+      min-width: 0;
     }
 
     .project-color-ball {
@@ -212,10 +213,15 @@
     }
 
     .chat-name {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-size: var(--font-size-small);
+      /* Full title always visible, wrapping instead of truncating with
+         an ellipsis - readable at a glance without needing to hover or
+         rename to see what a chat actually is. */
+      white-space: normal;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      line-height: 1.25;
+      font-size: 0.74rem;
+      min-width: 0;
     }
 
     .chat-list-action-btn {
@@ -227,17 +233,38 @@
       background-color: var(--color-background-hover);
     }
 
+    /* Pointer devices: the rename/delete buttons only appear on hover. They
+       are taken out of the row's flow and overlaid on its right edge, so
+       while hidden they don't reserve ~56px and squeeze every chat name. */
     .device-pointer .chat-container .chat-list-action-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      right: 2px;
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
       transition: opacity 0s;
     }
 
+    .device-pointer .chat-container .chat-list-action-btn:last-of-type {
+      right: 2px;
+    }
+
+    .device-pointer .chat-container .chat-list-action-btn:nth-last-of-type(2) {
+      right: 30px;
+    }
+
     .device-pointer .chat-container:hover .chat-list-action-btn {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
+      background: var(--color-panel);
+    }
+
+    /* Leave room for the overlaid buttons only while they're showing. */
+    .device-pointer .chat-container:hover .chat-list-button {
+      padding-right: 62px;
     }
 
     .device-touch .chats-list-container .chat-list-action-btn {
@@ -263,7 +290,7 @@
 
     /* Selected chat accent */
     .chat-selected .chat-name {
-      font-size: var(--font-size-normal);
+      font-size: 0.78rem;
       font-weight: bold;
     }
 

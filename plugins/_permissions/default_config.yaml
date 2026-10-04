@@ -1,14 +1,15 @@
-# How much the agent checks with you before acting.
+# The permission *mode* is not configured here. It is chosen per chat from
+# the selector under the chat box, held in memory only, and every chat
+# starts at Settings > Security > "Default permission mode" (default:
+# manual) - after a restart, in a new chat, or after switching project.
+# Bypass needs its own password and turns itself off after the configured
+# number of hours. See helpers/mode_state.py and helpers/bypass_lock.py.
 #
-#   auto          works freely; rules and the safety policy still apply
+#   plan          refuses state changes outright, so a plan comes first
 #   manual        asks before anything that changes state
 #   accept_edits  file edits proceed; anything that executes still asks
-#   plan          refuses state changes outright, so a plan comes first
-#   bypass        stops asking entirely
-#
-# "auto" matches how Agent Zero behaved before this plugin existed, so
-# enabling it changes nothing until you choose otherwise.
-mode: auto
+#   auto          works freely; rules and the safety policy still apply
+#   bypass        stops asking entirely (password required)
 
 # Rules are matched before the mode is consulted, in the order
 # deny > ask > allow - so a specific prohibition is never overridden by a

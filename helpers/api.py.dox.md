@@ -41,6 +41,7 @@
 - `ApiHandler` defines `requires_loopback(...)`.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, WebSocket state, plugin state, settings/state persistence, secret handling.
 - Imported dependency areas include: `abc`, `flask`, `functools`, `helpers`, `helpers.errors`, `helpers.network`, `helpers.print_style`, `json`, `pathlib`, `threading`, `typing`, `werkzeug.wrappers.response`.
+- `requires_loopback` means `access_control.is_local_request` (loopback AND no proxy/forwarding headers), returning a bare 404 otherwise - a tunnel client connects from localhost too. `requires_auth`, `requires_api_key` and `csrf_protect` compare secrets with `access_control.constant_time_equals`. Unknown endpoints return a bare `Not Found`. Plugin handlers of review-pending plugins are not routed.
 
 ## Key Concepts
 

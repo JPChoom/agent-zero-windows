@@ -16,12 +16,26 @@ depends on that category's configured tier:
   `RepairableException` - the tool never runs, the agent gets a warning
   explaining why instead of the command executing.
 - **Require approval** (the default for `firewall_and_defender`,
-  `privilege_escalation`, `account_changes`): the tool call is held, a chat
-  message appears with Approve/Deny buttons, and the command only runs if
-  you click Approve within `approval_timeout_seconds` (default 300s) - an
-  unanswered request, a Deny click, or the timeout all deny the command the
-  same way a hard deny would. `custom_deny_patterns` always hard-deny; the
-  approval tier only applies to the built-in categories.
+  `privilege_escalation`, `account_changes`): the tool call is held, a
+  popup opens (and a chat message appears) with **Allow once** / **Deny**
+  buttons, and the command only runs if you allow it within
+  `approval_timeout_seconds` (default 300s) - an unanswered request, a Deny
+  click, or the timeout all deny the command the same way a hard deny
+  would. `custom_deny_patterns` always hard-deny; the approval tier only
+  applies to the built-in categories.
+- **Always allow <host>**: when `tier_downloader` is set to approve and a
+  download's destination host can be read from the command, the prompt
+  also offers this button. It adds the host to
+  `network_destination_allowlist` (global scope) and turns the allowlist
+  on, so later downloads from that host run without asking. The host is
+  taken from the server-side record of the pending request, never from
+  the browser.
+
+The popup is opened by the chat message handler, so it appears for the
+chat you're currently viewing. Each request pops up once per page load;
+closing it without deciding leaves the in-chat buttons as the fallback,
+and requests whose wait has already ended (e.g. from before a restart)
+are not popped up.
 
 Every denial, pending approval, and resolved approval/deny is logged to
 `usr/safety_policy_audit.jsonl`.
@@ -76,7 +90,14 @@ operation across multiple otherwise-innocuous commands. The existing
 `usr/plugins/terminal_access` plugin's own README says the same thing about
 its (smaller) denylist, and it's just as true here.
 
-**`python`/`nodejs` coverage is narrower than `terminal`'s.** These
+**Downloads from inside scripts.** `python`/`nodejs` source that uses an
+HTTP client (`requests`, `httpx`, `aiohttp`, `urllib`, `fetch`, `axios`,
+...) is treated as a downloader: every `http(s)://` literal in the source
+must be on the allowlist, otherwise the `tier_downloader` decision applies
+(e.g. the approval popup with "Always allow <host>"). URLs assembled at
+runtime from variables are not visible to this check.
+
+**`python`/`nodejs` coverage is otherwise narrower than `terminal`'s.** These
 runtimes are scanned only for the same dangerous command lines reached
 through a shell-out call - `os.system(...)`, `subprocess.run/call/
 check_call/check_output/Popen(...)`, `child_process.exec/execSync/spawn/

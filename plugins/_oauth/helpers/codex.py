@@ -298,7 +298,8 @@ def load_auth(*, ensure_fresh: bool = True) -> EffectiveAuth:
         )
 
 
-def status() -> dict[str, Any]:
+def status(include_usage: bool = True) -> dict[str, Any]:
+    """Account status; include_usage=False skips the network usage fetch."""
     try:
         path = resolve_auth_write_path()
     except Exception as exc:
@@ -336,6 +337,8 @@ def status() -> dict[str, Any]:
             "last_refresh": auth.last_refresh,
         }
     )
+    if not include_usage:
+        return result
     try:
         result["usage"] = fetch_usage()
     except Exception as exc:

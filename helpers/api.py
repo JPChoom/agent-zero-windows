@@ -146,14 +146,16 @@ def requires_api_key(f):
     async def decorated(*args, **kwargs):
         from helpers.settings import get_settings
 
+        from helpers.access_control import constant_time_equals
+
         valid_api_key = get_settings()["mcp_server_token"]
 
         if api_key := request.headers.get("X-API-KEY"):
-            if api_key != valid_api_key:
+            if not valid_api_key or not constant_time_equals(api_key, valid_api_key):
                 return Response("Invalid API key", 401)
-        elif request.json and request.json.get("api_key"):
-            api_key = request.json.get("api_key")
-            if api_key != valid_api_key:
+        elif request.is_json and (request.get_json(silent=True) or {}).get("api_key"):
+            api_key = request.get_json(silent=True).get("api_key")
+            if not valid_api_key or not constant_time_equals(api_key, valid_api_key):
                 return Response("Invalid API key", 401)
         else:
             return Response("API key required", 401)
@@ -165,8 +167,13 @@ def requires_api_key(f):
 def requires_loopback(f):
     @wraps(f)
     async def decorated(*args, **kwargs):
-        if not is_loopback_address(str(request.remote_addr)):
-            return Response("Access denied.", 403, {})
+        # Loopback alone is not "local": a tunnel client (cloudflared etc.)
+        # also connects from localhost. A request carrying proxy/forwarding
+        # headers came from somewhere else - see helpers/access_control.py.
+        from helpers.access_control import is_local_request
+
+        if not is_local_request(request.remote_addr, request.headers):
+            return Response("Not Found", 404, {})
         return await f(*args, **kwargs)
 
     return decorated
@@ -177,10 +184,12 @@ def requires_auth(f):
     async def decorated(*args, **kwargs):
         from helpers import login
 
+        from helpers.access_control import constant_time_equals
+
         user_pass_hash = login.get_credentials_hash()
         if not user_pass_hash:
             return await f(*args, **kwargs)
-        if session.get("authentication") != user_pass_hash:
+        if not constant_time_equals(session.get("authentication"), user_pass_hash):
             return redirect(url_for("login_handler", next=get_current_request_next_url()))
         return await f(*args, **kwargs)
 
@@ -192,11 +201,13 @@ def csrf_protect(f):
     async def decorated(*args, **kwargs):
         from helpers import runtime
 
+        from helpers.access_control import constant_time_equals
+
         token = session.get("csrf_token")
         header = request.headers.get("X-CSRF-Token")
         cookie = request.cookies.get("csrf_token_" + runtime.get_runtime_id())
         sent = header or cookie
-        if not token or not sent or token != sent:
+        if not token or not sent or not constant_time_equals(token, sent):
             return Response("CSRF token missing or invalid", 403)
         return await f(*args, **kwargs)
 
@@ -245,7 +256,7 @@ def register_api_route(app: Flask, lock: ThreadLockType) -> None:
             if len(parts) == 3:
                 _, plugin_name, handler_name = parts
                 plugin_dir = plugins.find_plugin_dir(plugin_name)
-                if plugin_dir:
+                if plugin_dir and not plugins.is_review_pending(plugin_name):
                     plugin_file = Path(plugin_dir) / "api" / f"{handler_name}.py"
                     if plugin_file.is_file():
                         classes = load_classes_from_file(str(plugin_file), ApiHandler)
@@ -253,7 +264,9 @@ def register_api_route(app: Flask, lock: ThreadLockType) -> None:
                             handler_cls = classes[0]
 
         if handler_cls is None:
-            return Response(f"API endpoint not found: {path}", 404)
+            # Bare body: echoing the path or naming it an "API endpoint"
+            # helps fingerprint the app.
+            return Response("Not Found", 404)
 
         # Check method is allowed
         methods = handler_cls.get_methods()

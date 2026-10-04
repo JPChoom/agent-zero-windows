@@ -18,6 +18,8 @@
 - Keep the right-canvas rail and docked shell hidden while the welcome screen is active; non-action surface opens during welcome must route into floating/modal surfaces instead of docking beside the welcome screen.
 - Preserve docked canvas open state across same-tab reloads with session-scoped state, but do not treat it as durable cross-session UI state.
 - In mobile mode, keep the rail below blocking modal layers and compact it on very narrow screens instead of letting it cover modal content.
+- Surface panels may rely on `position: fixed` (e.g. the Desktop viewer's expanded mode); do not add `transform`, `filter` or `backdrop-filter` to `.right-canvas` or its shell.
+- Anchor the mobile rail in the upper third (like desktop) so it clears the chat scroll buttons above the composer.
 
 ## Work Guidance
 

@@ -99,6 +99,17 @@ class Settings(TypedDict):
     update_check_enabled: bool
     chat_inherit_project: bool
 
+    # Remote access control (helpers/access_control.py): requests that came
+    # through a tunnel/proxy are allowed only from these IPs/CIDRs.
+    tunnel_allowlist_enabled: bool
+    tunnel_ip_allowlist: str
+
+    # Permissions (plugins/_permissions): mode new chats start in and every
+    # chat returns to on restart; hours before an unlocked Bypass turns
+    # itself off (0 = only on restart/new chat).
+    permissions_default_mode: str
+    bypass_auto_off_hours: float
+
 
 class PartialSettings(Settings, total=False):
     pass
@@ -356,6 +367,12 @@ def set_settings(settings: Settings, apply: bool = True, browser_timezone: str |
     previous = _settings
     _settings = normalize_settings(settings)
     _write_settings_file(_settings)
+    try:
+        from helpers import access_control
+
+        access_control.invalidate_policy_cache()
+    except Exception:
+        pass
     if apply:
         _apply_settings(previous, browser_timezone)
     return reload_settings()
@@ -528,6 +545,10 @@ def get_default_settings() -> Settings:
         litellm_global_kwargs=get_default_value("litellm_global_kwargs", {}),
         update_check_enabled=get_default_value("update_check_enabled", True),
         chat_inherit_project=get_default_value("chat_inherit_project", True),
+        tunnel_allowlist_enabled=get_default_value("tunnel_allowlist_enabled", True),
+        tunnel_ip_allowlist=get_default_value("tunnel_ip_allowlist", ""),
+        permissions_default_mode=get_default_value("permissions_default_mode", "manual"),
+        bypass_auto_off_hours=get_default_value("bypass_auto_off_hours", 4.0),
     )
 
 

@@ -6,6 +6,11 @@ if _IS_WIN:
     import msvcrt
 
 _CLOSE_TIMEOUT_SECONDS = 2
+# signal.SIGKILL does not exist on Windows. Referencing it there raised
+# AttributeError, which _signal_process's own except blocks swallowed - so
+# kill() silently never killed anything and close()'s force-kill fallback
+# raised instead. 9 is SIGKILL's value on every POSIX platform.
+_SIGKILL = getattr(signal, "SIGKILL", 9)
 
 
 def _reconfigure_stream_errors(stream) -> None:
@@ -37,15 +42,23 @@ class TTYSession:
         self._pty_master_ref = None
 
     def __del__(self):
-        # Simple cleanup on object destruction
-        import nest_asyncio
-
-        nest_asyncio.apply()
-        if hasattr(self, "close"):
-            try:
-                asyncio.run(self.close())
-            except Exception:
-                pass
+        # Must stay synchronous and must never drive an event loop. __del__
+        # runs wherever garbage collection happens to fire - including in the
+        # middle of a task step on the running loop. This used to be
+        # asyncio.run(self.close()) under nest_asyncio, which spun a nested
+        # loop right there; when the interrupted task had just scheduled a
+        # timer (tty_session drain()'s 10ms sleep) and close() outlasted it,
+        # the nested loop ran that task's own wakeup while its context was
+        # still entered ("cannot enter context: ... is already entered"),
+        # the wakeup was dropped, and the agent froze permanently mid-turn
+        # with no model activity (observed live after a terminal reset).
+        # Killing the process is enough: the reader sees EOF and the pump
+        # task finishes on its own. Graceful shutdown belongs to callers
+        # that await close().
+        try:
+            self.kill()
+        except Exception:
+            pass
 
     # ── user-facing coroutines ────────────────────────────────────────
     async def start(self):
@@ -84,7 +97,7 @@ class TTYSession:
             try:
                 await asyncio.wait_for(self._proc.wait(), _CLOSE_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
-                self._signal_process(signal.SIGKILL)
+                self._signal_process(_SIGKILL)
                 try:
                     await asyncio.wait_for(self._proc.wait(), _CLOSE_TIMEOUT_SECONDS)
                 except Exception:
@@ -101,7 +114,7 @@ class TTYSession:
             return
         try:
             if _IS_WIN:
-                if sig == signal.SIGKILL:
+                if sig == _SIGKILL:
                     self._proc.kill()
                 else:
                     self._proc.terminate()
@@ -111,7 +124,7 @@ class TTYSession:
             pass
         except Exception:
             try:
-                if sig == signal.SIGKILL:
+                if sig == _SIGKILL:
                     self._proc.kill()
                 else:
                     self._proc.terminate()
@@ -201,7 +214,7 @@ class TTYSession:
 
         # Only attempt to kill if the process is still running
         if getattr(self._proc, "returncode", None) is None:
-            self._signal_process(signal.SIGKILL)
+            self._signal_process(_SIGKILL)
         self._release_pty_master()
 
     async def read(self, timeout=None):

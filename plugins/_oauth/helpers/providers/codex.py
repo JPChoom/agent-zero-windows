@@ -62,6 +62,12 @@ class CodexOAuthProvider:
             "v1_base_path": f'{cfg["proxy_base_path"]}/v1',
         }
 
+    def is_connected(self) -> bool:
+        """Local token check only - status() also fetches usage over the network."""
+        from plugins._oauth.helpers import codex
+
+        return bool(codex.status(include_usage=False).get("connected"))
+
     def start_login(self, input: dict[str, Any] | None = None, request: Any = None) -> LoginStartResult:
         del input, request
         from plugins._oauth.helpers import codex

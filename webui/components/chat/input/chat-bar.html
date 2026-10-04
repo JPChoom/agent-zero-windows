@@ -6,7 +6,8 @@
     </script>
 </head>
 <body>
-    <div id="input-section" x-data>
+    <div id="input-section" x-data
+        x-init="new ResizeObserver(([e]) => document.documentElement.style.setProperty('--composer-height', Math.ceil(e.target.getBoundingClientRect().height) + 'px')).observe($el)">
         <x-extension id="chat-input-start"></x-extension>
         <template x-if="$store.chatInput">
             <div style="width: 100%; display: contents;">
@@ -27,20 +28,47 @@
 
 
     <style>
-    /* Input section wrapper */
+    /* Input section wrapper: floats as an overlay over the bottom of the
+       chat scroll area (position: absolute, anchored to #right-panel,
+       which is position: relative - see index.css) instead of taking its
+       own row and pushing the chat up. Transparent background so only the
+       .input-row pill itself (its own glass styling) reads as a surface;
+       the ::before pseudo-element behind it is a progressive blur so chat
+       content is still legible as it scrolls underneath, fading to a
+       stronger blur toward the bottom edge instead of a hard cutoff. */
     #input-section {
-      position: relative;
-      background-color: var(--color-panel);
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: transparent;
       display: -webkit-flex;
       display: flex;
       flex-direction: column;
-      gap: var(--spacing-xs);
-      padding: var(--spacing-xxs) var(--spacing-md) var(--spacing-sm) 0.8rem;
+      gap: var(--spacing-xxs);
+      padding: var(--spacing-xxs) var(--spacing-md) var(--spacing-xs) 0.8rem;
       align-items: start;
       place-items: normal;
-      flex-shrink: 0;
       overflow: visible;
       z-index: 1001;
+    }
+
+    #input-section::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      /* Blur starts ~16px above the input pill itself, not far up into the
+         chat - only the last bit of scrolled content fades right before
+         it would touch the box. */
+      top: -16px;
+      bottom: 0;
+      z-index: -1;
+      pointer-events: none;
+      backdrop-filter: blur(48px);
+      -webkit-backdrop-filter: blur(48px);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.5) 50%, black 100%);
+      mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.5) 50%, black 100%);
     }
 
     @media (max-width: 768px) {

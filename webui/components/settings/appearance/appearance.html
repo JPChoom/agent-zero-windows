@@ -1,0 +1,276 @@
+<html>
+<head>
+  <title>Appearance</title>
+  <script type="module">
+    import { store } from "/components/sidebar/bottom/preferences/preferences-store.js";
+  </script>
+</head>
+<body>
+  <!-- Appearance preferences are per browser (localStorage), applied
+       instantly - no Save needed. Same store as the sidebar Preferences. -->
+  <div x-data>
+    <template x-if="$store.preferences">
+      <div id="section-appearance" class="section appearance-section">
+        <div class="section-title">Appearance</div>
+        <div class="section-description">
+          Changes apply instantly and are saved in this browser.
+        </div>
+
+        <div class="appearance-layout">
+          <div class="appearance-fields">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Theme</div>
+              </div>
+              <div class="field-control">
+                <div class="appearance-segmented" role="radiogroup" aria-label="Theme">
+                  <button type="button" role="radio"
+                          :aria-checked="$store.preferences.darkMode"
+                          :class="{ active: $store.preferences.darkMode }"
+                          @click="$store.preferences.darkMode = true">
+                    <span class="material-symbols-outlined">dark_mode</span>Dark
+                  </button>
+                  <button type="button" role="radio"
+                          :aria-checked="!$store.preferences.darkMode"
+                          :class="{ active: !$store.preferences.darkMode }"
+                          @click="$store.preferences.darkMode = false">
+                    <span class="material-symbols-outlined">light_mode</span>Light
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Accent</div>
+                <div class="field-description">Highlights, selection, the send button and the background glow. Status colors (success, warning, error) are unaffected.</div>
+              </div>
+              <div class="field-control">
+                <div class="appearance-swatches" role="radiogroup" aria-label="Accent color">
+                  <template x-for="opt in $store.preferences.accentOptions" :key="opt.value">
+                    <button type="button" role="radio" class="appearance-swatch"
+                            :aria-checked="$store.preferences.accentColor === opt.value"
+                            :class="{ active: $store.preferences.accentColor === opt.value }"
+                            :style="{ backgroundColor: opt.value }"
+                            :title="opt.name" :aria-label="opt.name"
+                            @click="$store.preferences.accentColor = opt.value"></button>
+                  </template>
+                  <button type="button" class="appearance-custom" title="Custom color"
+                          @click="$store.preferences.pickAccent($el)">
+                    <span class="material-symbols-outlined">colorize</span>
+                    <span x-text="$store.preferences.accentColor.toUpperCase()"></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Material</div>
+                <div class="field-description">How much glass the floating surfaces use - the message box, menus and dialogs. Solid is fastest; Windows "Transparency effects: off" forces Solid.</div>
+              </div>
+              <div class="field-control">
+                <div class="appearance-segmented" role="radiogroup" aria-label="Material">
+                  <template x-for="opt in $store.preferences.materialOptions" :key="opt.id">
+                    <button type="button" role="radio"
+                            :aria-checked="$store.preferences.materialStyle === opt.id"
+                            :class="{ active: $store.preferences.materialStyle === opt.id }"
+                            :title="opt.title"
+                            @click="$store.preferences.materialStyle = opt.id"
+                            x-text="opt.label"></button>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Wallpaper</div>
+                <div class="field-description">Use your own image, or a looping mp4/webm video (muted, paused while the tab is hidden), instead of the background glow. Stored in this browser only.</div>
+              </div>
+              <div class="field-control appearance-wallpaper">
+                <button type="button" class="btn btn-cancel" @click="$refs.appearanceWallpaper.click()">
+                  <span x-text="$store.preferences.hasWallpaper ? 'Change wallpaper' : 'Choose image or video'"></span>
+                </button>
+                <button type="button" class="btn btn-cancel" x-show="$store.preferences.hasWallpaper"
+                        @click="$store.preferences.clearWallpaper()">Remove</button>
+                <select x-show="$store.preferences.hasWallpaper" x-model="$store.preferences.wallpaperFit" aria-label="Wallpaper fit">
+                  <template x-for="opt in $store.preferences.wallpaperFitOptions" :key="opt.id">
+                    <option :value="opt.id" x-text="opt.label"></option>
+                  </template>
+                </select>
+                <input type="file" accept="image/*,video/mp4,video/webm" x-ref="appearanceWallpaper" hidden
+                       @change="$store.preferences.setWallpaperFile($event.target.files[0]); $event.target.value = ''">
+              </div>
+            </div>
+          </div>
+
+          <!-- Live preview: built from the same theme tokens as the app. -->
+          <div class="appearance-preview" aria-hidden="true">
+            <div class="ap-bubble">Summarize the open pull requests</div>
+            <div class="ap-reply">
+              <span class="ap-line"></span>
+              <span class="ap-line ap-short"></span>
+            </div>
+            <div class="ap-menu">
+              <span class="ap-menu-item">Allow once</span>
+              <span class="ap-menu-item ap-selected">Always allow</span>
+            </div>
+            <div class="ap-composer">
+              <span class="material-symbols-outlined">add</span>
+              <span class="ap-placeholder">Message Agent Zero</span>
+              <span class="ap-send"><span class="material-symbols-outlined">arrow_upward</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .appearance-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    .appearance-segmented {
+      display: inline-flex;
+      padding: 3px;
+      gap: 2px;
+      border: 1px solid var(--color-border);
+      border-radius: 11px;
+      background: color-mix(in srgb, var(--color-text) 3%, transparent);
+    }
+    .appearance-segmented button {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .35rem .8rem;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--color-text-muted);
+      font: inherit;
+      font-size: .85rem;
+      cursor: pointer;
+    }
+    .appearance-segmented button .material-symbols-outlined { font-size: 17px; }
+    .appearance-segmented button.active {
+      color: var(--color-text);
+      background: color-mix(in srgb, var(--accent, var(--color-highlight)) 18%, transparent);
+    }
+
+    .appearance-swatches {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .5rem;
+    }
+    .appearance-swatch {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform .12s ease;
+    }
+    .appearance-swatch:hover { transform: scale(1.1); }
+    .appearance-swatch.active { box-shadow: 0 0 0 2px var(--color-panel), 0 0 0 4px var(--color-text); }
+    .appearance-custom {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      padding: .2rem .6rem;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      color: var(--color-text-muted);
+      font-family: var(--font-family-code);
+      font-size: .75rem;
+      cursor: pointer;
+    }
+    .appearance-custom { background: transparent; }
+    .appearance-custom:hover { color: var(--color-text); }
+    .appearance-custom .material-symbols-outlined { font-size: 15px; }
+
+    .appearance-wallpaper { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+    .appearance-wallpaper select { width: auto; }
+
+    /* Preview */
+    .appearance-preview {
+      position: sticky;
+      top: .5rem;
+      display: flex;
+      flex-direction: column;
+      gap: .7rem;
+      min-height: 260px;
+      padding: 1rem;
+      border: 1px solid var(--color-border);
+      border-radius: 18px;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse 80% 55% at 85% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+        var(--color-background);
+    }
+    .ap-bubble {
+      align-self: flex-end;
+      max-width: 85%;
+      padding: .45rem .7rem;
+      border: 1px solid var(--line, var(--color-border));
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--color-text) 5%, transparent);
+      color: var(--color-text);
+      font-size: .75rem;
+    }
+    .ap-reply { display: flex; flex-direction: column; gap: .35rem; }
+    .ap-line { height: 7px; width: 90%; border-radius: 4px; background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+    .ap-short { width: 60%; }
+    .ap-menu,
+    .ap-composer {
+      border: 1px solid color-mix(in srgb, var(--accent) var(--mat-rim), var(--line-strong, var(--color-border)));
+      background: color-mix(in srgb, var(--s2, var(--color-panel)) var(--mat-alpha), transparent);
+      backdrop-filter: var(--mat-filter);
+      -webkit-backdrop-filter: var(--mat-filter);
+      box-shadow: var(--shadow-float, none), inset 0 1px 0 var(--mat-edge);
+    }
+    .ap-menu {
+      align-self: flex-start;
+      display: flex;
+      flex-direction: column;
+      padding: .3rem;
+      border-radius: 12px;
+      font-size: .72rem;
+    }
+    .ap-menu-item { padding: .25rem .5rem; border-radius: 7px; color: var(--color-text-muted); }
+    .ap-selected { color: var(--color-text); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+    .ap-composer {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .4rem .45rem .4rem .6rem;
+      border-radius: 16px;
+      color: var(--color-text-muted);
+    }
+    .ap-placeholder { flex: 1; font-size: .75rem; }
+    .ap-send {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      color: #fff;
+      background: var(--accent);
+    }
+    .ap-composer .material-symbols-outlined { font-size: 18px; }
+
+    @media (max-width: 900px) {
+      .appearance-layout { grid-template-columns: 1fr; }
+      .appearance-preview { position: relative; top: auto; }
+    }
+  </style>
+</body>
+</html>

@@ -27,6 +27,74 @@
                 <span class="slider"></span>
               </label>
             </li>
+            <li x-data class="backdrop-hue-setting">
+              <span class="backdrop-hue-label">Accent</span>
+              <div class="backdrop-hue-swatches">
+                <template x-for="opt in $store.preferences.accentOptions" :key="opt.value">
+                  <button type="button"
+                          class="backdrop-hue-swatch"
+                          :class="{ 'active': $store.preferences.accentColor === opt.value }"
+                          :style="{ backgroundColor: opt.value }"
+                          :title="opt.name"
+                          @click="$store.preferences.accentColor = opt.value"></button>
+                </template>
+                <button type="button" class="accent-custom" title="Custom accent color"
+                        @click="$store.preferences.pickAccent($el)">
+                  <span class="material-symbols-outlined">colorize</span>
+                </button>
+                <button type="button"
+                        class="backdrop-wallpaper-btn"
+                        :class="{ 'active': $store.preferences.hasWallpaper }"
+                        title="Use an image or looping video (mp4/webm) as wallpaper"
+                        @click="$refs.wallpaperInput.click()">
+                  <span class="material-symbols-outlined">image</span>
+                </button>
+                <button type="button"
+                        class="backdrop-wallpaper-clear"
+                        x-show="$store.preferences.hasWallpaper"
+                        title="Remove wallpaper"
+                        @click="$store.preferences.clearWallpaper()">
+                  <span class="material-symbols-outlined">close</span>
+                </button>
+                <input type="file"
+                       accept="image/*,video/mp4,video/webm"
+                       x-ref="wallpaperInput"
+                       style="display: none;"
+                       @change="$store.preferences.setWallpaperFile($event.target.files[0]); $event.target.value = ''">
+              </div>
+            </li>
+            <li x-data class="wallpaper-fit-setting" x-show="$store.preferences.hasWallpaper">
+              <span class="wallpaper-fit-label">Fit</span>
+              <div class="wallpaper-fit-buttons">
+                <template x-for="(opt, idx) in $store.preferences.wallpaperFitOptions" :key="opt.id">
+                  <span class="wallpaper-fit-btn-wrapper">
+                    <button type="button"
+                            class="wallpaper-fit-btn"
+                            :class="{ 'active': $store.preferences.wallpaperFit === opt.id }"
+                            :title="opt.title"
+                            @click="$store.preferences.wallpaperFit = opt.id"
+                            x-text="opt.label"></button>
+                    <span class="wallpaper-fit-sep" x-show="idx < $store.preferences.wallpaperFitOptions.length - 1">·</span>
+                  </span>
+                </template>
+              </div>
+            </li>
+            <li x-data class="material-setting">
+              <span class="width-label">Material</span>
+              <div class="width-buttons">
+                <template x-for="(opt, idx) in $store.preferences.materialOptions" :key="opt.id">
+                  <span class="width-btn-wrapper">
+                    <button type="button"
+                            class="width-btn"
+                            :class="{ 'active': $store.preferences.materialStyle === opt.id }"
+                            :title="opt.title"
+                            @click="$store.preferences.materialStyle = opt.id"
+                            x-text="opt.label"></button>
+                    <span class="width-sep" x-show="idx < $store.preferences.materialOptions.length - 1">·</span>
+                  </span>
+                </template>
+              </div>
+            </li>
             <li x-data class="chat-width-setting">
               <span class="width-label">Width</span>
               <div class="width-buttons">
@@ -118,6 +186,145 @@
       margin-left: auto;
     }
     .pref-section li { display: flex; align-items: center; }
+
+    /* Backdrop color swatches */
+    .backdrop-hue-setting {
+      gap: 0.25rem;
+    }
+    .backdrop-hue-setting .backdrop-hue-label {
+      flex: 1 0 auto;
+    }
+    /* The row must fit the ~208px sidebar content width even with the
+       wallpaper clear button shown: dots shrink (13px down to 9px) instead
+       of pushing the last button past the edge. The right padding keeps
+       the active ring (3.5px outside the button) from being clipped. */
+    .backdrop-hue-swatches {
+      display: flex;
+      align-items: center;
+      flex: 0 1 auto;
+      min-width: 0;
+      gap: 4px;
+      padding-right: 4px;
+    }
+    .backdrop-hue-swatch {
+      /* width, not flex-basis: the row's intrinsic size reads the width,
+         and an empty button's content width is 0. */
+      width: 13px;
+      flex: 0 1 auto;
+      min-width: 9px;
+      aspect-ratio: 1;
+      height: auto;
+      border-radius: 50%;
+      padding: 0;
+      border: none;
+      cursor: pointer;
+      box-shadow: none;
+      transition: box-shadow 0.15s ease;
+    }
+    .backdrop-hue-swatch.active {
+      box-shadow: 0 0 0 2px var(--color-panel), 0 0 0 3.5px var(--color-text);
+    }
+
+    /* Custom accent: an icon the size of a dot that opens $store.colorPicker */
+    .accent-custom {
+      position: relative;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      opacity: 0.75;
+      overflow: hidden;
+    }
+    .accent-custom:hover { opacity: 1; }
+    .accent-custom .material-symbols-outlined { font-size: 13px; }
+
+    .material-setting { gap: 0.25rem; }
+    .material-setting .width-label { flex: 1; }
+
+    /* Wallpaper upload/clear buttons, sized to match the preset dots */
+    .backdrop-wallpaper-btn,
+    .backdrop-wallpaper-clear {
+      flex: 0 0 auto;
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--color-text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0.75;
+      transition: opacity 0.15s ease, box-shadow 0.15s ease;
+    }
+    .backdrop-wallpaper-btn .material-symbols-outlined,
+    .backdrop-wallpaper-clear .material-symbols-outlined {
+      font-size: 13px;
+    }
+    .backdrop-wallpaper-btn:hover,
+    .backdrop-wallpaper-clear:hover {
+      opacity: 1;
+    }
+    .backdrop-wallpaper-btn.active {
+      color: var(--color-text);
+      box-shadow: 0 0 0 2px var(--color-panel), 0 0 0 3.5px var(--color-text);
+      opacity: 1;
+    }
+    .backdrop-wallpaper-clear {
+      color: var(--color-accent);
+    }
+
+    /* Wallpaper fit-mode button bar (same pattern as Width/Detail below) */
+    .wallpaper-fit-setting {
+      gap: 0.25rem;
+    }
+    .wallpaper-fit-setting .wallpaper-fit-label {
+      flex: 1;
+    }
+    .wallpaper-fit-buttons {
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+    .wallpaper-fit-btn-wrapper {
+      display: flex;
+      align-items: center;
+    }
+    .wallpaper-fit-btn {
+      background: none;
+      border: none;
+      color: var(--color-primary);
+      font-size: 0.68rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0.15rem 0.1rem;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: opacity 0.15s ease, color 0.15s ease;
+    }
+    .wallpaper-fit-btn:hover {
+      opacity: 0.85;
+    }
+    .wallpaper-fit-btn.active {
+      opacity: 1;
+      color: var(--color-text);
+    }
+    .wallpaper-fit-sep {
+      color: var(--color-text-secondary, #666);
+      font-size: 0.6rem;
+      margin: 0 0.1rem;
+      opacity: 0.5;
+    }
 
     /* Chat width button bar */
     .chat-width-setting {

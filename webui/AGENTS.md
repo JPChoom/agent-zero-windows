@@ -10,7 +10,7 @@
 - `index.html`, `index.js`, and `index.css` define the main UI shell.
 - `components/` owns self-contained Alpine components and component stores.
 - `js/` owns shared frontend modules, API clients, WebSocket clients, stores, extension loaders, and utility code.
-- `css/` owns shared stylesheet modules.
+- `css/` owns shared stylesheet modules; `css/theme.css` owns the visual theme, and `js/theme-boot.js` applies the saved accent/material before first paint.
 - `public/` owns first-party static image/icon assets.
 - `vendor/` owns vendored third-party browser libraries.
 
@@ -25,6 +25,7 @@
 - Component HTML loaded by the shared loader may include `<title>`, module scripts, body content, and scoped styles; modal content uses the same loader path.
 - Do not bypass WebSocket origin/auth/CSRF assumptions from frontend code.
 - Avoid editing vendored files unless intentionally updating the vendor asset.
+- `login.html` / `login.css` are deliberately generic ("Sign in", system fonts, no branding, no external requests) and, with `public/signin-favicon.svg`, are the only static files served before login (`helpers/ui_server.py PUBLIC_STATIC_PATHS`). Do not add app names, logos, or framework assets to them; anything else the login page needs must be added to that allowlist deliberately.
 - Rubik (`--font-family-main`) is the default WebUI text and control font; use the code/mono font tokens only for code, logs, paths, and fixed-width data.
 - Hover, focus, and active border treatments should follow existing neutral border/background patterns; avoid hard-coded blue border highlights unless matching an established specialized surface.
 

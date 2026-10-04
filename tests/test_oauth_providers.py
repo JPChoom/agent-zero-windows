@@ -1290,3 +1290,30 @@ def test_xai_proxy_does_not_send_bearer_token_to_malicious_base_url(monkeypatch)
         sys.modules.pop(module_name, None)
         if previous_routes_module is not None:
             sys.modules[module_name] = previous_routes_module
+
+
+def test_dummy_key_connection_check_skips_codex_usage_fetch(monkeypatch):
+    # get_api_key runs on every settings load; its connection check must not
+    # trigger Codex status()'s network usage fetch.
+    import importlib.util
+
+    from plugins._oauth.helpers import codex
+    from plugins._oauth.helpers.providers.base import CODEX_PROVIDER_ID
+
+    seen = []
+
+    def fake_status(include_usage=True):
+        seen.append(include_usage)
+        return {"connected": True}
+
+    monkeypatch.setattr(codex, "status", fake_status)
+    ext_path = (
+        Path(__file__).resolve().parents[1]
+        / "plugins/_oauth/extensions/python/_functions/models/get_api_key/end/_20_oauth_account_dummy_key.py"
+    )
+    spec = importlib.util.spec_from_file_location("_oauth_dummy_key_probe", ext_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.oauth_provider_is_connected(CODEX_PROVIDER_ID) is True
+    assert seen == [False]

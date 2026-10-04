@@ -16,6 +16,8 @@
 - Keep history operations scoped to Agent Zero-owned workdir/project workspaces.
 - Revert and travel operations must avoid unintended writes outside managed workspace paths.
 - Preserve enough metadata for clear preview and diff inspection before destructive actions.
+- Every `TimeTravelService` method that touches a shadow repo is serialized by a per-repo `RLock` (`@_serialized`); debounced snapshot timers and panel API calls must not run git concurrently on the same repo. New repo-touching public methods need the decorator.
+- Under that lock, leftover `index.lock`/`config.lock`/`HEAD.lock` files can only come from a killed git run (`GIT_TIMEOUT_SECONDS`) and are removed by `ensure_repo()`. Identity config is written once per repo per process.
 
 ## Work Guidance
 

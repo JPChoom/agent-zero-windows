@@ -59,3 +59,20 @@ async def test_successful_rename_saves_clean_name_and_marks_state_dirty(monkeypa
     assert agent.context.name == "Launch Readiness Notes"
     assert saved_names == ["Launch Readiness Notes"]
     assert dirty_reasons == ["monologue_start.RenameChat.change_name"]
+
+
+async def test_already_named_chat_is_not_renamed_again(monkeypatch):
+    """Regression: this used to fire on every monologue_start and clobber
+    a name the user had just set manually via api/chat_rename.py."""
+    saved_names: list[str] = []
+
+    monkeypatch.setattr(model_config, "get_utility_model_config", lambda agent: {"ctx_length": 1000})
+    monkeypatch.setattr(rename_chat.persist_chat, "save_tmp_chat", lambda context: saved_names.append(context.name))
+
+    agent = _Agent(response="Some New Generated Name")
+    agent.context.name = "My Manually Chosen Name"
+
+    await rename_chat.RenameChat(agent=agent).change_name()
+
+    assert agent.context.name == "My Manually Chosen Name"
+    assert saved_names == []

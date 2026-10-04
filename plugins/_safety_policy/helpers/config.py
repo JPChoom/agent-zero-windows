@@ -36,6 +36,31 @@ def get_config(agent) -> dict:
     }
 
 
+def add_allowed_host(host: str) -> str:
+    """Persist `host` to the global network_destination_allowlist and turn
+    the allowlist on - backs the "Always allow <host>" approval button.
+    Written at global scope (empty project/profile), same as
+    _permissions' "always allow": a decision made once should not apply
+    only to whichever project happened to be open. Returns the stored
+    host; raises ValueError for an empty/malformed one."""
+    normalized = str(host or "").strip().lower().rstrip(".")
+    if not normalized or any(c.isspace() or c in "/:@*" for c in normalized):
+        raise ValueError(f"not a plain host name: {host!r}")
+
+    current = plugins.get_plugin_config("_safety_policy", project_name="", agent_profile="") or {}
+    allowlist = _parse_patterns(
+        current.get("network_destination_allowlist", list(_DEFAULT_NETWORK_ALLOWLIST))
+    )
+    if normalized not in (h.lower() for h in allowlist):
+        allowlist.append(normalized)
+
+    plugins.save_plugin_config(
+        "_safety_policy", "", "",
+        {**current, "network_destination_allowlist": allowlist, "enable_network_destination_allowlist": True},
+    )
+    return normalized
+
+
 def _as_bool(value) -> bool:
     if isinstance(value, bool):
         return value

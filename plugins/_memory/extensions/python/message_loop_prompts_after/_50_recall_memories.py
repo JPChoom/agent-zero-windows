@@ -11,6 +11,18 @@ from plugins._memory.tools.memory_load import DEFAULT_THRESHOLD as DEFAULT_MEMOR
 DATA_NAME_TASK = "_recall_memories_task"
 DATA_NAME_ITER = "_recall_memories_iter"
 SEARCH_TIMEOUT = 30
+# Per-entry cap for recalled text injected into every turn's prompt. One
+# long solution write-up (full scripts, anchor dumps...) used to take
+# thousands of tokens of a small local model's context; the agent can still
+# memory_load the full entry when it actually needs it.
+RECALL_ENTRY_MAX_CHARS = 1500
+
+
+def _cap(text: str) -> str:
+    text = str(text or "")
+    if len(text) <= RECALL_ENTRY_MAX_CHARS:
+        return text
+    return text[:RECALL_ENTRY_MAX_CHARS].rstrip() + " ... [truncated - memory_load for the full entry]"
 
 
 class RecallMemories(Extension):
@@ -217,8 +229,8 @@ class RecallMemories(Extension):
             heading=f"{len(memories)} memories and {len(solutions)} relevant solutions found",
         )
 
-        memories_txt = "\n\n".join([mem.page_content for mem in memories]) if memories else ""
-        solutions_txt = "\n\n".join([sol.page_content for sol in solutions]) if solutions else ""
+        memories_txt = "\n\n".join([_cap(mem.page_content) for mem in memories]) if memories else ""
+        solutions_txt = "\n\n".join([_cap(sol.page_content) for sol in solutions]) if solutions else ""
 
         # log the full results
         if memories_txt:

@@ -114,6 +114,124 @@ const defaultEditingTask = (overrides = {}) => ({
   ...overrides,
 });
 
+// -----------------------------------------------------------------------------
+// Friendly recurrence picker: translates a handful of common patterns
+// (every N minutes/hours, daily/weekdays/weekends/weekly at a time) to and
+// from the underlying cron fields, so most users never see raw cron syntax.
+// "custom" is the escape hatch that exposes the five raw fields as-is.
+// -----------------------------------------------------------------------------
+
+const RECURRENCE_PRESETS = [
+  { id: "minutes", label: "Every N minutes" },
+  { id: "hours", label: "Every N hours" },
+  { id: "daily", label: "Daily" },
+  { id: "weekdays", label: "Weekdays (Mon-Fri)" },
+  { id: "weekends", label: "Weekends (Sat-Sun)" },
+  { id: "weekly", label: "Weekly on specific days" },
+  { id: "custom", label: "Custom (cron)" },
+];
+
+const WEEKDAY_OPTIONS = [
+  { id: 1, label: "Mon" },
+  { id: 2, label: "Tue" },
+  { id: 3, label: "Wed" },
+  { id: 4, label: "Thu" },
+  { id: 5, label: "Fri" },
+  { id: 6, label: "Sat" },
+  { id: 0, label: "Sun" },
+];
+
+const defaultRecurrenceUI = () => ({
+  preset: "daily",
+  intervalValue: 5,
+  hour: 9,
+  minute: 0,
+  weekdays: [1, 2, 3, 4, 5],
+});
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+// Reads the raw cron fields and guesses which friendly preset (if any)
+// they match, so editing an existing task shows the right picker instead
+// of always falling back to "Custom".
+function detectRecurrencePreset(schedule) {
+  const ui = defaultRecurrenceUI();
+  const { minute, hour, day, month, weekday } = schedule || {};
+  if (day !== "*" || month !== "*") {
+    ui.preset = "custom";
+    return ui;
+  }
+
+  const minuteInterval = /^\*\/(\d+)$/.exec(minute || "");
+  const hourInterval = /^\*\/(\d+)$/.exec(hour || "");
+
+  if (minuteInterval && hour === "*" && weekday === "*") {
+    ui.preset = "minutes";
+    ui.intervalValue = Number(minuteInterval[1]);
+    return ui;
+  }
+  if (hourInterval && minute !== "*" && !isNaN(Number(minute)) && weekday === "*") {
+    ui.preset = "hours";
+    ui.intervalValue = Number(hourInterval[1]);
+    ui.minute = Number(minute);
+    return ui;
+  }
+
+  const minuteNum = Number(minute);
+  const hourNum = Number(hour);
+  const isFixedTime = !isNaN(minuteNum) && !isNaN(hourNum) && minute !== "*" && hour !== "*";
+  if (isFixedTime) {
+    ui.hour = hourNum;
+    ui.minute = minuteNum;
+    if (weekday === "*") {
+      ui.preset = "daily";
+      return ui;
+    }
+    if (weekday === "1-5") {
+      ui.preset = "weekdays";
+      return ui;
+    }
+    if (weekday === "0,6" || weekday === "6,0") {
+      ui.preset = "weekends";
+      return ui;
+    }
+    const days = weekday.split(",").map((d) => Number(d)).filter((d) => !isNaN(d));
+    if (days.length > 0 && days.join(",") === weekday) {
+      ui.preset = "weekly";
+      ui.weekdays = days;
+      return ui;
+    }
+  }
+
+  ui.preset = "custom";
+  return ui;
+}
+
+// Writes the friendly picker's state back into the raw cron fields.
+function recurrenceUIToSchedule(ui) {
+  const time = `${ui.minute}`;
+  switch (ui.preset) {
+    case "minutes":
+      return { minute: `*/${Math.max(1, Number(ui.intervalValue) || 1)}`, hour: "*", day: "*", month: "*", weekday: "*" };
+    case "hours":
+      return { minute: time, hour: `*/${Math.max(1, Number(ui.intervalValue) || 1)}`, day: "*", month: "*", weekday: "*" };
+    case "daily":
+      return { minute: time, hour: `${ui.hour}`, day: "*", month: "*", weekday: "*" };
+    case "weekdays":
+      return { minute: time, hour: `${ui.hour}`, day: "*", month: "*", weekday: "1-5" };
+    case "weekends":
+      return { minute: time, hour: `${ui.hour}`, day: "*", month: "*", weekday: "0,6" };
+    case "weekly": {
+      const days = [...ui.weekdays].sort((a, b) => a - b);
+      return { minute: time, hour: `${ui.hour}`, day: "*", month: "*", weekday: days.length ? days.join(",") : "*" };
+    }
+    default:
+      return null; // "custom": leave raw fields as the user has them
+  }
+}
+
 const readPersistedViewMode = () => {
   if (typeof window === "undefined") return "list";
   return window.localStorage?.getItem(VIEW_MODE_STORAGE_KEY) || "list";
@@ -344,6 +462,18 @@ const schedulerApi = {
       "Failed to delete task"
     );
   },
+
+  async getSettings() {
+    return callSchedulerEndpoint("/scheduler_settings_get", {}, "Failed to load scheduler settings");
+  },
+
+  async setCatchUpMissedRuns(value) {
+    return callSchedulerEndpoint(
+      "/scheduler_settings_set",
+      { catch_up_missed_runs: value },
+      "Failed to save scheduler settings"
+    );
+  },
 };
 
 const notificationChannels = {
@@ -471,6 +601,10 @@ const schedulerStoreModel = {
   viewMode: readPersistedViewMode(),
   selectedTaskForDetail: null,
 
+  // Scheduler-wide settings ----------------------------------------------------
+  catchUpMissedRuns: true,
+  settingsLoaded: false,
+
   // Pagination ---------------------------------------------------------------
   currentPage: 1,
   pageSize: 10,
@@ -481,6 +615,9 @@ const schedulerStoreModel = {
   editingTask: defaultEditingTask(),
   selectedProjectSlug: "",
   projectOptions: [],
+  recurrenceUI: defaultRecurrenceUI(),
+  recurrencePresetOptions: RECURRENCE_PRESETS,
+  weekdayOptions: WEEKDAY_OPTIONS,
 
   // Polling ------------------------------------------------------------------
   pollingInterval: null,
@@ -560,6 +697,27 @@ const schedulerStoreModel = {
   onTabActivated() {
     this.pollingActive = true;
     this.startPolling();
+    if (!this.settingsLoaded) {
+      this.loadSettings();
+    }
+  },
+
+  async loadSettings() {
+    const result = await schedulerApi.getSettings();
+    if (result.ok) {
+      this.catchUpMissedRuns = !!result.data?.settings?.catch_up_missed_runs;
+      this.settingsLoaded = true;
+    }
+  },
+
+  async toggleCatchUpMissedRuns() {
+    const next = !this.catchUpMissedRuns;
+    this.catchUpMissedRuns = next; // optimistic
+    const result = await schedulerApi.setCatchUpMissedRuns(next);
+    if (!result.ok) {
+      this.catchUpMissedRuns = !next; // roll back
+      globalThis.toastFrontendError?.(result.error || "Could not save setting", "Scheduler");
+    }
   },
 
   onTabDeactivated() {
@@ -759,12 +917,44 @@ const schedulerStoreModel = {
   resetEditingTask() {
     this.editingTask = defaultEditingTask();
     this.selectedProjectSlug = "";
+    this.recurrenceUI = defaultRecurrenceUI();
+    this.applyRecurrenceUI();
   },
 
   setEditingTask(task) {
     const normalized = composeEditingTask(task);
     this.editingTask = normalized;
     this.selectedProjectSlug = normalized.project?.name || "";
+    this.recurrenceUI = detectRecurrencePreset(normalized.schedule);
+  },
+
+  // Recurrence picker ----------------------------------------------------
+  setRecurrencePreset(presetId) {
+    this.recurrenceUI.preset = presetId;
+    this.applyRecurrenceUI();
+  },
+
+  toggleRecurrenceWeekday(dayId) {
+    const idx = this.recurrenceUI.weekdays.indexOf(dayId);
+    if (idx === -1) {
+      this.recurrenceUI.weekdays.push(dayId);
+    } else if (this.recurrenceUI.weekdays.length > 1) {
+      // keep at least one day selected, otherwise the cron field would
+      // resolve to "*" (every day) which silently contradicts "Weekly"
+      this.recurrenceUI.weekdays.splice(idx, 1);
+    }
+    this.applyRecurrenceUI();
+  },
+
+  applyRecurrenceUI() {
+    const fields = recurrenceUIToSchedule(this.recurrenceUI);
+    if (!fields) return; // "custom": raw fields are the source of truth
+    Object.assign(this.editingTask.schedule, fields);
+  },
+
+  cronPreview() {
+    const s = this.editingTask.schedule;
+    return `${s.minute} ${s.hour} ${s.day} ${s.month} ${s.weekday}`;
   },
 
   async refreshProjectOptions() {

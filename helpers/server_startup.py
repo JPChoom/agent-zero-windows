@@ -331,6 +331,10 @@ def _run_server_attempt(
                 log_level=log_level,
                 access_log=access_log,
                 ws=ws,
+                # Don't advertise the server stack to unauthenticated
+                # visitors (see helpers/access_control.py, Phase 2 of the
+                # 2026-10-01 security plan).
+                server_header=False,
             )
 
         with startup_monitor.stage("uvicorn.server.create"):

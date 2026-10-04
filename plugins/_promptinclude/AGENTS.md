@@ -14,7 +14,8 @@
 ## Local Contracts
 
 - Respect gitignore-style filtering, per-file budgets, and total token budgets.
-- Include only intended promptinclude files from configured workspaces.
+- Includes become trusted system-prompt text, so they are read only from `usr/promptincludes/` and the active project's root folder, top level only (`SCAN_DEPTH = 1`). Never scan the workdir recursively: cloned repos, archives and downloads live there.
+- Notify the user when an include appears or changes after startup.
 - Keep scan result status fields accurate for skipped, cropped, and included files.
 
 ## Work Guidance

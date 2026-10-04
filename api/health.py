@@ -1,5 +1,6 @@
 from helpers.api import ApiHandler, Request, Response
 from helpers import errors, git
+from helpers.access_control import is_local_request
 
 class HealthCheck(ApiHandler):
 
@@ -16,6 +17,12 @@ class HealthCheck(ApiHandler):
         return ["GET", "POST"]
 
     async def process(self, input: dict, request: Request) -> dict | Response:
+        # Unauthenticated by design (startup probe, launcher, self-update
+        # poller all hit it). Version details only go to callers on this
+        # machine; anything remote/proxied just learns it's up.
+        if not is_local_request(request.remote_addr, request.headers):
+            return {"ok": True}
+
         gitinfo = None
         error = None
         try:
@@ -23,4 +30,4 @@ class HealthCheck(ApiHandler):
         except Exception as e:
             error = errors.error_text(e)
 
-        return {"gitinfo": gitinfo, "error": error}
+        return {"ok": True, "gitinfo": gitinfo, "error": error}

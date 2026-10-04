@@ -1,148 +1,32 @@
-﻿### code_execution_tool
-run terminal, python, or nodejs commands
+### code_execution_tool
+run terminal (PowerShell), python, or nodejs code in persistent sessions
 args:
 - `runtime`: `terminal`, `python`, `nodejs`, `input`, or `output`
-- `code`: command or script code
-- `session`: terminal session id; default `0`
-- `reset`: kill a session before running; `true` or `false`
-- `cwd`: optional, only when starting a new session; folder to run in
+- `code`; `session` (default 0); `reset` (true kills the session first); `cwd` (new/reset session only)
 rules:
-- place the command or script in `code`
-- use `runtime=output` to poll running work
-- use `runtime=input` to answer an interactive prompt in a running session; put just the answer in `code` (e.g. `Y`), it is typed at the prompt rather than run as a command
-- on Windows `curl` is an alias for `Invoke-WebRequest`, which asks to confirm before parsing a page; pass `-UseBasicParsing`, or use `curl.exe`, to avoid the prompt entirely
-- if a session is stuck, call again with the same `session` and `reset=true`
-- to work on a project outside the default working directory (e.g. C:\Projects\MyApp), set `cwd` to its absolute path when starting the session (`session` not already running); it is rejected unless it is inside the default working directory or an admin-approved folder in the plugin's "Allowed Project Folders" setting; `cwd` only takes effect when the session is created or reset, not on later calls with the same running session
-- check dependencies before running code
-- replace placeholder or demo data with real values before execution
-- use `print()` or `console.log()` when you need explicit output
-- do not interleave other tools while waiting
-- ignore framework `[SYSTEM: ...]` info in output
-- probe cwd files tools and dependencies before expensive commands
-- split long work into small commands: inspect, prepare, run, verify
-- for builds installs servers training and long tests, redirect logs and poll with `runtime=output`
-- after timeout or pause, inspect logs and processes before deciding wait reset or stop
-- never claim success from timeout partial output or a still-running command
-- stop stale background processes you started before final response
-- when exact output matters, verify file path line count bytes and content with commands
+- `runtime=output` polls a running command; `runtime=input` types an answer (e.g. `Y`) at an interactive prompt
+- never put multi-line code in a terminal command: use `runtime=python`, or write a .py file and run it
+- on Windows `curl` is Invoke-WebRequest; use `curl.exe` or `-UseBasicParsing` to avoid its prompt
+- stuck session: same `session` with `reset=true`
+- `cwd` must be inside the working directory or an admin-approved folder ("Allowed Project Folders")
+- probe files, tools and dependencies before expensive commands; replace placeholder data first
+- long builds/installs/servers/tests: redirect logs and poll with `runtime=output`; after a timeout inspect logs and processes before deciding to wait, reset or stop
+- never claim success from a timeout, partial output, or a still-running command; verify exact outputs (path, bytes, content) with commands
+- do not interleave other tools while waiting; ignore `[SYSTEM: ...]` notes in output; stop background processes you started before the final response
 examples:
-1 terminal command
 ~~~json
-{
-    "thoughts": [
-        "Need to do...",
-        "Need to install...",
-    ],
-    "headline": "Installing zip package via terminal",
-    "tool_name": "code_execution_tool",
-    "tool_args": {
-        "runtime": "terminal",
-        "session": 0,
-        "reset": false,
-        "code": "Get-Command Compress-Archive; Get-Command Expand-Archive",
-    }
-}
+{"thoughts": ["Check the archive cmdlets exist."], "headline": "Checking cmdlets", "tool_name": "code_execution_tool",
+ "tool_args": {"runtime": "terminal", "session": 0, "reset": false, "code": "Get-Command Compress-Archive"}}
 ~~~
-
-1b terminal command in an external project folder (new/reset session only)
 ~~~json
-{
-    "thoughts": [
-        "The user asked me to build their MyApp project.",
-        "That folder isn't the default working directory, so I need to start this session with cwd set to it.",
-    ],
-    "headline": "Building MyApp via dotnet build",
-    "tool_name": "code_execution_tool",
-    "tool_args": {
-        "runtime": "terminal",
-        "session": 1,
-        "reset": true,
-        "cwd": "C:\\Projects\\MyApp",
-        "code": "dotnet build",
-    }
-}
+{"thoughts": ["Project is outside the workdir; start session 1 there."], "headline": "Building MyApp", "tool_name": "code_execution_tool",
+ "tool_args": {"runtime": "terminal", "session": 1, "reset": true, "cwd": "C:\\Projects\\MyApp", "code": "dotnet build"}}
 ~~~
-
-2 execute python code
-
 ~~~json
-{
-    "thoughts": [
-        "Need to do...",
-        "I can use...",
-        "Then I can...",
-    ],
-    "headline": "Executing Python code to check current directory",
-    "tool_name": "code_execution_tool",
-    "tool_args": {
-        "runtime": "python",
-        "session": 0,
-        "reset": false,
-        "code": "import os\nprint(os.getcwd())",
-    }
-}
+{"thoughts": ["Short Python check."], "headline": "Running Python", "tool_name": "code_execution_tool",
+ "tool_args": {"runtime": "python", "session": 0, "reset": false, "code": "import os\nprint(os.getcwd())"}}
 ~~~
-
-3 execute nodejs code
-
 ~~~json
-{
-    "thoughts": [
-        "Need to do...",
-        "I can use...",
-        "Then I can...",
-    ],
-    "headline": "Executing Javascript code to check current directory",
-    "tool_name": "code_execution_tool",
-    "tool_args": {
-        "runtime": "nodejs",
-        "session": 0,
-        "reset": false,
-        "code": "console.log(process.cwd());",
-    }
-}
+{"thoughts": ["Still running; poll."], "headline": "Waiting for output", "tool_name": "code_execution_tool",
+ "tool_args": {"runtime": "output", "session": 0}}
 ~~~
-
-4 wait for output with long-running scripts
-~~~json
-{
-    "thoughts": [
-        "Waiting for program to finish...",
-    ],
-    "headline": "Waiting for long-running program to complete",
-    "tool_name": "code_execution_tool",
-    "tool_args": {
-        "runtime": "output",
-        "session": 0,
-    }
-}
-~~~
-
-2 python snippet
-~~~json
-{
-  "thoughts": ["A short Python check is faster than using the shell."],
-  "headline": "Running Python snippet",
-  "tool_name": "code_execution_tool",
-  "tool_args": {
-    "runtime": "python",
-    "session": 0,
-    "reset": false,
-    "code": "import os\nprint(os.getcwd())"
-  }
-}
-~~~
-
-3 wait for running output
-~~~json
-{
-  "thoughts": ["The previous command is still running, so I should poll for output."],
-  "headline": "Waiting for command output",
-  "tool_name": "code_execution_tool",
-  "tool_args": {
-    "runtime": "output",
-    "session": 0
-  }
-}
-~~~
-

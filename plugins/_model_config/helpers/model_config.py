@@ -540,6 +540,25 @@ def get_embedding_model_config(agent=None) -> dict:
     return model_cfg
 
 
+def get_vision_model_config(agent=None) -> dict:
+    """Get the optional vision sidecar model config.
+
+    Unlike chat/utility, this slot has no per-chat override or preset
+    resolution - it's a single, simple fallback used only when the active
+    chat model itself lacks vision. Returns {} when unconfigured (blank
+    name), which callers must treat as "no sidecar available".
+    """
+    cfg = get_config(agent)
+    return dict(cfg.get("vision_model") or {})
+
+
+def is_vision_model_configured(agent=None) -> bool:
+    model_cfg = get_vision_model_config(agent)
+    return bool(str(model_cfg.get("provider") or "").strip()) and bool(
+        str(model_cfg.get("name") or "").strip()
+    )
+
+
 def is_chat_override_allowed(agent=None) -> bool:
     """Check if per-chat model override is enabled."""
     cfg = get_config(agent)
@@ -615,6 +634,20 @@ def build_chat_model(agent=None):
 def build_utility_model(agent=None):
     """Build and return a LiteLLMChatWrapper for utility tasks."""
     cfg = get_utility_model_config(agent)
+    mc = build_model_config(cfg, models.ModelType.CHAT)
+    return models.get_chat_model(
+        mc.provider, mc.name, model_config=mc, **mc.build_kwargs()
+    )
+
+
+def build_vision_model(agent=None):
+    """Build and return a LiteLLMChatWrapper for the vision sidecar.
+
+    Caller must check is_vision_model_configured() first - this builds
+    whatever is in the vision_model slot even if it's blank, same as the
+    other build_* helpers.
+    """
+    cfg = get_vision_model_config(agent)
     mc = build_model_config(cfg, models.ModelType.CHAT)
     return models.get_chat_model(
         mc.provider, mc.name, model_config=mc, **mc.build_kwargs()

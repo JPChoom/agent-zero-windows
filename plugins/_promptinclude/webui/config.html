@@ -9,7 +9,9 @@
             <div>
                 <div class="section-title">Prompt Include</div>
                 <div class="section-description">
-                    Include matching files from workdir in agent system prompt.
+                    Include matching files in the agent system prompt - only from <code>usr/promptincludes/</code>
+                    and the active project's root folder (top level only). Files elsewhere in the workdir,
+                    such as inside cloned repositories or downloads, are never included.
                 </div>
 
                 <div class="field">
@@ -22,19 +24,6 @@
                     <div class="field-control">
                         <input type="text"
                             x-model="config.name_pattern" />
-                    </div>
-                </div>
-
-                <div class="field">
-                    <div class="field-label">
-                        <div class="field-title">Max depth</div>
-                        <div class="field-description">
-                            Maximum directory depth to search.
-                        </div>
-                    </div>
-                    <div class="field-control">
-                        <input type="number" min="1" max="50"
-                            x-model.number="config.max_depth" />
                     </div>
                 </div>
 

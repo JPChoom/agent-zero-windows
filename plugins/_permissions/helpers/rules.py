@@ -1,11 +1,12 @@
 """Permission rules and the decision engine, modelled on Claude Code.
 
-Five modes, matching Claude Code's own selector:
+Five modes, matching Claude Code's own selector. Listed here safest first -
+MODES below (and so the selector's display order) follows this same order:
 
-    auto          the harness decides; permissive but still rule-governed
+    plan          refuse state changes outright, so a plan comes first
     manual        ask before anything that changes state
     accept_edits  file edits proceed; anything that executes still asks
-    plan          refuse state changes outright, so a plan comes first
+    auto          the harness decides; permissive but still rule-governed
     bypass        allow everything the safety floor still permits
 
 Rules are written as ``Tool`` or ``Tool(pattern)``, e.g.::
@@ -36,7 +37,7 @@ from typing import Literal
 Decision = Literal["allow", "ask", "deny"]
 Mode = Literal["auto", "manual", "accept_edits", "plan", "bypass"]
 
-MODES: tuple[Mode, ...] = ("auto", "manual", "accept_edits", "plan", "bypass")
+MODES: tuple[Mode, ...] = ("plan", "manual", "accept_edits", "auto", "bypass")
 DEFAULT_MODE: Mode = "auto"
 
 # How a tool's effect is classified. Modes are expressed in terms of these

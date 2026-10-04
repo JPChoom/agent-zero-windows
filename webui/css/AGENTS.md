@@ -12,6 +12,7 @@
 - `modals.css` owns the shared stacked modal shell, backdrop, scroll area, footer slot, modal button classes, floating/no-backdrop modal behavior, and shared modal section primitives.
 - `surfaces.css` owns surface modal switchers, action rails, draggable header affordances, focus-button state, and right-canvas surface primitives.
 - `index.css` defines global theme variables such as `--color-*`, `--spacing-*`, `--font-size-*`, and `--transition-speed`.
+- `theme.css` owns the visual theme (loaded last among core sheets; replaces the unlinked `glassmorphism.css`): palette tokens (`--s0..--s3` surfaces, `--t0..--t2` text, `--line`, `--accent`), the material tokens (`--mat-alpha`, `--mat-filter`, `--mat-edge`, `--mat-rim`, `--mat-lens`) selected by `<html data-material="solid|glass|enhanced">`, and their mapping onto the app-wide `--color-*` variables.
 
 ## Local Contracts
 
@@ -28,6 +29,17 @@
 - Use `.modal-no-backdrop` only for backdrop suppression without click-through floating behavior.
 - Shared modal layers must stay above the mobile right-canvas rail while confirmation dialogs remain above normal modals.
 - Do not add decorative one-note palette changes that conflict with existing WebUI design.
+- Theme rules are scoped under `body.a0-theme` so they win on specificity; add `!important` only to override an `!important` or inline style in the base, with a comment saying which.
+- Glass surfaces read the `--mat-*` tokens instead of hard-coding blur/opacity, so Solid/Glass/Enhanced and `prefers-reduced-transparency` work everywhere without duplicate rules.
+- `backdrop-filter` only on a few floating surfaces (composer, menus, modals, toasts, top pill, sidebar header). The sidebar body and chat bubbles (`.process-group`, user `.message-text`, `.message-warning`, `.message-error`) blur only under `body.has-wallpaper`; never blur other per-item elements.
+- The sidebar (`#left-panel`) floats inset by `--sidebar-gap` with the composer's rim/radius/glow (blur only over a wallpaper); the fixed `.sidebar-header-panel` is shifted by the same gap with `margin-left` (never a transform, which would capture its fixed-position dropdown).
+- The docked right canvas (`.right-canvas.is-open`, desktop only) floats like the sidebar (gap, rim, radius, accent glow) with accent tab/rail states, but never gets a `backdrop-filter`: canvas surfaces use `position: fixed` (Desktop viewer expanded mode) and a filter would trap them.
+- Button accent tiers (theme): filled accent for main actions (`.btn-ok`, `.btn-primary`, `.btn.primary`, `.btn-upload`, `.button.confirm`, `.button.primary`); soft accent tint for secondary actions (`.btn-field`, plugin-list `.plugin-actions .button`); other `.button` variants stay neutral with an accent hover; cancel/secondary/mass buttons stay neutral. Do not hard-code button blues in components.
+- Chat bubbles (`.process-group`, user `.message-text`, `.message-warning`/`.message-error`) use the sidebar surface `color-mix(--s2 var(--mat-alpha))` - solid in Solid, translucent in Glass/Enhanced - and no accent glow (contrast over bright wallpapers).
+- Toggles (`.slider`, `.toggler`) use the theme's neo style (MIT, adapted from uiverse.io chicogale/tall-starfish-3) on the existing markup: change surfaces only, never the per-component knob size/offset; no looping animations.
+- Approval decision buttons (`.permissions-decision-btn`, `.safety-policy-decision-btn`) are styled in the theme: first approve is the filled accent action, other approves soft accent, Deny neutral with a `--bad` hover.
+- An overlay nested inside a backdrop-filtered surface cannot blur the page behind it (the parent is its backdrop root), so overlays inside the composer get a near-solid fill instead of glass.
+- Use the accent (`--accent`, `--accent-ui`, `--accent-soft`) for interaction and selection only; success/warning/error use the semantic `--ok`/`--warn`/`--bad` tokens.
 
 ## Work Guidance
 

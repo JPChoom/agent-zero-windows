@@ -27,50 +27,84 @@ def _respond_handler():
 # Mode endpoint
 # ------------------------------------------------------------------
 
+class _Req:
+    remote_addr = "127.0.0.1"
+    headers: dict = {}
+
+
+@pytest.fixture
+def per_chat(monkeypatch):
+    """Isolated in-memory mode state with default 'manual', 4h bypass."""
+    from plugins._permissions.helpers import mode_state
+
+    mode_state.clear_all()
+    monkeypatch.setattr(mode_state, "default_mode", lambda: "manual")
+    monkeypatch.setattr(mode_state, "bypass_hours", lambda: 4.0)
+    monkeypatch.setattr(mode_api.PermissionsMode, "_project", lambda self, ctxid: "")
+    mode_api.bypass_throttle.__init__()
+    yield mode_state
+    mode_state.clear_all()
+
+
 @pytest.mark.asyncio
-async def test_reading_returns_current_mode_and_the_full_list(monkeypatch):
-    monkeypatch.setattr(
-        mode_api.perm_config, "get_config", lambda *a, **k: {"mode": "manual"}
-    )
-    result = await _mode_handler().process({}, None)  # type: ignore[arg-type]
+async def test_reading_returns_default_mode_and_the_full_list(per_chat, monkeypatch):
+    monkeypatch.setattr(mode_api.bypass_lock, "is_set", lambda: True)
+    result = await _mode_handler().process({"ctxid": "c1"}, _Req())  # type: ignore[arg-type]
     assert result["ok"] is True and result["mode"] == "manual"
     assert [m["id"] for m in result["modes"]] == list(rules.MODES)
-    # Every mode needs a label and description for the selector.
-    assert all(m["label"] and m["description"] for m in result["modes"])
+    # Every mode needs a label, description and color for the selector.
+    assert all(m["label"] and m["description"] and m["color"] for m in result["modes"])
 
 
 @pytest.mark.asyncio
-async def test_setting_a_mode_persists_it(monkeypatch):
-    saved = {}
-    monkeypatch.setattr(
-        mode_api.perm_config, "set_mode",
-        lambda m: saved.setdefault("mode", m) or m,
-    )
-    result = await _mode_handler().process({"mode": "plan"}, None)  # type: ignore[arg-type]
-    assert result == {"ok": True, "mode": "plan"}
-    assert saved["mode"] == "plan"
+async def test_mode_is_per_chat(per_chat):
+    result = await _mode_handler().process({"ctxid": "c1", "mode": "plan"}, _Req())  # type: ignore[arg-type]
+    assert result["ok"] is True and result["mode"] == "plan"
+    other = await _mode_handler().process({"ctxid": "c2"}, _Req())  # type: ignore[arg-type]
+    assert other["mode"] == "manual"
 
 
 @pytest.mark.asyncio
-async def test_unknown_mode_is_refused_rather_than_stored(monkeypatch):
-    def boom(m):
-        raise ValueError(f"unknown mode {m!r}")
-
-    monkeypatch.setattr(mode_api.perm_config, "set_mode", boom)
-    result = await _mode_handler().process({"mode": "turbo"}, None)  # type: ignore[arg-type]
+async def test_unknown_mode_is_refused(per_chat):
+    result = await _mode_handler().process({"ctxid": "c1", "mode": "turbo"}, _Req())  # type: ignore[arg-type]
     assert result["ok"] is False and "turbo" in result["error"]
 
 
 @pytest.mark.asyncio
-async def test_save_failure_is_reported_not_swallowed(monkeypatch):
-    """The selector rolls back on ok:false; silently returning success
-    would leave the UI showing a mode the server never stored."""
-    def boom(m):
-        raise OSError("disk full")
+async def test_setting_a_mode_needs_a_chat(per_chat):
+    result = await _mode_handler().process({"mode": "plan"}, _Req())  # type: ignore[arg-type]
+    assert result["ok"] is False
 
-    monkeypatch.setattr(mode_api.perm_config, "set_mode", boom)
-    result = await _mode_handler().process({"mode": "plan"}, None)  # type: ignore[arg-type]
-    assert result["ok"] is False and "disk full" in result["error"]
+
+@pytest.mark.asyncio
+async def test_bypass_refused_without_a_configured_password(per_chat, monkeypatch):
+    monkeypatch.setattr(mode_api.bypass_lock, "is_set", lambda: False)
+    result = await _mode_handler().process({"ctxid": "c1", "mode": "bypass"}, _Req())  # type: ignore[arg-type]
+    assert result["ok"] is False and result.get("needs_setup")
+    assert per_chat.get_mode("c1")["mode"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_bypass_refused_with_wrong_password_and_rate_limited(per_chat, monkeypatch):
+    monkeypatch.setattr(mode_api.bypass_lock, "is_set", lambda: True)
+    monkeypatch.setattr(mode_api.bypass_lock, "verify", lambda pw: pw == "right-password")
+    monkeypatch.setattr(mode_api.access_control, "audit", lambda *a, **k: None)
+    for _ in range(mode_api.bypass_throttle.MAX_FAILURES):
+        r = await _mode_handler().process({"ctxid": "c1", "mode": "bypass", "password": "nope"}, _Req())  # type: ignore[arg-type]
+        assert r["ok"] is False
+    # Locked out now - even the right password is refused for a while.
+    r = await _mode_handler().process({"ctxid": "c1", "mode": "bypass", "password": "right-password"}, _Req())  # type: ignore[arg-type]
+    assert r["ok"] is False and "later" in r["error"]
+    assert per_chat.get_mode("c1")["mode"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_bypass_unlocks_with_right_password_and_has_a_deadline(per_chat, monkeypatch):
+    monkeypatch.setattr(mode_api.bypass_lock, "is_set", lambda: True)
+    monkeypatch.setattr(mode_api.bypass_lock, "verify", lambda pw: pw == "right-password")
+    monkeypatch.setattr(mode_api.access_control, "audit", lambda *a, **k: None)
+    r = await _mode_handler().process({"ctxid": "c1", "mode": "bypass", "password": "right-password"}, _Req())  # type: ignore[arg-type]
+    assert r["ok"] is True and r["mode"] == "bypass" and r["bypass_until"] > 0
 
 
 # ------------------------------------------------------------------

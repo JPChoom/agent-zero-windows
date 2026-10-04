@@ -256,6 +256,13 @@
 
 .process-group .step-badge{
   color: var(--step-accent);
+  /* A solid (non-glass) tinted chip behind the label. Without this the
+     badge is just colored text sitting directly on the theme backdrop
+     (css/theme.css), which can land arbitrarily close in hue to the
+     user's accent glow or wallpaper and wash out - --color-panel
+     here is the opaque base token, not the translucent glass surface, so
+     this chip's contrast holds regardless of backdrop color/theme. */
+  background: color-mix(in srgb, var(--step-accent) 20%, var(--color-panel) 80%);
 }
 
 .process-group .kvps-key{
@@ -417,6 +424,8 @@
   min-height: 18px;
   max-width: 100%;
   overflow: hidden;
+  /* Breathing room between the step arrow and the group's edge. */
+  padding-left: 6px;
 }
 
 /* Step title */
@@ -443,7 +452,7 @@
   transition: transform 0.2s ease, opacity 0.15s ease;
   flex-shrink: 0;
   font-size: 0; /* Hide any text content */
-  margin-right: 2px;
+  margin-right: 4px;
 }
 
 .process-step-header:hover .step-expand-icon {
@@ -505,7 +514,8 @@
   overflow: hidden;
   margin-top: var(--spacing-xs);
   max-width: 100%;
-  padding-left: 17px;
+  /* Lines up with the step titles (header indent + arrow + gaps). */
+  padding-left: 25px;
   padding-right: 1em;
 }
 

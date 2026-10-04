@@ -77,7 +77,7 @@ async def test_a_scan_failure_does_not_raise(monkeypatch):
     monkeypatch.setattr(
         pi_mod.plugins, "get_plugin_config", lambda name, agent=None: {}
     )
-    monkeypatch.setattr(pi_mod, "_resolve_workdir", lambda agent: "C:\\somewhere")
+    monkeypatch.setattr(pi_mod, "_resolve_scan_roots", lambda agent: ["C:\\somewhere"])
 
     agent = _Agent()
     ext = pi_mod.PromptInclude(agent=agent)  # type: ignore[arg-type]
@@ -151,7 +151,7 @@ async def test_a_working_scan_is_unaffected(monkeypatch):
     monkeypatch.setattr(
         pi_mod.plugins, "get_plugin_config", lambda name, agent=None: {}
     )
-    monkeypatch.setattr(pi_mod, "_resolve_workdir", lambda agent: "C:\\somewhere")
+    monkeypatch.setattr(pi_mod, "_resolve_scan_roots", lambda agent: ["C:\\somewhere"])
 
     class _WorkingAgent(_Agent):
         def read_prompt(self, name, **k):

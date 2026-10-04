@@ -77,7 +77,7 @@ async def test_vision_load_materializes_local_image_to_chat_artifact(monkeypatch
     monkeypatch.setattr(
         vision_load_module.plugins,
         "get_plugin_config",
-        lambda *args, **kwargs: {"chat_model": {"max_embeds": 10}},
+        lambda *args, **kwargs: {"chat_model": {"max_embeds": 10, "vision": True}},
     )
 
     async def direct_call(func, *args, **kwargs):

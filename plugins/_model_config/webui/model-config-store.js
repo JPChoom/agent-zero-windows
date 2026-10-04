@@ -8,7 +8,8 @@ import { switcherState, switcherMethods } from "/plugins/_model_config/webui/swi
 export const MODEL_SECTIONS = [
   { key: 'chat_model', title: 'Main Model', desc: 'Primary model for chat, reasoning, and browser tasks.' },
   { key: 'utility_model', title: 'Utility Model', desc: 'Lightweight model for background tasks: memory management, prompt preparation, summarization.' },
-  { key: 'embedding_model', title: 'Embedding Model', desc: 'Model for generating vector embeddings used in knowledge retrieval.' }
+  { key: 'embedding_model', title: 'Embedding Model', desc: 'Model for generating vector embeddings used in knowledge retrieval.' },
+  { key: 'vision_model', title: 'Vision Sidecar (optional)', desc: "Used to caption images when the Main model can't see them itself (Main's vision is off). Leave the name blank to disable." }
 ];
 
 export function kwargsToText(obj) {

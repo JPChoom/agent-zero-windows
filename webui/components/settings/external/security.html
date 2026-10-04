@@ -1,0 +1,176 @@
+<html>
+  <head>
+    <title>Security</title>
+    <script type="module">
+      import { store } from "/components/settings/external/security-store.js";
+    </script>
+  </head>
+
+  <body>
+    <div x-data="{
+          get settings() { return $store.settings.settings },
+          bypassCurrent: '', bypassNew: '', bypassConfirm: '', bypassMsg: '', bypassErr: '', bypassBusy: false,
+          confirmPw: '',
+          async saveBypassPassword() {
+            this.bypassMsg = ''; this.bypassErr = '';
+            if (this.bypassNew !== this.bypassConfirm) { this.bypassErr = 'The two new passwords do not match.'; return; }
+            this.bypassBusy = true;
+            try {
+              const { callJsonApi } = await import('/js/api.js');
+              const r = await callJsonApi('permissions_bypass_password', { new_password: this.bypassNew, current_password: this.bypassCurrent });
+              if (r?.ok) { this.bypassMsg = 'Bypass password saved.'; $store.securitySettings.bypassPasswordSet = true; }
+              else { this.bypassErr = r?.error || 'Could not save.'; }
+            } catch (e) { this.bypassErr = e?.message || 'Could not save.'; }
+            finally { this.bypassBusy = false; this.bypassCurrent = ''; this.bypassNew = ''; this.bypassConfirm = ''; }
+          }
+        }">
+      <template x-if="$store.securitySettings && settings">
+        <div x-init="$store.securitySettings.load()">
+          <div class="section-title">Security</div>
+          <div class="section-description">
+            Who can reach this instance remotely, and how much the agent may do without asking.
+          </div>
+
+          <!-- Tunnel allowlist -->
+          <div class="security-subtitle">Remote access allowlist</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Restrict remote access</div>
+              <div class="field-description">
+                Requests that arrive through a tunnel or proxy (Remote Control) are let in only from the addresses below.
+                Everyone else gets a blank "Not Found" page. This PC itself is always allowed.
+                With the list empty, all remote access is blocked.
+              </div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="$store.securitySettings.enabled" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Allowed addresses</div>
+              <div class="field-description">
+                One IPv4/IPv6 address or range (CIDR, e.g. <code>203.0.113.0/24</code>) per line. <code>#</code> starts a comment.
+                To find a location's address, open <code>https://www.cloudflare.com/cdn-cgi/trace</code> there and copy the <code>ip=</code> line.
+              </div>
+            </div>
+            <div class="field-control">
+              <textarea rows="4" spellcheck="false" x-model="$store.securitySettings.allowlist"></textarea>
+            </div>
+          </div>
+
+          <div class="security-row">
+            <span class="security-hint" x-show="!$store.securitySettings.isLocal && $store.securitySettings.myIp"
+                  x-text="'You are connecting remotely from ' + $store.securitySettings.myIp"></span>
+            <span class="security-hint" x-show="$store.securitySettings.invalid.length"
+                  x-text="'Ignored (not valid): ' + $store.securitySettings.invalid.join(', ')"></span>
+            <button type="button" class="btn btn-ok" :disabled="$store.securitySettings.busy"
+                    @click="$store.securitySettings.saveAllowlist()">Save allowlist</button>
+          </div>
+
+          <template x-if="$store.securitySettings.pendingPayload">
+            <div class="security-confirm">
+              <input type="password" autocomplete="off" placeholder="Bypass password" x-model="confirmPw" />
+              <button type="button" class="btn btn-ok" :disabled="!confirmPw || $store.securitySettings.busy"
+                      @click="$store.securitySettings.confirmWithPassword(confirmPw).then(() => { confirmPw = '' })">Confirm</button>
+              <button type="button" class="btn btn-cancel" @click="confirmPw = ''; $store.securitySettings.cancelPending()">Cancel</button>
+            </div>
+          </template>
+          <div class="security-error" x-show="$store.securitySettings.error" x-text="$store.securitySettings.error"></div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Recently blocked</div>
+              <div class="field-description">Remote requests refused since the last restart (newest first). Full history: <code>usr/security_audit.jsonl</code>.</div>
+            </div>
+          </div>
+          <div class="security-blocked">
+            <template x-if="!$store.securitySettings.blocked.length">
+              <div class="security-hint">Nothing blocked.</div>
+            </template>
+            <template x-for="(b, i) in $store.securitySettings.blocked.slice(0, 15)" :key="i">
+              <div class="security-blocked-row">
+                <code x-text="b.ip"></code>
+                <span x-text="b.country || ''"></span>
+                <span class="security-hint" x-text="new Date(b.time).toLocaleString()"></span>
+                <span class="security-hint security-path" x-text="b.path"></span>
+                <button type="button" class="text-button" x-show="b.ip && b.ip !== '?'"
+                        @click="$store.securitySettings.allowIp(b.ip)">Allow</button>
+              </div>
+            </template>
+          </div>
+
+          <!-- Permissions -->
+          <div class="security-subtitle">Permissions</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Default permission mode</div>
+              <div class="field-description">
+                Every chat starts in this mode, and all chats return to it when Agent Zero restarts or a chat switches project.
+                Manual asks before anything that changes files or runs commands; Plan refuses changes entirely.
+              </div>
+            </div>
+            <div class="field-control">
+              <select x-model="settings.permissions_default_mode">
+                <option value="plan">Plan</option>
+                <option value="manual">Manual</option>
+                <option value="accept_edits">Accept edits</option>
+                <option value="auto">Auto</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Bypass turns off after (hours)</div>
+              <div class="field-description">
+                How long Bypass permissions stays on once unlocked. 0 = no time limit (it still ends on restart, in a new chat, or on project switch).
+              </div>
+            </div>
+            <div class="field-control">
+              <input type="number" min="0" step="0.5" x-model.number="settings.bypass_auto_off_hours" />
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Bypass password</div>
+              <div class="field-description">
+                Required to switch a chat to Bypass permissions. Separate from the login password (at least 8 characters).
+                <span x-text="$store.securitySettings.bypassPasswordSet ? 'A password is set.' : 'Not set yet - Bypass is unavailable until you set one.'"></span>
+              </div>
+            </div>
+            <div class="field-control security-pw">
+              <input type="password" autocomplete="off" placeholder="Current password"
+                     x-show="$store.securitySettings.bypassPasswordSet" x-model="bypassCurrent" />
+              <input type="password" autocomplete="new-password" placeholder="New password" x-model="bypassNew" />
+              <input type="password" autocomplete="new-password" placeholder="Repeat new password" x-model="bypassConfirm" />
+              <button type="button" class="btn btn-ok" :disabled="bypassBusy || !bypassNew"
+                      @click="saveBypassPassword()"
+                      x-text="$store.securitySettings.bypassPasswordSet ? 'Change Bypass password' : 'Set Bypass password'"></button>
+              <div class="security-ok" x-show="bypassMsg" x-text="bypassMsg"></div>
+              <div class="security-error" x-show="bypassErr" x-text="bypassErr"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <style>
+      .security-subtitle { margin: 14px 0 4px; font-weight: 600; font-size: 0.95rem; }
+      .security-row { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; margin: 4px 0 8px; }
+      .security-hint { font-size: 0.8rem; opacity: 0.7; }
+      .security-error { color: var(--color-error, #ef4444); font-size: 0.85rem; margin: 4px 0; }
+      .security-ok { color: #22c55e; font-size: 0.85rem; }
+      .security-confirm { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin: 4px 0; }
+      .security-blocked { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+      .security-blocked-row { display: flex; gap: 10px; align-items: center; font-size: 0.85rem; flex-wrap: wrap; }
+      .security-path { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .security-pw { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+    </style>
+  </body>
+</html>

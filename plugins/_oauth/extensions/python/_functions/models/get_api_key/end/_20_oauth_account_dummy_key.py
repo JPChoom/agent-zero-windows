@@ -27,8 +27,14 @@ class OAuthAccountDummyKey(Extension):
 
 
 def oauth_provider_is_connected(provider_id: str) -> bool:
+    # Runs on every get_api_key (i.e. every settings load), so prefer a
+    # provider's local is_connected() over status(), which may hit the network.
     try:
-        status = get_provider(provider_id).status()
+        provider = get_provider(provider_id)
+        is_connected = getattr(provider, "is_connected", None)
+        if callable(is_connected):
+            return bool(is_connected())
+        status = provider.status()
     except Exception:
         return False
     if not isinstance(status, dict):

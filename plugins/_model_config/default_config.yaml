@@ -50,3 +50,18 @@ embedding_model:
   rl_requests: 0
   rl_input: 0
   kwargs: {}
+
+# Optional sidecar: when the Main model has vision=false and an image is
+# attached, vision_load calls this model instead of embedding a raw image
+# the Main model can't see - it captions the image once and hands back
+# text. Left unconfigured (blank name) by default; vision_load falls back
+# to a plain notice when neither this nor Main's own vision is available.
+vision_model:
+  provider: "lm_studio"
+  name: ""
+  api_base: ""
+  ctx_length: 8000
+  rl_requests: 0
+  rl_input: 0
+  rl_output: 0
+  kwargs: {}

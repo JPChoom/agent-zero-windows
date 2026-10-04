@@ -51,6 +51,12 @@ class MemorizeMemories(Extension):
             # get system message and chat history for util llm
             system = self.agent.read_prompt("memory.memories_sum.sys.md")
             msgs_text = self.agent.concat_messages(self.agent.history)
+            # Fragments are facts from the user and the agent's own work.
+            # External text (web pages, files, tool output) never feeds them:
+            # an injected instruction memorized here would be recalled into
+            # every future chat as trusted context.
+            from helpers.untrusted_content import strip_untrusted_blocks
+            msgs_text = strip_untrusted_blocks(msgs_text)
             # Keep only recent context to avoid utility-model context-window overflow.
             MAX_MSGS_CHARS = 80000
             if len(msgs_text) > MAX_MSGS_CHARS:
@@ -107,6 +113,8 @@ class MemorizeMemories(Extension):
                 return
 
             raw_memories_count = len(memories)
+            from helpers.untrusted_content import looks_like_injected_instruction
+            memories = [m for m in memories if not looks_like_injected_instruction(str(m))]
             memories = filter_auto_memory_fragments(memories)
             filtered_memories_count = raw_memories_count - len(memories)
 

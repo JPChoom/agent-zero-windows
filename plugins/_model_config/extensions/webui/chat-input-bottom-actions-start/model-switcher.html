@@ -5,7 +5,7 @@
 
 <div x-data>
 <template x-if="$store.modelConfig">
-<div x-data="{ showDropdown: false, showProfileDropdown: false }"
+<div class="model-switcher-root" x-data="{ showDropdown: false, showProfileDropdown: false }"
      x-init="
        await Promise.all([
          $store.modelConfig.refreshSwitcher($store.chats?.selected || ''),
@@ -46,7 +46,9 @@
             </template>
 
             <!-- Dropdown (opens upward) -->
-            <div class="model-switcher-dropdown" x-show="showDropdown" x-transition.opacity style="display: none;">
+            <div class="model-switcher-dropdown" x-show="showDropdown"
+                 x-keep-in-view
+                 x-transition.opacity style="display: none;">
               <!-- Use Default -->
               <template x-if="$store.modelConfig.switcherOverride">
                 <div class="model-switcher-item revert" @click="
@@ -123,7 +125,9 @@
                     x-text="showProfileDropdown ? 'expand_less' : 'expand_more'"></span>
             </button>
 
-            <div class="agent-profile-dropdown" x-show="showProfileDropdown" x-transition.opacity style="display: none;">
+            <div class="agent-profile-dropdown" x-show="showProfileDropdown"
+                 x-keep-in-view
+                 x-transition.opacity style="display: none;">
               <button class="model-switcher-item agent-profile-create" @click="
                 $store.modelConfig.createAgentProfileChat($store.chats?.selected || '')
                   .then(ok => { if (ok) showProfileDropdown = false; });
@@ -393,6 +397,25 @@
     color: var(--color-text);
     font-family: inherit;
     font-weight: 500;
+  }
+
+  /* Inside the composer's bottom actions row, flatten the wrappers so the
+     switcher, pills and agent profile are peers of the other action buttons
+     instead of one block that claims a whole row. */
+  .chat-bottom-actions-bar .model-switcher-root,
+  .chat-bottom-actions-bar .model-switcher-container,
+  .chat-bottom-actions-bar .model-context-strip {
+    display: contents;
+  }
+  .chat-bottom-actions-bar .model-pill-name {
+    max-width: 150px;
+  }
+  /* The pills repeat what the preset dropdown shows; drop them when the
+     actions row itself is narrow (container query, not viewport). */
+  @container chat-actions (max-width: 720px) {
+    .chat-bottom-actions-bar .model-switcher-active-pills {
+      display: none;
+    }
   }
 
   /* Responsive: hide pills on narrow screens */

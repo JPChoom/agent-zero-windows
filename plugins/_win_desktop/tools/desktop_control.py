@@ -34,7 +34,7 @@ class DesktopControl(Tool):
                 message=(
                     "Desktop control is disabled. It is off by default because "
                     "synthetic input bypasses the command safety policy. Enable "
-                    "'control_enabled' in the Windows Desktop plugin settings to "
+                    "'control_enabled' in the Desktop plugin settings to "
                     "allow it."
                 ),
                 break_loop=False,

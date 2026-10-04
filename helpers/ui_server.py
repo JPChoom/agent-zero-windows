@@ -26,7 +26,8 @@ from uvicorn.middleware.wsgi import WSGIMiddleware
 from werkzeug.wrappers.request import Request as WerkzeugRequest
 import socketio  # type: ignore[import-untyped]
 
-from helpers import dotenv, fasta2a_server, files, git, login, mcp_server, runtime
+from helpers import access_control, dotenv, fasta2a_server, files, git, login, mcp_server, runtime
+from helpers.access_control import AccessControlMiddleware
 from helpers.api import get_safe_next_url, register_api_route, requires_auth
 from helpers.extension import extensible
 from helpers.files import get_abs_path
@@ -186,6 +187,10 @@ class UiServerRuntime:
 
         handlers = UiRouteHandlers(self)
         self._route_handlers = handlers
+        self.webapp.before_request(_gate_static_assets)
+        self.webapp.after_request(_security_headers)
+        self.webapp.register_error_handler(404, _bare_not_found)
+        self.webapp.register_error_handler(405, _bare_not_found)
         self.webapp.add_url_rule(
             "/login",
             "login_handler",
@@ -257,10 +262,51 @@ class UiServerRuntime:
             )
 
         with startup_monitor.stage("socketio.asgi.create"):
-            return ASGIApp(self.socketio_server, other_asgi_app=starlette_app)
+            asgi_app = ASGIApp(self.socketio_server, other_asgi_app=starlette_app)
+
+        # Outermost layer: tunnel/proxy IP allowlist for every http and
+        # websocket connection (see helpers/access_control.py).
+        return AccessControlMiddleware(asgi_app)
 
     def access_log_enabled(self) -> bool:
         return self.settings_snapshot.get("uvicorn_access_logs_enabled", False)
+
+
+# Static files an unauthenticated visitor may load: exactly what the
+# neutral login page needs. Everything else under webui/ (index.html, js/,
+# components/, public/ art...) used to be served to anyone and identified
+# the app at a glance.
+PUBLIC_STATIC_PATHS = frozenset({"/login.css", "/public/signin-favicon.svg"})
+
+
+def _is_authenticated() -> bool:
+    expected = login.get_credentials_hash()
+    if not expected:
+        return True  # no login configured
+    return access_control.constant_time_equals(session.get("authentication"), expected)
+
+
+def _gate_static_assets():
+    if request.endpoint != "static":
+        return None
+    if request.path in PUBLIC_STATIC_PATHS or _is_authenticated():
+        return None
+    return _bare_not_found()
+
+
+def _bare_not_found(_error=None):
+    # Same body for "doesn't exist" and "not for you": no framework page,
+    # nothing to fingerprint.
+    return Response("Not Found", status=404, mimetype="text/plain")
+
+
+def _security_headers(response):
+    headers = response.headers
+    headers.setdefault("X-Content-Type-Options", "nosniff")
+    headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    headers.setdefault("Referrer-Policy", "same-origin")
+    headers.setdefault("X-Robots-Tag", "noindex, nofollow")
+    return response
 
 
 class UiRouteHandlers:
@@ -277,15 +323,30 @@ class UiRouteHandlers:
         )
 
         if request.method == "POST":
-            user = dotenv.get_dotenv_value("AUTH_LOGIN")
-            password = dotenv.get_dotenv_value("AUTH_PASSWORD")
-
-            if request.form["username"] == user and request.form["password"] == password:
-                session["authentication"] = login.get_credentials_hash()
-                return redirect(next_url or fallback_url)
-            else:
+            client = access_control.client_ip(request.remote_addr, request.headers) or "?"
+            if access_control.login_throttle.is_locked(client):
+                access_control.audit("login_locked", ip=client)
                 await asyncio.sleep(1)
-                error = "Invalid Credentials. Please try again."
+                error = "Sign-in failed. Please try again later."
+            else:
+                user = dotenv.get_dotenv_value("AUTH_LOGIN")
+                password = dotenv.get_dotenv_value("AUTH_PASSWORD")
+                # Evaluate both comparisons every time (no short-circuit), in
+                # constant time, so timing doesn't reveal which one was wrong.
+                user_ok = access_control.constant_time_equals(request.form.get("username"), user)
+                pass_ok = access_control.constant_time_equals(request.form.get("password"), password)
+
+                if user and user_ok and pass_ok:
+                    access_control.login_throttle.record_success(client)
+                    access_control.audit("login_success", ip=client)
+                    session.clear()  # fresh session on privilege change
+                    session["authentication"] = login.get_credentials_hash()
+                    return redirect(next_url or fallback_url)
+
+                locked = access_control.login_throttle.record_failure(client)
+                access_control.audit("login_failure", ip=client, locked=locked)
+                await asyncio.sleep(1)
+                error = "Sign-in failed. Please try again."
 
         login_page_content = files.read_file("webui/login.html")
         return render_template_string(login_page_content, error=error, next=next_url)

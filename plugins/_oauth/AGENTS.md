@@ -30,6 +30,7 @@
 - OAuth settings model slots must keep provider choice editable per slot, list only connected OAuth account providers, and persist the selected provider IDs into `chat_model.provider` and `utility_model.provider`.
 - OAuth settings must dispatch `model-setup-changed` when a provider connection completes, but model selection remains explicit and must not be filled automatically.
 - `helpers/providers/registry.py` is the source of truth for connectable OAuth providers.
+- The `get_api_key` dummy-key connection check runs on every settings load, so it must stay local: it uses a provider's `is_connected()` when defined. Codex `status()` fetches usage over the network; call `codex.status(include_usage=False)` anywhere only connection state is needed.
 - OAuth provider config must not expose the dummy `oauth` API key in `conf/model_providers.yaml`; the dummy key is a runtime-only shim supplied by the `get_api_key` extension after the account provider reports connected.
 - Usage-plan metadata belongs only to connectable providers. Do not add metadata-only subscription families for providers this plugin cannot connect.
 - API handlers should remain provider-aware. Missing or blank `provider_id` defaults to Codex only for existing backward compatibility; falsey non-string IDs must not silently default.
@@ -38,7 +39,7 @@
 - Token files are password-equivalent credentials. Store them under plugin-owned `usr/plugins/_oauth/<provider>/auth.json` paths with private permissions, and do not share rotating refresh-token files with external CLIs.
 - Stored upstream base URLs and OAuth token endpoints must be validated against provider-owned allowlists before sending bearer or refresh tokens.
 - Browser callback providers must support manual callback paste when the browser cannot reach the local callback route.
-- Local proxy routes must remain loopback or token protected and must not add broad CORS access.
+- Local proxy routes must remain loopback or token protected and must not add broad CORS access. "Loopback" excludes requests carrying proxy/forwarding headers (a tunnel client also connects from localhost) - see `helpers/access_control.py`; token comparison is constant-time.
 
 ## Work Guidance
 

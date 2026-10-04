@@ -37,6 +37,7 @@
 - Socket.IO heartbeat defaults are intentionally longer than Engine.IO's short defaults so CLI sessions survive long prompt/context work; environment overrides must remain positive integers and fall back to source defaults when invalid.
 - Observed side-effect areas: filesystem reads, network calls, subprocess/runtime control, WebSocket state, plugin state, settings/state persistence, secret handling.
 - Imported dependency areas include: `asyncio`, `dataclasses`, `datetime`, `flask`, `helpers`, `helpers.api`, `helpers.extension`, `helpers.files`, `helpers.print_style`, `helpers.server_startup`, `helpers.ws`, `helpers.ws_manager`, `logging`, `os`, `secrets`, `socketio`.
+- `build_asgi_app` wraps the ASGI app in `access_control.AccessControlMiddleware` (remote-access IP allowlist). Static files require login except `PUBLIC_STATIC_PATHS` (the neutral sign-in page's stylesheet and favicon); 404/405 and denied assets return the same bare body; `_security_headers` adds nosniff, SAMEORIGIN framing, same-origin referrer and noindex. The login handler applies `access_control.login_throttle` per real client IP, compares credentials in constant time, audits attempts, and starts a fresh session on success.
 
 ## Key Concepts
 

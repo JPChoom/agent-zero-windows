@@ -3,19 +3,13 @@
 <head></head>
 
 <body>
+  <!-- The dropdown's extension points (sidebar-quick-actions-dropdown-start/
+       end) are rendered by header-icons.html inside the dropdown itself. -->
   <div class="quick-actions-surface-host" x-data>
-    <template x-teleport="#sidebar-quick-actions-dropdown-slot-start">
-      <x-extension id="sidebar-quick-actions-dropdown-start"></x-extension>
-    </template>
-
     <div id="quick-actions">
       <x-extension id="sidebar-quick-actions-main-start"></x-extension>
       <x-extension id="sidebar-quick-actions-main-end"></x-extension>
     </div>
-
-    <template x-teleport="#sidebar-quick-actions-dropdown-slot-end">
-      <x-extension id="sidebar-quick-actions-dropdown-end"></x-extension>
-    </template>
   </div>
 </body>
 

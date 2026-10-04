@@ -14,7 +14,6 @@ from plugins._permissions.helpers import rules
 # and these fallbacks are what really apply - a mismatch here silently
 # beats the documented default.
 DEFAULTS = {
-    "mode": rules.DEFAULT_MODE,
     "deny": "",
     "ask": "",
     "allow": "",
@@ -24,13 +23,19 @@ DEFAULTS = {
 
 
 def get_config(agent=None) -> dict:
+    """Rules and timeouts from plugin config; the *mode* is per chat and
+    in memory (helpers/mode_state.py). A `mode` key left in an old
+    config.json is ignored - persisted config can't switch on bypass."""
     from helpers import plugins
+    from plugins._permissions.helpers import mode_state
 
     cfg = plugins.get_plugin_config("_permissions", agent=agent) or {}
 
-    mode = str(cfg.get("mode", DEFAULTS["mode"]) or "").strip().lower()
-    if mode not in rules.MODES:
-        mode = rules.DEFAULT_MODE
+    context = getattr(agent, "context", None)
+    state = mode_state.get_mode(
+        getattr(context, "id", None),
+        mode_state.context_project(context) if context is not None else "",
+    )
 
     try:
         timeout = int(cfg.get("approval_timeout_seconds",
@@ -39,7 +44,8 @@ def get_config(agent=None) -> dict:
         timeout = DEFAULTS["approval_timeout_seconds"]
 
     return {
-        "mode": mode,
+        "mode": state["mode"],
+        "bypass_expired": state["expired"],
         "ruleset": rules.Ruleset.from_config(cfg),
         "approval_timeout_seconds": max(5, timeout),
         "audit_decisions": bool(
@@ -64,17 +70,6 @@ def _save(updates: dict, project_name: str = "", agent_profile: str = "") -> Non
     plugins.save_plugin_config(
         "_permissions", project_name, agent_profile, {**current, **updates}
     )
-
-
-def set_mode(mode: str) -> str:
-    """Persist a new mode, returning the one actually stored."""
-    normalized = str(mode or "").strip().lower()
-    if normalized not in rules.MODES:
-        raise ValueError(
-            f"unknown mode {mode!r}; expected one of {', '.join(rules.MODES)}"
-        )
-    _save({"mode": normalized})
-    return normalized
 
 
 def add_rule(kind: str, rule_text: str) -> str:

@@ -25,6 +25,7 @@
 - `RFC` defines `requires_auth(...)`.
 - `RFC` defines `requires_csrf(...)`.
 - Imported dependency areas include: `helpers`, `helpers.api`.
+- Returns 404 on native Windows (`runtime.is_windows()`): RFC bridges a development host to its Docker twin, and Windows has none, so the unauthenticated endpoint is disabled there.
 
 ## Key Concepts
 

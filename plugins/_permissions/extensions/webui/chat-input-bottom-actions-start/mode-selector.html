@@ -4,55 +4,141 @@
   <script type="module" src="/plugins/_permissions/webui/mode-store.js"></script>
 </head>
 <body>
-  <div x-data class="permissions-mode-wrap" style="position:relative;">
+  <div x-data class="permissions-mode-wrap">
     <template x-if="$store.permissionsMode">
-      <div>
+      <!-- The root is the flex item in .text-buttons-row
+           (bottom-actions-bar.html) and the positioning anchor for the
+           menu, so the menu opens above this button, not the row's start. -->
+      <div class="permissions-mode-root" x-every-second="$store.permissionsMode.sync()">
         <button
           class="text-button"
+          :class="{ 'permissions-mode-bypass': $store.permissionsMode.mode === 'bypass' }"
           @click="$store.permissionsMode.open = !$store.permissionsMode.open"
-          :disabled="$store.permissionsMode.loading"
-          title="How much Agent Zero checks with you before acting"
+          title="How much Agent Zero checks with you before acting (this chat)"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-               stroke-linejoin="round" width="14" height="14" aria-hidden="true">
-            <path d="M12 3l7 4v5c0 4.4-3 8.3-7 9-4-.7-7-4.6-7-9V7l7-4z" />
-          </svg>
+          <span class="permissions-mode-dot" :style="{ backgroundColor: $store.permissionsMode.color() }"></span>
           <span x-text="$store.permissionsMode.label()"></span>
+          <span class="permissions-mode-remaining"
+                x-show="$store.permissionsMode.bypassRemaining()"
+                x-text="'(' + $store.permissionsMode.bypassRemaining() + ')'"></span>
         </button>
 
         <div
           x-show="$store.permissionsMode.open"
           @click.outside="$store.permissionsMode.open = false"
+          x-keep-in-view
           x-transition
           class="permissions-mode-menu"
-          style="position:absolute; bottom:100%; left:0; z-index:60; min-width:260px;
-                 margin-bottom:.35rem; padding:.35rem; border-radius:.5rem;
-                 background:var(--color-panel, #1b2333);
-                 border:1px solid var(--color-border, #33405a);
-                 box-shadow:0 8px 24px rgba(0,0,0,.45);"
         >
           <template x-for="m in $store.permissionsMode.modes" :key="m.id">
             <button
               type="button"
               class="permissions-mode-option"
+              :class="{ 'is-active': m.id === $store.permissionsMode.mode }"
               @click="$store.permissionsMode.select(m.id)"
-              style="display:block; width:100%; text-align:left; padding:.4rem .5rem;
-                     border:0; background:transparent; color:inherit; cursor:pointer;
-                     border-radius:.35rem;"
-              :style="m.id === $store.permissionsMode.mode
-                        ? 'background:var(--color-panel-hover, #26324a);' : ''"
             >
-              <span style="display:flex; align-items:center; gap:.4rem;">
-                <span x-text="m.label" style="font-weight:600;"></span>
-                <span x-show="m.id === $store.permissionsMode.mode" aria-hidden="true">✓</span>
+              <span class="permissions-mode-option-head">
+                <span class="permissions-mode-dot" :style="{ backgroundColor: m.color }"></span>
+                <span class="permissions-mode-option-label" x-text="m.label"></span>
+                <span class="permissions-mode-option-check" x-show="m.id === $store.permissionsMode.mode" aria-hidden="true">&check;</span>
               </span>
-              <span x-text="m.description" style="opacity:.7; font-size:.8em;"></span>
+              <span class="permissions-mode-option-desc" x-text="m.description"></span>
             </button>
           </template>
         </div>
       </div>
     </template>
   </div>
+
+  <style>
+    .permissions-mode-wrap {
+      position: relative;
+    }
+
+    .permissions-mode-root {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .text-button.permissions-mode-bypass {
+      color: #ef4444;
+      font-weight: 600;
+    }
+
+    .permissions-mode-remaining {
+      opacity: 0.8;
+      font-size: 0.85em;
+    }
+
+    .permissions-mode-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: inline-block;
+    }
+
+    .permissions-mode-menu {
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      z-index: 60;
+      min-width: 240px;
+      margin-bottom: 0.35rem;
+      padding: 0.35rem;
+      border-radius: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      background: var(--color-panel);
+      border: 1px solid var(--color-border);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+
+    .permissions-mode-option {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 0.4rem 0.5rem;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      border-radius: 0.35rem;
+      font-family: inherit;
+    }
+
+    .permissions-mode-option:hover {
+      background: var(--color-background-hover);
+    }
+
+    .permissions-mode-option.is-active {
+      background: color-mix(in srgb, var(--color-highlight) 14%, transparent);
+    }
+
+    .permissions-mode-option-head {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .permissions-mode-option-label {
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+
+    .permissions-mode-option-check {
+      color: var(--color-highlight);
+      font-weight: 700;
+    }
+
+    .permissions-mode-option-desc {
+      display: block;
+      margin-left: calc(8px + 0.4rem);
+      opacity: 0.7;
+      font-size: 0.72rem;
+    }
+  </style>
 </body>
 </html>

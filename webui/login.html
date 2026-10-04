@@ -3,31 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Agent Zero</title>
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="same-origin">
+    <title>Sign in</title>
     <link rel="stylesheet" href="/login.css">
-    <link rel="icon" type="image/svg+xml" href="/public/favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="/public/signin-favicon.svg">
 </head>
 <body>
-    <div class="login-container">
-        <form class="login-form" method="POST" action="/login{% if next %}?next={{ next|urlencode }}{% endif %}">
+    <!-- Deliberately generic: an unauthenticated visitor should not be able
+         to tell what application this is (no name, logo, framework assets,
+         or external requests). See helpers/ui_server.py PUBLIC_STATIC_PATHS. -->
+    <main class="signin">
+        <form class="signin-form" method="POST" action="/login{% if next %}?next={{ next|urlencode }}{% endif %}" autocomplete="on">
             {% if next %}
                 <input type="hidden" name="next" value="{{ next }}">
             {% endif %}
-            <img src="/public/splash.jpg" alt="Agent Zero Logo" class="logo">
-            <h2>Agent Zero</h2>
-            <div class="input-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="input-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit">Login</button>
+            <h1>Sign in</h1>
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required>
+            <button type="submit">Continue</button>
             {% if error %}
-                <p class="error">{{ error }}</p>
+                <p class="signin-error" role="alert">{{ error }}</p>
             {% endif %}
         </form>
-    </div>
+    </main>
 </body>
 </html>

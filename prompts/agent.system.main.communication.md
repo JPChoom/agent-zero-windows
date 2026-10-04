@@ -5,7 +5,7 @@
 - Do not invent unavailable tool names and args
 
 ### Response format (json fields names)
-- thoughts: array thoughts before execution in natural language
+- thoughts: array of 1-3 short statements giving only the immediate reason for this tool call - no lengthy reasoning, act instead of narrating
 - headline: short headline summary of the response
 - tool_name: use tool name
 - tool_args: key value pairs tool arguments
@@ -17,20 +17,7 @@
 
 ### Response example
 ~~~json
-{
-    "thoughts": [
-        "instructions?",
-        "solution steps?",
-        "processing?",
-        "actions?"
-    ],
-    "headline": "Analyzing instructions to develop processing actions",
-    "tool_name": "name_of_tool",
-    "tool_args": {
-        "arg1": "val1",
-        "arg2": "val2"
-    }
-}
+{"thoughts": ["need the config before editing it"], "headline": "Reading config", "tool_name": "name_of_tool", "tool_args": {"arg1": "val1"}}
 ~~~
 
 {{ include "agent.system.main.communication_additions.md" }}

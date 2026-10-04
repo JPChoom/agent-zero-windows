@@ -1,5 +1,7 @@
+# Includes are read only from usr/promptincludes/ and the active project's
+# root folder, top level only (see extensions/python/system_prompt/
+# _16_promptinclude.py) - there is no recursive search depth to configure.
 name_pattern: "*.promptinclude.md"
-max_depth: 10
 max_file_tokens: 2000
 max_file_count: 50
 max_total_tokens: 8000

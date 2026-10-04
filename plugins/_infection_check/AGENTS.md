@@ -14,6 +14,7 @@
 
 - Preserve configured `thoughts` and `complete` analysis modes.
 - Tool execution must wait for required safety verdicts.
+- The gate skips side-effect-free local reads (`helpers/untrusted_content.is_read_only_call`) always, and skips chats that have not yet seen untrusted content while `only_after_untrusted_content` is true (default). Set it false to check every call from the start.
 - Do not log or expose chain-of-thought or sensitive prompt content beyond intended warning flows.
 
 ## Work Guidance

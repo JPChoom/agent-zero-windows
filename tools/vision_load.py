@@ -1,11 +1,24 @@
+import asyncio
 from helpers.print_style import PrintStyle
 from helpers.tool import Tool, Response
 from helpers import runtime, files, plugins, ephemeral_images, images, chat_media
 from mimetypes import guess_type
 from helpers import history
+from plugins._model_config.helpers import model_config as model_config_helper
 
 # image token estimation for context window
 TOKENS_ESTIMATE = 1500
+
+# Keep the sidecar's own turn small and bounded - it captions one image at
+# a time, not a conversation, so it should never be the thing that hangs
+# vision_load.
+VISION_SIDECAR_TIMEOUT_SECONDS = 60
+VISION_SIDECAR_SYSTEM_PROMPT = (
+    "Describe this image factually and concisely for another AI model that "
+    "cannot see it. Cover what's visible: subjects, text, layout, colors, "
+    "and anything a user would need to know to discuss the image. 2-4 "
+    "sentences. No preamble."
+)
 
 
 class VisionLoad(Tool):
@@ -145,19 +158,40 @@ class VisionLoad(Tool):
         )
         if self.images_dict:
             self.agent.hist_add_tool_result(self.name, summary, id=self.log.id if self.log else "")
+            chat_has_vision = bool(
+                model_config_helper.get_chat_model_config(self.agent).get("vision", False)
+            )
+            sidecar_available = (
+                not chat_has_vision
+                and model_config_helper.is_vision_model_configured(self.agent)
+            )
             for path, image_path in self.images_dict.items():
-                if image_path:
+                if not image_path:
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": "Error processing image " + path,
+                        }
+                    )
+                elif chat_has_vision:
                     content.append(
                         {
                             "type": "image_url",
                             "image_url": {"url": image_path},
                         }
                     )
+                elif sidecar_available:
+                    content.append(await self._describe_via_sidecar(path, image_path))
                 else:
                     content.append(
                         {
                             "type": "text",
-                            "text": "Error processing image " + path,
+                            "text": (
+                                f"Image '{path}' was attached but the Main model does not "
+                                "support vision and no vision sidecar model is configured "
+                                "(Settings > Models > Vision Sidecar), so its contents "
+                                "could not be shown."
+                            ),
                         }
                     )
             # append as raw message content for LLMs with vision tokens estimate
@@ -179,3 +213,35 @@ class VisionLoad(Tool):
         ).print(f"{self.agent.agent_name}: Response from tool '{self.name}'")
         PrintStyle(font_color="#85C1E9").print(message)
         self.log.update(result=message)
+
+    async def _describe_via_sidecar(self, path: str, image_path: str) -> dict:
+        """Caption one image through the vision sidecar model, for a Main
+        model that has no vision of its own. Returns a text content block
+        either way - a failed caption still tells the agent what happened
+        rather than silently dropping the image."""
+        try:
+            data_url = await runtime.call_development_function(images.to_data_url, image_path)
+            vision_model = model_config_helper.build_vision_model(self.agent)
+            caption, _reasoning = await asyncio.wait_for(
+                vision_model.unified_call(
+                    system_message=VISION_SIDECAR_SYSTEM_PROMPT,
+                    user_message=[{"type": "image_url", "image_url": {"url": data_url}}],
+                ),
+                timeout=VISION_SIDECAR_TIMEOUT_SECONDS,
+            )
+            caption = (caption or "").strip()
+            if not caption:
+                raise ValueError("empty caption")
+        except Exception as e:
+            PrintStyle.error(f"Vision sidecar caption failed for '{path}': {e}")
+            return {
+                "type": "text",
+                "text": (
+                    f"Image '{path}' was attached. The Main model has no vision and the "
+                    f"vision sidecar failed to describe it ({e}). Its contents are unknown."
+                ),
+            }
+        return {
+            "type": "text",
+            "text": f"Image '{path}' (described by vision sidecar, Main model cannot see it directly): {caption}",
+        }

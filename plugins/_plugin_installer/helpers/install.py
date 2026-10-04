@@ -136,21 +136,14 @@ def install_from_zip(zip_path: str, original_filename: str | None = None) -> dic
             dest = os.path.join(_get_user_plugins_dir(), plugin_name)
             files.create_dir(os.path.dirname(dest))
             files.move_dir(plugin_root, dest)
+            mark_review_pending(dest)
         except Exception as e:
             print_style.PrintStyle.error(f"Failed to validate plugin: {e}")
             files.delete_dir(extract_dir)
             raise
 
-        # run installation hook
-        try:
-            run_install_hook(plugin_name)
-        except Exception as e:
-            print_style.PrintStyle.error(
-                f"Failed to run installation hook for {plugin_name}: {e}"
-            )
-            files.delete_dir(dest)
-            raise
-
+        # The install hook is deferred to the user's first enable (see
+        # mark_review_pending).
 
         # does it have python files?
         python_change = bool(files.find_existing_paths_by_pattern(dest+"/**/*.py"))
@@ -162,6 +155,8 @@ def install_from_zip(zip_path: str, original_filename: str | None = None) -> dic
             "plugin_name": plugin_name,
             "title": meta.title or plugin_name,
             "path": files.deabsolute_path(dest),
+            "review_pending": True,
+            "message": REVIEW_PENDING_MESSAGE,
         }
     finally:
         # Cleanup: extracted files and the archive
@@ -212,6 +207,7 @@ def install_from_git(url: str, token: str | None = None, plugin_name: str = "", 
         check_plugin_conflict(plugin_name)
         final_dir = os.path.join(_get_user_plugins_dir(), plugin_name)
         files.move_dir(git_dir, final_dir)
+        mark_review_pending(final_dir)
     except Exception as e:
         # No plugin.yaml — remove cloned repo
         print_style.PrintStyle.error(f"Failed to validate plugin: {e}")
@@ -220,15 +216,8 @@ def install_from_git(url: str, token: str | None = None, plugin_name: str = "", 
 
     _download_thumbnail(thumbnail_url, final_dir)
 
-    # run installation hook
-    try:
-        run_install_hook(plugin_name)
-    except Exception as e:
-        print_style.PrintStyle.error(
-            f"Failed to run installation hook for {plugin_name}: {e}"
-        )
-        files.delete_dir(final_dir)
-        raise
+    # The install hook is deferred to the user's first enable (see
+    # mark_review_pending).
 
     # does it have python files?
     python_change = bool(files.find_existing_paths_by_pattern(final_dir+"/**/*.py"))
@@ -240,6 +229,8 @@ def install_from_git(url: str, token: str | None = None, plugin_name: str = "", 
         "plugin_name": plugin_name,
         "title": meta.title or plugin_name,
         "path": files.deabsolute_path(final_dir),
+        "review_pending": True,
+        "message": REVIEW_PENDING_MESSAGE,
     }
 
 
@@ -298,6 +289,19 @@ def update_from_git(plugin_name: str) -> dict:
         "remote_url": git.strip_auth_from_url(repo.remotes.origin.url) if repo.remotes else "",
         "directory_name": Path(plugin_dir).name,
     }
+
+
+def mark_review_pending(plugin_dir: str) -> None:
+    """Install third-party code inert: it stays disabled, its hooks.py is
+    never imported and its install hook doesn't run until the user enables
+    it (helpers/plugins.py toggle_plugin runs the deferred hook then)."""
+    files.write_file(os.path.join(plugin_dir, plugins.REVIEW_PENDING_FILE_NAME), "")
+
+
+REVIEW_PENDING_MESSAGE = (
+    "Installed but switched off for review. Check it first (e.g. scan it with A0), "
+    "then enable it in the plugin list - its setup runs at that point."
+)
 
 
 def run_install_hook(plugin_name: str):

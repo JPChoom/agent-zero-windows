@@ -28,6 +28,45 @@ from typing import Annotated
 
 SCHEDULER_FOLDER = "usr/scheduler"
 LOCAL_TIMEZONE_ALIASES = {"local", "user", "default", "current", "current_timezone"}
+SCHEDULER_SETTINGS_FILE = "usr/scheduler/settings.json"
+
+_scheduler_settings_lock = threading.RLock()
+_scheduler_settings_cache: "SchedulerSettings | None" = None
+
+
+class SchedulerSettings(BaseModel):
+    # Whether a ScheduledTask that missed its cron occurrence (server was
+    # off, machine asleep) fires once for that missed occurrence as soon
+    # as the scheduler is back, rather than silently skipping to the next
+    # future occurrence. Off preserves the pre-catch-up behavior exactly.
+    catch_up_missed_runs: bool = True
+
+
+def get_scheduler_settings() -> SchedulerSettings:
+    global _scheduler_settings_cache
+    with _scheduler_settings_lock:
+        if _scheduler_settings_cache is not None:
+            return _scheduler_settings_cache
+        path = get_abs_path(SCHEDULER_SETTINGS_FILE)
+        if exists(path):
+            try:
+                import json
+                _scheduler_settings_cache = SchedulerSettings.model_validate_json(read_file(path))
+                return _scheduler_settings_cache
+            except Exception as e:
+                PrintStyle.error(f"Failed to read scheduler settings, using defaults: {e}")
+        _scheduler_settings_cache = SchedulerSettings()
+        return _scheduler_settings_cache
+
+
+def save_scheduler_settings(settings: SchedulerSettings) -> SchedulerSettings:
+    global _scheduler_settings_cache
+    with _scheduler_settings_lock:
+        path = get_abs_path(SCHEDULER_SETTINGS_FILE)
+        make_dirs(os.path.dirname(path))
+        write_file(path, settings.model_dump_json(indent=2))
+        _scheduler_settings_cache = settings
+        return settings
 
 
 def normalize_schedule_timezone(timezone_name: str | None) -> str:
@@ -388,20 +427,41 @@ class ScheduledTask(BaseTask):
             # Get the timezone from the schedule or use UTC as fallback
             self.schedule.timezone = normalize_schedule_timezone(self.schedule.timezone)
             task_timezone = pytz.timezone(self.schedule.timezone)
+            now = _now().astimezone(task_timezone)
 
-            # Get reference time in task's timezone (by default now - frequency_seconds)
-            reference_time = (_now() - timedelta(seconds=frequency_seconds)).astimezone(task_timezone)
-
-            # Get next run time as seconds until next execution
-            next_run_seconds: Optional[float] = crontab.next(  # type: ignore
-                now=reference_time,
-                return_datetime=False
-            )  # type: ignore
-
-            if next_run_seconds is None:
+            # Most recent cron occurrence at or before now. Comparing this
+            # (rather than only "did an occurrence land in the last tick
+            # window") is what lets a run missed during downtime (server
+            # off, laptop asleep) be caught up: if that occurrence is newer
+            # than the last time this task actually ran, it's due -
+            # regardless of how long ago it was.
+            # +1s so an occurrence landing exactly on "now" (e.g. a tick
+            # firing right at a cron boundary) still counts - .previous()
+            # is exclusive of the instant passed to it.
+            prev_occurrence = crontab.previous(  # type: ignore
+                now=now + timedelta(seconds=1),
+                default_utc=True,
+                return_datetime=True,
+            )
+            if prev_occurrence is None:
                 return False
+            prev_occurrence = _localize_task_datetime(prev_occurrence)
 
-            return next_run_seconds < frequency_seconds
+            baseline = self.last_run or self.created_at
+            if baseline is not None:
+                baseline = _localize_task_datetime(baseline).astimezone(task_timezone)
+                if prev_occurrence <= baseline:
+                    return False  # already ran for this occurrence (or a later one)
+
+            if not get_scheduler_settings().catch_up_missed_runs:
+                # Catch-up disabled: only fire for an occurrence that falls
+                # inside the normal tick window, same as before this
+                # change - a missed occurrence is skipped, not caught up.
+                age_seconds = (now - prev_occurrence).total_seconds()
+                if age_seconds > frequency_seconds:
+                    return False
+
+            return True
 
     def get_next_run(self) -> datetime | None:
         with self._lock:
@@ -519,14 +579,19 @@ class SchedulerTaskList(BaseModel):
     @classmethod
     def get(cls) -> "SchedulerTaskList":
         path = get_abs_path(SCHEDULER_FOLDER, "tasks.json")
+        # run_sync, not asyncio.run: get() is called from inside running
+        # loops (job loop, API handlers), where a nested asyncio.run can drop
+        # the calling task's wakeup. See helpers/sync_async.py.
+        from helpers.sync_async import run_sync
+
         if cls.__instance is None:
             if not exists(path):
                 make_dirs(path)
-                cls.__instance = asyncio.run(cls(tasks=[]).save())
+                cls.__instance = run_sync(cls(tasks=[]).save())
             else:
                 cls.__instance = cls.model_validate_json(read_file(path))
         else:
-            asyncio.run(cls.__instance.reload())
+            run_sync(cls.__instance.reload())
         return cls.__instance
 
     def __init__(self, *args, **kwargs):

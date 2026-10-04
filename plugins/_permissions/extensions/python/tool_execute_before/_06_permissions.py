@@ -19,6 +19,7 @@ this plugin's own, keyed on its own message type.
 """
 
 import asyncio
+import json
 import uuid
 
 from helpers.errors import RepairableException
@@ -27,6 +28,25 @@ from helpers.print_style import PrintStyle
 from plugins._permissions.helpers import rules
 from plugins._permissions.helpers.config import get_config
 from plugins._safety_policy.helpers import approval_registry
+
+
+PROTECTED_MARKERS = (
+    "permissions_bypass",          # usr/permissions_bypass.json + /api/permissions_bypass_password
+    "permissions_mode",            # /api/permissions_mode
+    "security_audit",              # usr/security_audit.jsonl
+)
+
+
+def _references_protected_target(tool_args) -> str:
+    try:
+        text = json.dumps(tool_args or {}, default=str).lower()
+    except Exception:
+        text = str(tool_args or "").lower()
+    text = text.replace("\\\\", "/").replace("\\", "/")
+    for marker in PROTECTED_MARKERS:
+        if marker in text:
+            return marker
+    return ""
 
 
 class PermissionGate(Extension):
@@ -48,6 +68,31 @@ class PermissionGate(Extension):
             # here matches the pre-plugin behaviour rather than inventing a
             # lockout the user cannot undo from inside the UI.
             return
+
+        # The agent must never be able to unlock Bypass for itself or wipe
+        # the trail: refuse, in every mode, any tool call that references
+        # the Bypass password file, the mode/password endpoints, or the
+        # security audit log.
+        protected = _references_protected_target(tool_args)
+        if protected:
+            message = (
+                f"[permissions] Refused: {tool_name} references {protected}, which "
+                "only the user may change from the web UI."
+            )
+            PrintStyle(font_color="#FFA500", padding=False).print(message)
+            raise RepairableException(message)
+
+        if cfg.get("bypass_expired"):
+            try:
+                self.agent.context.log.log(
+                    type="warning",
+                    content=(
+                        "[permissions] Bypass permissions turned off: its time limit "
+                        f"was reached. This chat is back in {cfg['mode']} mode."
+                    ),
+                )
+            except Exception:
+                pass
 
         verdict = rules.decide(
             tool_name, tool_args or {}, cfg["mode"], cfg["ruleset"]

@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <title>Agent Zero</title>
     <link rel="icon" type="image/svg+xml" href="public/favicon.svg">
+    <!-- Accent + material before first paint (no theme flash) -->
+    <script src="js/theme-boot.js"></script>
     <link rel="stylesheet" href="index.css">
     <link rel="stylesheet" href="css/messages.css">
     <link rel="stylesheet" href="components/messages/action-buttons/simple-action-buttons.css">
@@ -20,7 +22,7 @@
     <link rel="stylesheet" href="css/buttons.css">
     <link rel="stylesheet" href="css/tables.css">
     <link rel="stylesheet" href="components/canvas/right-canvas.css">
-    <link rel="stylesheet" href="css/glassmorphism.css">
+    <link rel="stylesheet" href="css/theme.css">
 
     <!-- Flatpickr for datetime picker -->
     <link rel="stylesheet" href="vendor/flatpickr/flatpickr.min.css">
@@ -79,7 +81,7 @@
     <x-extension id="page-head"></x-extension>
 </head>
 
-<body class="dark-mode device-pointer" x-data>
+<body class="dark-mode device-pointer a0-theme" x-data>
     <div class="container">
         <!-- Sidebar Overlay -->
         <div id="sidebar-overlay" x-data>
@@ -156,6 +158,9 @@
 
     <!-- Drag and Drop Overlay Component -->
     <x-component path="chat/attachments/dragDropOverlay.html"></x-component>
+
+    <!-- Shared themed color picker popover ($store.colorPicker.open) -->
+    <x-component path="color-picker/color-picker.html"></x-component>
 
     <!-- Register Service Worker for offline support and caching -->
     <script>

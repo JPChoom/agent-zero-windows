@@ -24,6 +24,7 @@
 - Keep New file and New folder controls icon-only across canvas and modal modes while preserving accessible labels.
 - Keep narrow mobile controls compact: Up shares the path row, and New file/New folder share the search row.
 - Preserve surface actions that route supported files to Browser, Desktop, or Editor.
+- Keep the clickable breadcrumb trail (`breadcrumbSegments`/`navigateToBreadcrumb`) in sync with `currentPath`: it renders real path segments only (no synthetic root crumb pointing at bare `/`, since the agent-facing browser is hard-restricted to the configured workdir and a raw OS root is not a valid target there).
 
 ## Work Guidance
 

@@ -40,6 +40,7 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem writes, network calls, subprocess/runtime control, settings/state persistence.
 - Imported dependency areas include: `asyncio`, `collections`, `contextlib`, `dataclasses`, `faulthandler`, `helpers`, `helpers.print_style`, `os`, `sys`, `threading`, `time`, `typing`, `urllib.request`, `uvicorn`.
+- uvicorn runs with `server_header=False` so unauthenticated visitors don't see the server stack.
 
 ## Key Concepts
 

@@ -17,9 +17,14 @@ async def run_loop():
     global pause_time, keep_running
 
     while True:
-        if runtime.is_development():
-            # Signal to container that the job loop should be paused
-            # if we are runing a development instance to avoid duble-running the jobs
+        # Signal the container's instance to pause its job loop while a
+        # development instance runs, so jobs aren't run twice. Only when the
+        # call actually crosses to that other instance: on native Windows
+        # call_development_function runs pause_loop *locally* (there is no
+        # container to delegate to), which used to pause this - the only -
+        # instance on every pass, so scheduled tasks and job_loop extensions
+        # never ran at all.
+        if runtime.is_development() and not runtime.is_windows():
             try:
                 await runtime.call_development_function(pause_loop)
             except Exception as e:

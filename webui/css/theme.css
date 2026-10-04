@@ -1,0 +1,1005 @@
+/* ==========================================================================
+   Agent Zero theme  (replaces css/glassmorphism.css)
+   --------------------------------------------------------------------------
+   One layer, three parts:
+     1. Tokens   - palette, accent, material. Mapped onto the app-wide
+                   --color-* variables from index.css so every component and
+                   plugin picks the theme up without per-component overrides.
+     2. Surfaces - backdrop, sidebar, chat, composer, floating overlays.
+     3. Details  - controls, settings, scrollbars, focus.
+
+   Material ("Solid" / "Glass" / "Enhanced") is a set of variables, not a set
+   of rules: every glass surface reads --mat-*, so switching material never
+   needs duplicated selectors. Set on <html data-material> by js/theme-boot.js
+   before first paint; "prefers-reduced-transparency" forces Solid.
+
+   Performance rule: backdrop-filter only on a few floating surfaces
+   (composer, menus, modals, toasts, top pill). Never on messages, the
+   sidebar, or anything that repeats per item.
+
+   Specificity rule: everything is scoped under `body.a0-theme`, which beats
+   the base component styles without !important. The handful of !important
+   left here each override an !important or inline style in the base.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Tokens
+   -------------------------------------------------------------------------- */
+
+:root {
+  --accent: #4a8cff;                 /* overwritten by theme-boot.js / preferences */
+  --radius-xs: 7px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --t-fast: 140ms var(--ease);
+
+  /* Glass material (default) */
+  --mat-alpha: 74%;                  /* surface opacity of floating glass */
+  --mat-filter: blur(18px) saturate(140%);
+  --mat-edge: rgba(255, 255, 255, .075);   /* inner top highlight */
+  --mat-rim: 0%;                     /* accent mixed into floating borders */
+  --mat-lens: 0;                     /* composer lens highlight opacity */
+}
+
+:root[data-material="solid"] {
+  --mat-alpha: 100%;
+  --mat-filter: none;
+  --mat-edge: rgba(255, 255, 255, .03);
+  --mat-rim: 0%;
+  --mat-lens: 0;
+}
+
+:root[data-material="enhanced"] {
+  --mat-alpha: 62%;
+  --mat-filter: blur(24px) saturate(160%);
+  --mat-edge: rgba(255, 255, 255, .14);
+  --mat-rim: 38%;
+  --mat-lens: 1;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  :root[data-material] {
+    --mat-alpha: 100%;
+    --mat-filter: none;
+    --mat-lens: 0;
+  }
+}
+
+/* Dark palette (default) */
+body.a0-theme {
+  --s0: #0e1217;                     /* app background */
+  --s1: #141920;                     /* sidebar, base panels */
+  --s2: #1a2029;                     /* raised: cards, inputs, floating glass */
+  --s3: #232a35;                     /* hover / pressed */
+  --t0: #eef2f7;                     /* primary text */
+  --t1: #b3bdca;                     /* secondary text */
+  --t2: #7b8696;                     /* tertiary / hints */
+  --line: rgba(255, 255, 255, .075);
+  --line-strong: rgba(255, 255, 255, .13);
+  --shadow-float: 0 18px 48px rgba(0, 0, 0, .36);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, .22);
+  --accent-ui: color-mix(in srgb, var(--accent) 86%, white 14%);
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-faint: color-mix(in srgb, var(--accent) 7%, transparent);
+  --on-accent: #ffffff;
+
+  /* Semantic colors stay independent of the accent. */
+  --ok: #4fd17a;
+  --warn: #efb648;
+  --bad: #f0646a;
+
+  /* Map onto the app-wide variables (index.css). */
+  --color-background: var(--s0);
+  --color-chat-background: var(--s0);
+  --color-panel: var(--s1);
+  --color-message-bg: var(--s2);
+  --color-input: var(--s2);
+  --color-input-focus: var(--s3);
+  --color-secondary: var(--s3);
+  --color-text: var(--t0);
+  --color-message-text: var(--t0);
+  --color-text-muted: var(--t1);
+  --color-primary: var(--t1);
+  --color-border: var(--line-strong);
+  --color-highlight: var(--accent-ui);
+  --color-accent: var(--accent-ui);
+  --color-background-hover: color-mix(in srgb, var(--t0) 6%, transparent);
+  --color-table-row: rgba(255, 255, 255, .025);
+  --color-error-text: var(--bad);
+  --color-warning-text: var(--warn);
+}
+
+body.a0-theme.light-mode {
+  --s0: #eef1f5;
+  --s1: #f6f7f9;
+  --s2: #ffffff;
+  --s3: #e5e9ef;
+  --t0: #161b23;
+  --t1: #4f5967;
+  --t2: #7a8492;
+  --line: rgba(17, 27, 41, .08);
+  --line-strong: rgba(17, 27, 41, .15);
+  --shadow-float: 0 18px 44px rgba(38, 52, 74, .16);
+  --shadow-soft: 0 8px 22px rgba(38, 52, 74, .10);
+  --mat-edge: rgba(255, 255, 255, .7);
+  --accent-ui: color-mix(in srgb, var(--accent) 78%, #0d1b33 22%);
+  --ok: #1d9a4e;
+  --warn: #a96e07;
+  --bad: #c4323a;
+  --color-table-row: rgba(0, 0, 0, .025);
+  --color-background-hover: color-mix(in srgb, var(--t0) 5%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   2. Surfaces
+   -------------------------------------------------------------------------- */
+
+/* Backdrop: neutral gradient with a soft accent glow. Static - no drift
+   animation, no hue-rotate filter (both cost a full-screen repaint). */
+body.a0-theme {
+  background: var(--s0);
+  color: var(--t0);
+}
+
+body.a0-theme::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 45% at 78% -8%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 4% 104%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--s1), var(--s0) 60%);
+}
+
+body.a0-theme.light-mode::before {
+  background:
+    radial-gradient(ellipse 60% 45% at 78% -8%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 4% 104%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+    linear-gradient(180deg, #fafbfd, var(--s0) 60%);
+}
+
+/* User wallpaper (preferences-store.js) replaces the gradient. */
+body.a0-theme.has-wallpaper::before {
+  background-image: var(--backdrop-image);
+  background-size: var(--backdrop-image-size, cover);
+  background-repeat: var(--backdrop-image-repeat, no-repeat);
+  background-position: center;
+}
+
+/* Let the backdrop show through the main layout. */
+body.a0-theme #right-panel,
+body.a0-theme #chat-history {
+  background: transparent;
+}
+
+/* Sidebar: a floating panel inset from the window edge, dressed like the
+   composer (rim, radius, float shadow, top edge). Blurred only over a
+   wallpaper (see "Wallpaper glass"). --sidebar-gap is the inset on every
+   side. */
+body.a0-theme {
+  --sidebar-gap: 10px;
+}
+
+body.a0-theme #left-panel {
+  margin: var(--sidebar-gap) 0 var(--sidebar-gap) var(--sidebar-gap);
+  height: calc(100vh - var(--sidebar-gap) * 2);
+  border: 1px solid color-mix(in srgb, var(--accent) var(--mat-rim), var(--line-strong));
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--s2) var(--mat-alpha), transparent);
+  /* Accent glow that spills into the chat, plus a soft depth shadow. */
+  box-shadow:
+    0 0 56px -10px color-mix(in srgb, var(--accent) 42%, transparent),
+    0 10px 30px rgba(0, 0, 0, .22),
+    inset 0 1px 0 var(--mat-edge);
+}
+
+/* The chat column's top fade (#chat-top-blur) and composer fade
+   (#input-section::before) span the column edge to edge. Each blurs or
+   tints what is behind it, so its ends drew hard vertical seams against
+   the sidebar and the docked canvas. Feather 56px at both ends. */
+body.a0-theme #chat-top-blur {
+  -webkit-mask-image:
+    linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.35) 35%, rgba(0, 0, 0, 0.8) 65%, black 90%),
+    linear-gradient(to right, transparent, black 56px, black calc(100% - 56px), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.35) 35%, rgba(0, 0, 0, 0.8) 65%, black 90%),
+    linear-gradient(to right, transparent, black 56px, black calc(100% - 56px), transparent);
+  mask-composite: intersect;
+}
+
+body.a0-theme #input-section::before {
+  -webkit-mask-image:
+    linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.5) 50%, black 100%),
+    linear-gradient(to right, transparent, black 56px, black calc(100% - 56px), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.5) 50%, black 100%),
+    linear-gradient(to right, transparent, black 56px, black calc(100% - 56px), transparent);
+  mask-composite: intersect;
+}
+
+/* Hidden: margin-left -250px leaves the 250px flex item zero wide (box
+   fully off the left edge). Restated here because the inset margin above
+   outranks the base #left-panel.hidden rule; the shadow is dropped so it
+   cannot spill back into view. */
+body.a0-theme #left-panel.hidden {
+  margin-left: -250px;
+  box-shadow: none;
+}
+
+/* The header pill is position: fixed and centred over a flush 250px column;
+   shift it by the inset so it stays centred over the floating panel. Margin,
+   not transform: a transform would capture its fixed-position dropdown. */
+body.a0-theme .sidebar-header-panel {
+  margin-left: var(--sidebar-gap);
+}
+
+@media (max-width: 768px) {
+  body.a0-theme #left-panel {
+    top: var(--sidebar-gap);
+    bottom: var(--sidebar-gap);
+    left: var(--sidebar-gap);
+    margin: 0;
+    height: auto;
+  }
+
+  /* Fixed on mobile, so it must also clear its own inset to hide. */
+  body.a0-theme #left-panel.hidden {
+    margin-left: calc(-250px - var(--sidebar-gap) * 2);
+  }
+}
+
+body.a0-theme .sidebar-header-panel {
+  background: color-mix(in srgb, var(--s2) var(--mat-alpha), transparent);
+  backdrop-filter: var(--mat-filter);
+  -webkit-backdrop-filter: var(--mat-filter);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 var(--mat-edge);
+}
+
+body.a0-theme .section-header,
+body.a0-theme .pref-header {
+  color: var(--t2);
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+body.a0-theme .chat-container,
+body.a0-theme .scheduler-task-item {
+  border-radius: var(--radius-sm);
+  transition: background var(--t-fast);
+}
+
+body.a0-theme .chat-container:hover,
+body.a0-theme .scheduler-task-item:hover {
+  background: var(--color-background-hover);
+}
+
+body.a0-theme .chat-container.chat-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent-ui);
+}
+
+body.a0-theme .chat-name { color: var(--t1); }
+body.a0-theme .chat-selected .chat-name { color: var(--t0); }
+
+body.a0-theme #newChat {
+  color: var(--accent-ui);
+  background: var(--accent-faint);
+  border-radius: var(--radius-xs);
+}
+
+/* Top-right status pill */
+body.a0-theme #time-date-container {
+  padding: .3rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--s2) var(--mat-alpha), transparent);
+  backdrop-filter: var(--mat-filter);
+  -webkit-backdrop-filter: var(--mat-filter);
+  box-shadow: inset 0 1px 0 var(--mat-edge);
+}
+
+/* Top pill controls: round bell, pill project button, and a menu whose
+   radius matches the pill it drops from. */
+body.a0-theme .notification-toggle {
+  border-radius: 50%;
+}
+
+body.a0-theme .notification-toggle.has-unread {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+body.a0-theme .project-dropdown-button {
+  border-radius: 999px;
+  padding-left: .85em;
+  padding-right: .55em;
+}
+
+body.a0-theme .project-dropdown-container .dropdown-menu {
+  border-radius: var(--radius-xl);
+}
+
+/* Messages: replies, user turns and warnings/errors sit in bubbles that
+   share the sidebar surface (below); they are blurred only over a
+   wallpaper (see "Wallpaper glass"). */
+body.a0-theme .message { line-height: 1.6; }
+body.a0-theme .message a { color: var(--accent-ui); }
+
+/* Chat bubbles (agent reply groups, user turns, warnings/errors) share the
+   sidebar's surface: --mat-alpha makes them solid in Solid and translucent
+   in Glass/Enhanced, so text contrast holds over bright wallpapers. */
+body.a0-theme .message-user .message-text {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--s2) var(--mat-alpha), transparent);
+  box-shadow: inset 0 1px 0 var(--mat-edge);
+}
+
+/* Warnings and errors get their own bubble, tinted by the semantic color
+   (never the accent), framed like the agent reply groups. */
+body.a0-theme .message-warning,
+body.a0-theme .message-error {
+  --msg-tone: var(--warn);
+  padding: .8rem 1rem .7rem;
+  border: 1px solid color-mix(in srgb, var(--msg-tone) 32%, var(--line));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--msg-tone) 7%, color-mix(in srgb, var(--s2) var(--mat-alpha), transparent));
+  box-shadow: inset 0 1px 0 var(--mat-edge);
+}
+
+body.a0-theme .message-error {
+  --msg-tone: var(--bad);
+}
+
+/* Collapsed long messages: fade the content itself out (mask) instead of
+   the base ::after gradient to the solid chat color, which showed as a
+   dark band over bubbles and wallpapers. */
+body.a0-theme .message.message-collapsible .message-body::after {
+  display: none;
+}
+
+body.a0-theme #chat-history:not([data-detail-mode="expanded"]) .message.message-collapsible.has-overflow:not(.expanded) .message-body {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 3em), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3em), transparent);
+}
+
+body.a0-theme .message code:not(pre code) {
+  padding: .06rem .32rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--s2) 85%, var(--accent) 6%);
+}
+
+body.a0-theme .process-group {
+  /* Side padding pairs with the border: without it the group and step
+     arrows sit flush against the frame. */
+  padding-left: .7rem;
+  padding-right: .7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--s2) var(--mat-alpha), transparent);
+  transition: border-color var(--t-fast);
+}
+
+body.a0-theme .process-group:hover {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+/* Wallpaper glass: over a wallpaper image, the sidebar and the chat
+   bubbles (agent reply groups, user turns, warnings, errors) frost it like
+   the composer.
+   Uses --mat-filter, so Glass/Enhanced blur and Solid stays flat. Scoped to
+   .has-wallpaper: over the plain backdrop there is nothing to blur, and a
+   long chat has many bubbles. None of these hosts position:fixed children
+   (a backdrop-filter would capture them). */
+body.a0-theme.has-wallpaper #left-panel,
+body.a0-theme.has-wallpaper .process-group,
+body.a0-theme.has-wallpaper .message-user .message-text,
+body.a0-theme.has-wallpaper .message-warning,
+body.a0-theme.has-wallpaper .message-error {
+  backdrop-filter: var(--mat-filter);
+  -webkit-backdrop-filter: var(--mat-filter);
+}
+
+/* Composer: the primary glass surface. */
+body.a0-theme #input-section::before {
+  /* Softer scroll fade than the base 48px - most of the work is done by
+     the composer's own glass. The tint settles to the page colour by the
+     bottom actions row, so scrolled text never reads through that row. */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: linear-gradient(to bottom, transparent 10%,
+    color-mix(in srgb, var(--s0) 75%, transparent) 45%, var(--s0) 68%);
+}
+
+:root[data-material="solid"] body.a0-theme #input-section::before {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: linear-gradient(to bottom, transparent, var(--s0) 70%);
+}
+
+body.a0-theme #input-section .input-row {
+  position: relative;
+  isolation: isolate;
+  min-height: 3.2rem;
+  padding: .4rem .45rem .4rem .55rem;
+  border: 1px solid color-mix(in srgb, var(--accent) var(--mat-rim), var(--line-strong));
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--s2) var(--mat-alpha), transparent);
+  backdrop-filter: var(--mat-filter);
+  -webkit-backdrop-filter: var(--mat-filter);
+  box-shadow: var(--shadow-float), inset 0 1px 0 var(--mat-edge);
+}
+
+/* Enhanced: a lens highlight along the top edge. Opacity is the token, so
+   it costs nothing in other materials. */
+body.a0-theme #input-section .input-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--mat-lens);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .10), transparent 42%),
+    radial-gradient(ellipse 40% 90% at 85% 120%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 70%);
+}
+
+body.a0-theme #input-section .input-row:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  box-shadow:
+    var(--shadow-float),
+    0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent),
+    inset 0 1px 0 var(--mat-edge);
+}
+
+body.a0-theme #chat-input {
+  color: var(--t0);
+  background: transparent;
+}
+
+body.a0-theme #chat-input.is-empty::before { color: var(--t2); }
+
+body.a0-theme #send-button:not(.send-queue) {
+  background-color: var(--accent);
+}
+
+body.a0-theme #send-button {
+  color: var(--on-accent);
+  /* Concentric with the composer: its radius minus the ~.5rem inset. */
+  border-radius: calc(var(--radius-xl) - .5rem);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 32%, transparent),
+              inset 0 1px 0 rgba(255, 255, 255, .25);
+  transition: filter var(--t-fast), transform var(--t-fast);
+}
+
+body.a0-theme #send-button:hover { filter: brightness(1.08); }
+body.a0-theme #send-button:active { transform: scale(.96); }
+
+/* Bottom action row: a quiet strip under the composer, not a second card. */
+body.a0-theme #input-section .chat-bottom-actions-bar .text-button {
+  color: var(--t1);
+  border-radius: var(--radius-xs);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+body.a0-theme #input-section .chat-bottom-actions-bar .text-button:hover:not(:disabled) {
+  color: var(--t0);
+  background: var(--color-background-hover);
+}
+
+/* Floating overlays: menus, popovers, toasts, the canvas rail. */
+body.a0-theme .dropdown-menu,
+body.a0-theme .chat-more-panel,
+body.a0-theme .permissions-mode-menu,
+body.a0-theme .model-switcher-dropdown,
+body.a0-theme .agent-profile-dropdown,
+body.a0-theme .personality-dropdown,
+body.a0-theme .toast,
+body.a0-theme .notification-toast,
+body.a0-theme .right-canvas-rail {
+  border: 1px solid color-mix(in srgb, var(--accent) var(--mat-rim), var(--line-strong));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--s2) var(--mat-alpha), transparent);
+  backdrop-filter: var(--mat-filter);
+  -webkit-backdrop-filter: var(--mat-filter);
+  box-shadow: var(--shadow-float), inset 0 1px 0 var(--mat-edge);
+}
+
+/* An overlay nested inside the composer (e.g. the + menu) can't blur what
+   is behind the page: the composer's own backdrop-filter makes it the
+   backdrop root, so the overlay would only be see-through. Make it solid. */
+body.a0-theme #input-section .input-row .chat-more-panel,
+body.a0-theme #input-section .input-row .dropdown-menu {
+  background: color-mix(in srgb, var(--s2) 97%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+body.a0-theme .dropdown-item,
+body.a0-theme .chat-bottom-menu-item,
+body.a0-theme .permissions-mode-option {
+  border-radius: var(--radius-sm);
+}
+
+body.a0-theme .dropdown-item:hover,
+body.a0-theme .chat-bottom-menu-item:hover:not(:disabled) {
+  background: var(--color-background-hover);
+}
+
+/* Approval decisions (permissions gate and safety policy) in a process
+   step: real buttons, always visible while pending. The first approve
+   (Allow once) is the primary accent action, the "Always allow" options
+   are soft accent, Deny is neutral until hovered. */
+body.a0-theme .step-action-buttons:has(.permissions-decision-btn, .safety-policy-decision-btn) {
+  opacity: 1;
+  pointer-events: auto;
+  flex-wrap: wrap;
+  gap: .4rem;
+  padding: .55rem 0 .2rem;
+}
+
+body.a0-theme .permissions-decision-btn,
+body.a0-theme .safety-policy-decision-btn {
+  padding: .32rem .8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--t1);
+  font-family: var(--font-family-main, "Rubik", Arial, sans-serif);
+  font-size: .76rem;
+  font-weight: 500;
+  line-height: 1.2;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), filter var(--t-fast);
+}
+
+body.a0-theme .permissions-decision-btn.approve-btn,
+body.a0-theme .safety-policy-decision-btn.approve-btn {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-ui);
+}
+
+body.a0-theme .permissions-decision-btn.approve-btn:hover:not(:disabled),
+body.a0-theme .safety-policy-decision-btn.approve-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+body.a0-theme .permissions-decision-btn.approve-btn:first-child,
+body.a0-theme .safety-policy-decision-btn.approve-btn:first-child {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+body.a0-theme .permissions-decision-btn.approve-btn:first-child:hover:not(:disabled),
+body.a0-theme .safety-policy-decision-btn.approve-btn:first-child:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+body.a0-theme .permissions-decision-btn.deny-btn:hover:not(:disabled),
+body.a0-theme .safety-policy-decision-btn.deny-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--bad) 60%, transparent);
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+  color: var(--bad);
+}
+
+body.a0-theme .permissions-decision-btn:disabled,
+body.a0-theme .safety-policy-decision-btn:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+/* Right canvas (Files, Browser, Desktop, Editor, Calendar ...). The rail
+   is already a glass overlay (list above); its buttons, the panel tabs and
+   toolbar buttons take the accent for hover/active. When docked on
+   desktop, the open panel floats like the sidebar. No backdrop-filter on
+   the panel: surfaces inside it use position:fixed (the Desktop viewer's
+   expanded mode) and a filter would trap them inside the panel. */
+body.a0-theme .right-canvas-rail-button,
+body.a0-theme .right-canvas-icon-button {
+  color: var(--t1);
+}
+
+body.a0-theme .right-canvas-rail-button:hover,
+body.a0-theme .right-canvas-icon-button:hover {
+  color: var(--t0);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: var(--accent-faint);
+}
+
+body.a0-theme .right-canvas-rail-button.is-active {
+  color: var(--accent-ui);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 12px -3px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+body.a0-theme .right-canvas-toggle-button {
+  color: var(--accent-ui);
+}
+
+body.a0-theme .right-canvas-rail-separator {
+  background: var(--line-strong);
+}
+
+body.a0-theme .right-canvas-header {
+  border-bottom-color: var(--line);
+  background: color-mix(in srgb, var(--s2) 70%, transparent);
+}
+
+body.a0-theme .right-canvas-tab {
+  align-self: stretch;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--t1);
+}
+
+body.a0-theme .right-canvas-tab:hover {
+  color: var(--t0);
+}
+
+body.a0-theme .right-canvas-tab.is-active {
+  color: var(--t0);
+  background: var(--accent-faint);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+body.a0-theme .right-canvas-tab.is-active .material-symbols-outlined {
+  color: var(--accent-ui);
+}
+
+body.a0-theme:not(.right-canvas-overlay-mode):not(.right-canvas-mobile-mode) .right-canvas.is-open {
+  margin: var(--sidebar-gap);
+  height: calc(100% - var(--sidebar-gap) * 2);
+  border: 1px solid color-mix(in srgb, var(--accent) var(--mat-rim), var(--line-strong));
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--s1) 97%, transparent);
+  box-shadow:
+    0 0 56px -10px color-mix(in srgb, var(--accent) 42%, transparent),
+    0 10px 30px rgba(0, 0, 0, .22),
+    inset 0 1px 0 var(--mat-edge);
+}
+
+/* Clip the header and panels to the rounded frame; the panel itself stays
+   overflow: visible so the rail can sit outside its left edge. */
+body.a0-theme:not(.right-canvas-overlay-mode):not(.right-canvas-mobile-mode) .right-canvas.is-open .right-canvas-shell {
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+body.a0-theme .right-canvas-panels {
+  background: color-mix(in srgb, var(--s1) 97%, transparent);
+}
+
+/* Modals. Opaque enough to read long settings pages. */
+body.a0-theme .modal-inner,
+body.a0-theme .modal-container,
+body.a0-theme .confirm-dialog {
+  border: 1px solid color-mix(in srgb, var(--accent) var(--mat-rim), var(--line-strong));
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--s1) max(var(--mat-alpha), 92%), transparent);
+  backdrop-filter: var(--mat-filter);
+  -webkit-backdrop-filter: var(--mat-filter);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .40), inset 0 1px 0 var(--mat-edge);
+}
+
+body.a0-theme.light-mode .modal-inner,
+body.a0-theme.light-mode .modal-container,
+body.a0-theme.light-mode .confirm-dialog {
+  box-shadow: 0 28px 70px rgba(38, 52, 74, .18), inset 0 1px 0 var(--mat-edge);
+}
+
+body.a0-theme .modal-header,
+body.a0-theme .modal-footer,
+body.a0-theme .modal-footer-slot,
+body.a0-theme .modal-scroll {
+  background: transparent;
+  border-color: var(--line);
+}
+
+/* --------------------------------------------------------------------------
+   3. Details
+   -------------------------------------------------------------------------- */
+
+/* Settings */
+body.a0-theme .settings-tabs-container {
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--s0) 50%, transparent);
+}
+
+body.a0-theme .settings-tab,
+body.a0-theme .settings-section-link {
+  border-radius: var(--radius-sm);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+body.a0-theme .settings-tab.active,
+body.a0-theme .settings-section-link.active {
+  color: var(--t0);
+  background: var(--accent-soft);
+}
+
+body.a0-theme .settings-tab.active .material-symbols-outlined,
+body.a0-theme .settings-section-link.active .material-symbols-outlined {
+  color: var(--accent-ui);
+}
+
+body.a0-theme .settings-search {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--t0) 4%, transparent);
+}
+
+/* Form controls */
+body.a0-theme input[type="text"],
+body.a0-theme input[type="password"],
+body.a0-theme input[type="number"],
+body.a0-theme input[type="search"],
+body.a0-theme input[type="url"],
+body.a0-theme input[type="email"],
+body.a0-theme textarea,
+body.a0-theme select {
+  color: var(--t0);
+  background: color-mix(in srgb, var(--s2) 80%, transparent);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+body.a0-theme #chat-input,
+body.a0-theme #chat-input:focus,
+body.a0-theme .settings-search input,
+body.a0-theme .settings-search input:focus {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The settings search box draws its own frame; ring the frame on focus. */
+body.a0-theme .settings-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+body.a0-theme input:focus,
+body.a0-theme textarea:focus,
+body.a0-theme select:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Buttons: accent only on the positive action. */
+body.a0-theme .btn { border-radius: var(--radius-sm); }
+
+body.a0-theme .btn-ok,
+body.a0-theme .btn-primary,
+body.a0-theme .btn.primary,
+body.a0-theme .btn-upload {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+body.a0-theme .btn-ok:hover:not(:disabled),
+body.a0-theme .btn-primary:hover:not(:disabled),
+body.a0-theme .btn.primary:hover:not(:disabled),
+body.a0-theme .btn-upload:hover {
+  filter: brightness(1.08);
+}
+
+/* Secondary actions (Configure, Status, Configure Models ...): a soft
+   accent tint, so the filled accent stays reserved for the main action
+   (Save, Allow once, send). */
+body.a0-theme .btn-field {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-ui);
+}
+
+body.a0-theme .btn-field:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--t0);
+}
+
+body.a0-theme .btn-field:disabled {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--t2);
+  opacity: .6;
+}
+
+/* Shared .button (css/buttons.css): confirm/primary are the main action;
+   the many neutral variants (icon, zoom, dropdown, toolbar) keep their
+   look but take the accent on hover; plugin "Config"/"Open" actions match
+   .btn-field. */
+body.a0-theme .button.confirm,
+body.a0-theme .button.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+body.a0-theme .button.confirm:hover:not(:disabled),
+body.a0-theme .button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+body.a0-theme .button:not(.cancel):not(.confirm):not(.primary):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+  color: var(--accent-ui);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+body.a0-theme .plugin-actions .button:not(.cancel):not(.confirm):not(.primary) {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-ui);
+}
+
+body.a0-theme .plugin-actions .button:not(.cancel):not(.confirm):not(.primary):hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--t0);
+}
+
+body.a0-theme .welcome-banner-cta,
+body.a0-theme .welcome-banner-html .btn,
+body.a0-theme .welcome-banner-html button {
+  background-color: var(--accent);
+  color: var(--on-accent);
+}
+
+body.a0-theme .welcome-banner-cta:hover,
+body.a0-theme .welcome-banner-html .btn:hover,
+body.a0-theme .welcome-banner-html button:hover {
+  background-color: var(--accent);
+  filter: brightness(1.08);
+}
+
+/* Welcome quick-action icons follow the accent instead of a fixed blue. */
+body.a0-theme .welcome-action-icon { color: var(--accent-ui); }
+
+/* Toggles (.slider in .switch, .toggler in .toggle): "neo" switch style
+   adapted from chicogale's "tall-starfish-3" on uiverse.io (MIT), rebuilt
+   on the existing markup - each switch keeps its own size and knob
+   geometry; only surfaces change. Off: dark track, grey knob with a short
+   line. On: grid + accent sweep in the track, accent knob with a ring icon
+   and an accent glow. Its ACTIVE/STANDBY label, status dot and looping
+   spectrum/pulse animations are intentionally left out. */
+body.a0-theme {
+  --tg-track: #181c20;
+  --tg-off: #475057;
+  --tg-ease: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+body.a0-theme.light-mode {
+  --tg-track: #d6dce4;
+  --tg-off: #8f98a3;
+}
+
+body.a0-theme .slider,
+body.a0-theme .toggler {
+  border: 0;
+  background-color: var(--tg-track);
+  background-image: linear-gradient(-45deg, rgba(20, 20, 20, .8) 0%, rgba(30, 30, 30, .3) 50%, rgba(20, 20, 20, .8) 100%);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .45), inset 0 0 0 1px rgba(255, 255, 255, .1);
+  transition: background-color .4s var(--tg-ease), box-shadow .4s var(--tg-ease);
+}
+
+body.a0-theme.light-mode .slider,
+body.a0-theme.light-mode .toggler {
+  background-image: linear-gradient(-45deg, rgba(255, 255, 255, .5) 0%, rgba(255, 255, 255, .1) 50%, rgba(255, 255, 255, .5) 100%);
+  box-shadow: 0 1px 4px rgba(38, 52, 74, .18), inset 0 0 0 1px rgba(0, 0, 0, .08);
+}
+
+body.a0-theme .slider::before,
+body.a0-theme .toggler::before {
+  background-color: var(--tg-off);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .5), rgba(255, 255, 255, .5)),
+    linear-gradient(135deg, rgba(255, 255, 255, .14), transparent);
+  background-size: 34% 2px, 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1), 0 2px 6px rgba(0, 0, 0, .25);
+  transition: transform .4s var(--tg-ease), background-color .4s var(--tg-ease),
+              box-shadow .4s var(--tg-ease), scale .2s var(--tg-ease);
+}
+
+body.a0-theme .switch:hover .slider::before,
+body.a0-theme .toggle:hover .toggler::before,
+body.a0-theme .slider:hover::before,
+body.a0-theme .toggler:hover::before {
+  scale: 1.06;
+}
+
+body.a0-theme input:checked + .slider,
+body.a0-theme input:checked + .toggler {
+  background-color: var(--tg-track);
+  background-image:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 24%, transparent)),
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(-45deg, rgba(20, 20, 20, .8) 0%, rgba(30, 30, 30, .3) 50%, rgba(20, 20, 20, .8) 100%);
+  background-size: auto, 5px 5px, 5px 5px, auto;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .45), inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+body.a0-theme.light-mode input:checked + .slider,
+body.a0-theme.light-mode input:checked + .toggler {
+  background-image:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 22%, transparent)),
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 12%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 12%, transparent) 1px, transparent 1px);
+  background-size: auto, 5px 5px, 5px 5px;
+}
+
+body.a0-theme input:checked + .slider::before,
+body.a0-theme input:checked + .toggler::before {
+  background-color: var(--accent);
+  background-image:
+    radial-gradient(circle, transparent 0 20%, #fff 22% 30%, transparent 32%),
+    linear-gradient(135deg, rgba(255, 255, 255, .2), transparent);
+  background-size: 100% 100%, 100% 100%;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, rgba(255, 255, 255, .3)),
+    0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+body.a0-theme input:disabled + .slider,
+body.a0-theme input:disabled + .toggler {
+  opacity: .5;
+}
+
+/* Focus ring, everywhere keyboard focus lands. */
+body.a0-theme :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 80%, white 20%);
+  outline-offset: 2px;
+}
+
+/* Scrollbars. WebKit pseudo-elements only: in Chromium the standard
+   scrollbar-width/scrollbar-color properties take over from these and, on
+   Windows, bring back the arrow buttons. */
+body.a0-theme ::-webkit-scrollbar { width: 9px; height: 9px; }
+body.a0-theme ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+body.a0-theme ::-webkit-scrollbar-corner { background: transparent; }
+body.a0-theme ::-webkit-scrollbar-track { background: transparent; }
+body.a0-theme ::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--t1) 28%, transparent) padding-box;
+}
+body.a0-theme ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--t1) 44%, transparent) padding-box;
+}
+
+/* Selection */
+body.a0-theme ::selection { background: color-mix(in srgb, var(--accent) 34%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  body.a0-theme *,
+  body.a0-theme *::before,
+  body.a0-theme *::after {
+    transition-duration: .001ms !important;   /* overrides component transitions */
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

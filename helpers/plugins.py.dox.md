@@ -51,6 +51,7 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, WebSocket state, plugin state, settings/state persistence, secret handling.
 - Imported dependency areas include: `__future__`, `asyncio`, `glob`, `helpers`, `helpers.defer`, `helpers.watchdog`, `json`, `pathlib`, `pydantic`, `re`, `regex`, `time`, `typing`.
+- `REVIEW_PENDING_FILE_NAME` / `is_review_pending()`: a review-pending plugin is never enabled (even with `always_enabled`), `call_plugin_hook` returns the default without importing `hooks.py`, and the first global `toggle_plugin(..., True)` removes the marker and runs the deferred `install` hook (restoring the marker if it fails). Async hooks run through `helpers/sync_async.run_sync`, never a nested `asyncio.run`.
 
 ## Key Concepts
 

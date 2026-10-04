@@ -4,8 +4,8 @@
   "description": "Autonomous AI agent",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1a1a1a",
-  "theme_color": "#333333",
+  "background_color": "#0e1217",
+  "theme_color": "#141920",
   "icons": [
     {
       "src": "/public/icon-maskable.svg",

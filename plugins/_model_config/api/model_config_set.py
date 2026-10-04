@@ -17,7 +17,7 @@ class ModelConfigSet(ApiHandler):
             return Response(status=400, response="Missing or invalid config")
 
         config_to_save = deepcopy(config)
-        for section_name in ("chat_model", "utility_model", "embedding_model"):
+        for section_name in ("chat_model", "utility_model", "embedding_model", "vision_model"):
             section = config_to_save.get(section_name, {})
             if not isinstance(section, dict):
                 continue

@@ -15,7 +15,9 @@
 
 - Install third-party plugins into `usr/plugins/`, not bundled `plugins/`.
 - Reject unsafe archive paths, missing manifests, invalid manifests, and plugin name conflicts.
-- Run plugin install hooks and refresh plugin state after successful changes.
+- New ZIP/Git/Hub installs are marked review-pending (`mark_review_pending`) and do NOT run their install hook; the hook runs when the user first enables the plugin globally (`helpers/plugins.py toggle_plugin`). Results include `review_pending` and `message`.
+- Git updates of an already-enabled plugin still run pre-update and install hooks (the user explicitly asked to update).
+- Refresh plugin state after successful changes.
 
 ## Work Guidance
 

@@ -38,7 +38,7 @@ class DesktopScreenshot(Tool):
             return Response(
                 message=(
                     "Desktop capture is disabled. Enable 'capture_enabled' in the "
-                    "Windows Desktop plugin settings to use this tool."
+                    "Desktop plugin settings to use this tool."
                 ),
                 break_loop=False,
             )

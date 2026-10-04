@@ -125,6 +125,28 @@ Alpine.directive(
     }
   );
 
+  // x-keep-in-view: shift an absolutely positioned popover left (via the
+  // standalone `translate` property, so x-transition transforms still work)
+  // whenever it is shown or resized past the viewport's right edge.
+  Alpine.directive(
+    "keep-in-view",
+    (el, _directive, { cleanup }) => {
+      const gap = 8;
+      const fit = () => {
+        el.style.translate = "";
+        if (!el.offsetWidth) return;
+        const rect = el.getBoundingClientRect();
+        const over = rect.right - (document.documentElement.clientWidth - gap);
+        if (over <= 0) return;
+        const shift = Math.min(over, Math.max(0, rect.left - gap));
+        if (shift > 0) el.style.translate = `${-shift}px 0`;
+      };
+      const observer = new ResizeObserver(fit);
+      observer.observe(el);
+      cleanup(() => observer.disconnect());
+    }
+  );
+
   // run every second if the component is active
   Alpine.directive(
     "every-second",

@@ -20,6 +20,7 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: secret handling.
 - Imported dependency areas include: `hashlib`, `helpers`.
+- `get_credentials_hash()` returns an HMAC-SHA256 of `user:password` under a per-process random key (`_SESSION_KEY`), not a plain hash: the signed-but-readable session cookie stores it, so a stolen cookie gives nothing to brute-force offline. Sessions already end on restart (per-process Flask secret).
 
 ## Key Concepts
 

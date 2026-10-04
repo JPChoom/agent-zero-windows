@@ -8,7 +8,7 @@ autoMount();
 export default async function registerWindowsDesktopSurface(surfaces) {
   surfaces.registerSurface({
     id: "win-desktop",
-    title: "Windows Desktop",
+    title: "Desktop",
     icon: "desktop_windows",
     order: 21,
     modalPath: "/plugins/_win_desktop/webui/main.html",

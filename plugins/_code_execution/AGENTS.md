@@ -16,6 +16,8 @@
 - Keep session concurrency, timeout, streaming, and reset behavior predictable.
 - Explicitly target local versus SSH execution runtimes.
 - Do not hardcode secrets, SSH credentials, or local user paths.
+- `__del__` methods on session objects (`TTYSession`, `LocalInteractiveSession`) must stay synchronous and never run or nest an event loop (`asyncio.run`, `run_until_complete`): garbage collection can fire mid-task-step, and a nested loop there drops that task's wakeup and freezes the agent permanently. Graceful shutdown belongs to callers that `await close()`.
+- Use `tty_session._SIGKILL`, not `signal.SIGKILL`, which does not exist on Windows.
 
 ## Work Guidance
 

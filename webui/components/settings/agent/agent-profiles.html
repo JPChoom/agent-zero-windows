@@ -1,0 +1,244 @@
+<html>
+<head>
+  <title>Agent Profiles</title>
+  <script type="module">
+    import { store } from "/components/settings/agent/agent-profiles-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.agentProfiles">
+      <div class="agent-profiles-manager">
+        <div class="section-title">Agent Profiles</div>
+        <div class="section-description">
+          Create, edit, and delete agent profiles. Built-in profiles are read-only here - create a
+          new profile to customize behavior without touching the framework defaults.
+        </div>
+
+        <div class="agent-profiles-list" x-show="!$store.agentProfiles.isCreating && !$store.agentProfiles.isEditing">
+          <template x-for="profile in $store.agentProfiles.profiles" :key="profile.name">
+            <div class="agent-profile-row">
+              <div class="agent-profile-row-main">
+                <div class="agent-profile-row-title">
+                  <span x-text="profile.title || profile.name"></span>
+                  <span class="agent-profile-origin-badge" x-text="$store.agentProfiles.originLabel(profile)"></span>
+                  <span class="agent-profile-disabled-badge" x-show="profile.enabled === false" style="display: none;">Disabled</span>
+                </div>
+                <div class="agent-profile-row-description" x-text="profile.description"></div>
+              </div>
+              <div class="agent-profile-row-actions">
+                <button type="button" class="btn-icon-action" title="Edit" @click="$store.agentProfiles.startEdit(profile.name)">
+                  <span class="material-symbols-outlined">edit</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn-icon-action"
+                  title="Delete"
+                  x-show="$store.agentProfiles.isUserOwned(profile)"
+                  style="display: none;"
+                  @click="$confirmClick($event, () => $store.agentProfiles.deleteProfile(profile.name))"
+                >
+                  <span class="material-symbols-outlined">delete</span>
+                </button>
+              </div>
+            </div>
+          </template>
+          <template x-if="!$store.agentProfiles.loading && $store.agentProfiles.profiles.length === 0">
+            <div class="agent-profiles-empty">No agent profiles found.</div>
+          </template>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-ok agent-profiles-new-button"
+          x-show="!$store.agentProfiles.isCreating && !$store.agentProfiles.isEditing"
+          @click="$store.agentProfiles.startCreate()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">add</span>
+          <span>New profile</span>
+        </button>
+
+        <div class="agent-profile-editor" x-show="$store.agentProfiles.isCreating || $store.agentProfiles.isEditing" style="display: none;">
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Name</div>
+              <div class="field-description" x-show="$store.agentProfiles.isCreating">
+                Used as the profile's folder name (letters, numbers, dashes).
+              </div>
+            </div>
+            <div class="field-control">
+              <template x-if="$store.agentProfiles.isCreating">
+                <div>
+                  <input type="text" x-model="$store.agentProfiles.draft.name" placeholder="my-profile">
+                  <div class="agent-profile-slug-preview" x-show="$store.agentProfiles.slugPreview" x-text="'usr/agents/' + $store.agentProfiles.slugPreview" style="display: none;"></div>
+                </div>
+              </template>
+              <template x-if="!$store.agentProfiles.isCreating">
+                <input type="text" :value="$store.agentProfiles.originalName" disabled>
+              </template>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Title</div>
+              <div class="field-description">Display name shown in profile pickers.</div>
+            </div>
+            <div class="field-control">
+              <input type="text" x-model="$store.agentProfiles.draft.title" placeholder="My Profile">
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Description</div>
+              <div class="field-description">Shown alongside the profile in pickers.</div>
+            </div>
+            <div class="field-control">
+              <input type="text" x-model="$store.agentProfiles.draft.description" placeholder="What this profile is for">
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Delegation context</div>
+              <div class="field-description">Guidance shown to other agents deciding whether to delegate to this profile.</div>
+            </div>
+            <div class="field-control">
+              <textarea rows="3" x-model="$store.agentProfiles.draft.context" placeholder="Use this agent for..."></textarea>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Enabled</div>
+              <div class="field-description">Disabled profiles are hidden from profile pickers.</div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="$store.agentProfiles.draft.enabled">
+                <span class="toggler"> </span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">System prompt override</div>
+              <div class="field-description">
+                Replaces <code>agent.system.main.specifics.md</code> for this profile. Leave blank to inherit the default.
+              </div>
+            </div>
+            <div class="field-control">
+              <textarea rows="8" class="agent-profile-prompt-editor" x-model="$store.agentProfiles.draft.specificsPrompt" placeholder="You are..."></textarea>
+            </div>
+          </div>
+
+          <div class="agent-profile-editor-actions">
+            <button type="button" class="btn btn-ok" @click="$store.agentProfiles.save()">Save</button>
+            <button type="button" class="btn btn-cancel" @click="$store.agentProfiles.cancelEdit()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .agent-profiles-manager {
+      margin-top: var(--spacing-md, 1rem);
+    }
+
+    .agent-profiles-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      margin: 0.5rem 0;
+    }
+
+    .agent-profile-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background-color: var(--color-message-bg);
+    }
+
+    .agent-profile-row-title {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-weight: 600;
+    }
+
+    .agent-profile-row-description {
+      opacity: 0.75;
+      font-size: 0.85rem;
+      margin-top: 0.15rem;
+    }
+
+    .agent-profile-origin-badge {
+      font-size: 0.65rem;
+      font-weight: 500;
+      opacity: 0.75;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      padding: 0.05rem 0.5rem;
+    }
+
+    .agent-profile-disabled-badge {
+      font-size: 0.65rem;
+      font-weight: 500;
+      color: var(--color-danger, #e05555);
+      border: 1px solid var(--color-danger, #e05555);
+      border-radius: 999px;
+      padding: 0.05rem 0.5rem;
+    }
+
+    .agent-profile-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      flex: 0 0 auto;
+    }
+
+    .agent-profiles-empty {
+      opacity: 0.6;
+      font-size: 0.85rem;
+      padding: 0.5rem 0;
+    }
+
+    .agent-profiles-new-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .agent-profile-editor {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    .agent-profile-slug-preview {
+      font-size: 0.75rem;
+      opacity: 0.65;
+      margin-top: 0.25rem;
+      font-family: 'Roboto Mono', monospace;
+    }
+
+    .agent-profile-prompt-editor {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.8rem;
+    }
+
+    .agent-profile-editor-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+  </style>
+</body>
+</html>

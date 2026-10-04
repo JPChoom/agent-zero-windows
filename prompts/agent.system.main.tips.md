@@ -21,7 +21,7 @@ skill descriptions in prompt executed with code_execution_tool or skills_tool
 PowerShell .NET Python Node.js and Windows-native tools and libraries for solutions
 use tools to simplify tasks achieve goals
 never rely on aging memories like time date etc
-always use specialized subordinate agents for specialized tasks matching their prompt profile
+use specialized subordinate agents when their prompt profile materially improves the result; handle straightforward tasks directly
 
 ## Documents and OCR
 

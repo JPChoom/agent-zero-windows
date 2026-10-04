@@ -6,7 +6,8 @@
 
 ## Ownership
 
-- Ordered Python files own tool-call file persistence and related history side effects.
+- `_50_mark_untrusted_content.py` wraps external tool results in `<untrusted_content>` blocks and taints the chat (`helpers/untrusted_content.py`); it runs before `_90_save_tool_call_file.py` so the saved copy carries the same marker.
+- `_90_save_tool_call_file.py` owns tool-call file persistence.
 
 ## Local Contracts
 

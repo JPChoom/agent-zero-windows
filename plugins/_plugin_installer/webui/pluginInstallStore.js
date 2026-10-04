@@ -242,7 +242,9 @@ const model = {
       this.result = data;
 
       toastFrontendSuccess(
-        `Plugin "${data.title || data.plugin_name}" installed`,
+        data.review_pending
+          ? `Plugin "${data.title || data.plugin_name}" installed (switched off). ${data.message || ""}`
+          : `Plugin "${data.title || data.plugin_name}" installed`,
         "Plugin Installer"
       );
     } catch (e) {
@@ -285,7 +287,9 @@ const model = {
       this.result = data;
 
       toastFrontendSuccess(
-        `Plugin "${data.title || data.plugin_name}" installed`,
+        data.review_pending
+          ? `Plugin "${data.title || data.plugin_name}" installed (switched off). ${data.message || ""}`
+          : `Plugin "${data.title || data.plugin_name}" installed`,
         "Plugin Installer"
       );
     } catch (e) {
@@ -653,7 +657,9 @@ const model = {
       this.fetchInstalledPluginInfo(plugin.key || data.plugin_name);
 
       toastFrontendSuccess(
-        `Plugin "${data.title || data.plugin_name}" installed`,
+        data.review_pending
+          ? `Plugin "${data.title || data.plugin_name}" installed (switched off). ${data.message || ""}`
+          : `Plugin "${data.title || data.plugin_name}" installed`,
         "Plugin Installer"
       );
     } catch (e) {

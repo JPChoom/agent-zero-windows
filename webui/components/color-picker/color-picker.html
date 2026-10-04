@@ -1,0 +1,161 @@
+<html>
+<head>
+  <script type="module">
+    import { store } from "/components/color-picker/color-picker-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.colorPicker">
+      <div class="color-picker-popover"
+           role="dialog"
+           aria-label="Color picker"
+           x-show="$store.colorPicker.isOpen"
+           x-transition.opacity.duration.120ms
+           :style="{ top: $store.colorPicker.top + 'px', left: $store.colorPicker.left + 'px' }"
+           @click.outside="$store.colorPicker.close()"
+           @keydown.escape.window="$store.colorPicker.isOpen && $store.colorPicker.close({ revert: true })"
+           style="display: none;">
+        <div class="cp-head">
+          <span class="cp-title" x-text="$store.colorPicker.title || 'Color'"></span>
+          <button type="button" class="cp-close" title="Close" @click="$store.colorPicker.close()">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <div class="cp-sv" x-ref="sv"
+             :style="{ backgroundColor: $store.colorPicker.hueColor }"
+             @pointerdown="$store.colorPicker.drag($event, $refs.sv, (x, y) => $store.colorPicker.setSV(x, y))">
+          <div class="cp-sv-thumb"
+               :style="{ left: ($store.colorPicker.s * 100) + '%', top: ((1 - $store.colorPicker.v) * 100) + '%', backgroundColor: $store.colorPicker.hex }"></div>
+        </div>
+
+        <div class="cp-hue" x-ref="hue"
+             @pointerdown="$store.colorPicker.drag($event, $refs.hue, (x) => $store.colorPicker.setHue(x))">
+          <div class="cp-hue-thumb"
+               :style="{ left: ($store.colorPicker.h / 360 * 100) + '%', backgroundColor: $store.colorPicker.hueColor }"></div>
+        </div>
+
+        <div class="cp-row">
+          <span class="cp-preview" :style="{ backgroundColor: $store.colorPicker.hex }"></span>
+          <input type="text" class="cp-hex" spellcheck="false" maxlength="7" aria-label="Hex color"
+                 x-model="$store.colorPicker.hexInput"
+                 @change="$store.colorPicker.commitHexInput()"
+                 @keydown.enter.prevent="$store.colorPicker.commitHexInput(); $store.colorPicker.close()">
+        </div>
+
+        <div class="cp-swatches" x-show="$store.colorPicker.swatches.length">
+          <template x-for="c in $store.colorPicker.swatches" :key="c">
+            <button type="button" class="cp-swatch" :title="c" :style="{ backgroundColor: c }"
+                    :class="{ active: c.toLowerCase() === $store.colorPicker.hex }"
+                    @click="$store.colorPicker.pick(c)"></button>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .color-picker-popover {
+      position: fixed;
+      z-index: 12000;
+      box-sizing: border-box;
+      width: 248px;
+      padding: .7rem;
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+      border: 1px solid var(--line-strong, var(--color-border));
+      border-radius: var(--radius-lg, 14px);
+      background: color-mix(in srgb, var(--s2, var(--color-panel)) 97%, transparent);
+      box-shadow: var(--shadow-float, 0 18px 48px rgba(0, 0, 0, .36));
+      color: var(--t0, var(--color-text));
+      user-select: none;
+    }
+
+    .cp-head { display: flex; align-items: center; justify-content: space-between; }
+    .cp-title {
+      font-size: .68rem;
+      font-weight: 600;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: var(--t2, var(--color-text-muted));
+    }
+    .cp-close {
+      display: flex;
+      padding: 2px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--t2, var(--color-text-muted));
+      cursor: pointer;
+    }
+    .cp-close:hover { color: var(--t0, var(--color-text)); background: var(--color-background-hover); }
+    .cp-close .material-symbols-outlined { font-size: 16px; }
+
+    .cp-sv {
+      position: relative;
+      height: 140px;
+      border-radius: 10px;
+      background-image:
+        linear-gradient(to top, #000, transparent),
+        linear-gradient(to right, #fff, transparent);
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .cp-hue {
+      position: relative;
+      height: 12px;
+      border-radius: 999px;
+      background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00);
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    .cp-sv-thumb,
+    .cp-hue-thumb {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .35);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .cp-hue-thumb { top: 50%; }
+
+    .cp-row { display: flex; align-items: center; gap: .5rem; }
+    .cp-preview {
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14);
+    }
+    .color-picker-popover .cp-hex {
+      flex: 1;
+      min-width: 0;
+      height: 30px;
+      box-sizing: border-box;
+      padding: 0 .6rem;
+      font-family: var(--font-family-code, monospace);
+      font-size: .8rem;
+      text-transform: lowercase;
+    }
+
+    .cp-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cp-swatch {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14);
+    }
+    .cp-swatch.active { box-shadow: 0 0 0 2px var(--s2, var(--color-panel)), 0 0 0 4px var(--t0, var(--color-text)); }
+  </style>
+</body>
+</html>

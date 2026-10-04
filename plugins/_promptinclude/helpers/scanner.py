@@ -30,17 +30,24 @@ class ScanResult(TypedDict):
 # ------------------------------------------------------------------
 
 def scan_promptinclude_files(
-    root: str,
+    root: "str | list[str]",
     *,
     name_pattern: str = "*.promptinclude.md",
-    max_depth: int = 10,
+    max_depth: int = 1,
     max_file_tokens: int = 2000,
     max_file_count: int = 50,
     max_total_tokens: int = 8000,
     gitignore: str = "",
 ) -> ScanResult:
+    """`root` may be one directory or several; budgets apply across all of
+    them. max_depth=1 means each root's own files only (no subfolders)."""
     ignore_spec = _build_ignore_spec(gitignore)
-    matched = _find_matching_files(root, name_pattern, max_depth, ignore_spec)
+    roots = [root] if isinstance(root, str) else list(root)
+    matched: list[str] = []
+    for one_root in roots:
+        for path in _find_matching_files(one_root, name_pattern, max_depth, ignore_spec):
+            if path not in matched:
+                matched.append(path)
     matched.sort()
 
     result_files: list[FileEntry] = []

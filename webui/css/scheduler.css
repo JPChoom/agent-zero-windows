@@ -458,6 +458,91 @@
 }
 
 /* ==========================================================================
+   Friendly recurrence picker
+   ========================================================================== */
+
+.recurrence-preset-select {
+  width: 100%;
+  max-width: 260px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-input);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+.recurrence-controls {
+  margin-bottom: 6px;
+}
+
+.recurrence-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.recurrence-number {
+  width: 4.2rem;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-input);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.recurrence-weekly {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recurrence-weekday-toggles {
+  display: flex;
+  gap: 4px;
+}
+
+.recurrence-weekday-btn {
+  width: 2.4rem;
+  padding: 5px 0;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.recurrence-weekday-btn:hover {
+  opacity: 0.9;
+}
+
+.recurrence-weekday-btn.active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--color-highlight, #0a84ff) 18%, transparent);
+  border-color: var(--color-highlight, #0a84ff);
+}
+
+.recurrence-cron-preview {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin-top: 4px;
+}
+
+.recurrence-cron-preview code {
+  font-family: var(--font-family-code, monospace);
+}
+
+/* ==========================================================================
    Plan Builder (for planned tasks)
    ========================================================================== */
 

@@ -19,6 +19,8 @@
 - Use shared API, WebSocket, notification, and attachment helpers where available.
 - Do not bypass CSRF or WebSocket state-sync expectations.
 - The shared composer can be mounted on the Welcome screen with no selected chat; sending from that state must create and select a chat context before dispatch.
+- `#input-section` floats over the chat and publishes its live height as `--composer-height` on `<html>` (ResizeObserver in `chat-bar.html`); `#chat-history` bottom padding and `#chat-nav-buttons` offset must derive from it, never from a fixed guess, so wrapped action rows never hide the last message.
+- `.chat-bottom-actions-bar` stays below the composer as a wrapping flex row and a named `chat-actions` size container. Extensions placed there must flatten their wrappers into flex items, anchor any popover to their own button, and mark popovers `x-keep-in-view`.
 - Composer text uses the main UI font by default; typing a triple-backtick fence and pressing Enter turns that line into a visual code block that serializes back to fenced Markdown, while pasted fenced Markdown stays plain text.
 - Missing model setup is gated at send intent: the first unconfigured send renders an in-thread setup card, keeps the pending prompt in browser session storage for refresh recovery, and must not call `/message_async` until a chat model is configured.
 - While the setup gate is open, the composer remains typeable but send is blocked until setup succeeds.

@@ -59,7 +59,7 @@ class LogFromStream(Extension):
                 tool_args = parsed.get("tool_args")
                 if isinstance(tool_args, dict) and "runtime" in tool_args:
                     length = ""
-                    if "code" in tool_args:
+                    if isinstance(tool_args.get("code"), str):
                         length = f"({len(tool_args['code'])})"
                         kvps["step"] = f"Writing code... {length}"
                     if tool_args["runtime"] == "python":

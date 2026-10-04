@@ -107,6 +107,24 @@ async def test_a_complete_tool_args_still_produces_the_detailed_step_label():
 
 
 @pytest.mark.asyncio
+async def test_code_present_but_none_does_not_raise():
+    """Same partial-JSON state one level deeper: runtime has streamed in,
+    the code key exists but its value hasn't arrived yet (observed live
+    on a terminal-runtime call)."""
+    agent = _Agent()
+    ext = LogFromStream(agent=agent)  # type: ignore[arg-type]
+
+    parsed = {
+        "tool_name": "code_execution_tool",
+        "tool_args": {"runtime": "terminal", "code": None},
+    }
+
+    await ext.execute(loop_data=_LoopData(), text="...", parsed=parsed)
+
+    assert "Writing terminal command" in agent.context.log.item.kvps["step"]
+
+
+@pytest.mark.asyncio
 async def test_a_non_dict_tool_args_does_not_raise():
     """Belt and suspenders: any non-dict value in this position (a
     partially-streamed string, a list) must be tolerated the same way."""

@@ -36,6 +36,27 @@
         <div x-show="!$store.fileBrowser.isLoading" class="file-browser-content">
                 <!-- Path navigator -->
               <div class="path-navigator-wrap">
+                <nav class="path-breadcrumbs" aria-label="Breadcrumb">
+                  <template x-for="(segment, index) in $store.fileBrowser.breadcrumbSegments" :key="segment.path">
+                    <span class="path-breadcrumb-segment">
+                      <button
+                        type="button"
+                        class="path-breadcrumb-button"
+                        :class="{ 'is-current': segment.path === $store.fileBrowser.browser.currentPath }"
+                        :disabled="$store.fileBrowser.isLoading || segment.path === $store.fileBrowser.browser.currentPath"
+                        @click="$store.fileBrowser.navigateToBreadcrumb(segment.path)"
+                        :title="segment.path"
+                        x-text="segment.name"
+                      ></button>
+                      <span
+                        class="material-symbols-outlined path-breadcrumb-separator"
+                        aria-hidden="true"
+                        x-show="index < $store.fileBrowser.breadcrumbSegments.length - 1"
+                        style="display: none;"
+                      >chevron_right</span>
+                    </span>
+                  </template>
+                </nav>
                 <form class="path-navigator" @submit.prevent="$store.fileBrowser.submitPath()">
                   <button
                     type="button"
@@ -662,6 +683,58 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
+    }
+
+    .path-breadcrumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.1rem;
+    padding: 0 0.15rem;
+    scrollbar-width: thin;
+    }
+
+    .path-breadcrumb-segment {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+    flex: 0 0 auto;
+    }
+
+    .path-breadcrumb-button {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary, var(--color-text));
+    opacity: 0.75;
+    font: inherit;
+    font-size: 0.78rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 5px;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    }
+
+    .path-breadcrumb-button:hover:not(:disabled) {
+    opacity: 1;
+    background-color: var(--color-background-hover);
+    }
+
+    .path-breadcrumb-button.is-current {
+    opacity: 1;
+    font-weight: 600;
+    cursor: default;
+    }
+
+    .path-breadcrumb-separator {
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
+    opacity: 0.5;
+    flex: 0 0 auto;
     }
 
     .path-navigator {

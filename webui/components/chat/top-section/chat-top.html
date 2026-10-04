@@ -13,6 +13,12 @@
 
     <!-- This construct of x-data + x-if is used to ensure the component is only rendered when the store is available -->
     <div x-data>
+        <!-- Progressive blur fade behind the top bar, mirroring the floating
+             input's blur at the bottom (chat-bar.html #input-section::before)
+             - chat content scrolls up underneath the absolutely-positioned
+             #time-date-container, so it fades to a stronger blur near the
+             top edge instead of a hard cutoff. -->
+        <div id="chat-top-blur"></div>
         <template x-if="$store.chatTop">
             <!-- Time and Date -->
             <div id="time-date-container">
@@ -30,6 +36,20 @@
 
     <style>
     #time-date-container > x-extension { display: contents; }
+
+    #chat-top-blur {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 9rem;
+      z-index: 998;
+      pointer-events: none;
+      backdrop-filter: blur(48px);
+      -webkit-backdrop-filter: blur(48px);
+      -webkit-mask-image: linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.35) 35%, rgba(0, 0, 0, 0.8) 65%, black 90%);
+      mask-image: linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.35) 35%, rgba(0, 0, 0, 0.8) 65%, black 90%);
+    }
     </style>
 
 </body>

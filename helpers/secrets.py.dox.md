@@ -37,6 +37,7 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, WebSocket state, settings/state persistence, secret handling.
 - Imported dependency areas include: `dataclasses`, `dotenv.parser`, `helpers`, `helpers.errors`, `helpers.extension`, `io`, `os`, `re`, `threading`, `time`, `typing`.
+- `get_host_bindings()` parses optional `# hosts: a.com, b.com` comment lines placed directly above a key; `extensions/python/tool_execute_before/_09_secret_destination_guard.py` refuses tool calls that would send a bound secret to any other host (or an undeterminable one).
 
 ## Key Concepts
 

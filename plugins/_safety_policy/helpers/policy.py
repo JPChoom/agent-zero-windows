@@ -335,4 +335,63 @@ def classify_source_code(
             tier="deny",
         )
 
-    return _match_custom_patterns(text, custom_patterns)
+    # Custom patterns are hard denies; they take precedence over the
+    # (possibly approve-tier) HTTP destination check.
+    custom_decision = _match_custom_patterns(text, custom_patterns)
+    if not custom_decision.allowed:
+        return custom_decision
+
+    http_decision = _classify_source_http(text, categories, enable_network_allowlist, network_allowlist)
+    if http_decision is not None:
+        return http_decision
+
+    return custom_decision
+
+
+# Python/Node HTTP clients. Downloads made from inside a script never pass a
+# curl/wget command line, so the downloader category used to miss them
+# entirely. Scripts usually keep the host in a constant
+# (BASE = "https://...") and build request URLs from it, so rather than only
+# matching a URL literal at the call site, any http(s) literal anywhere in a
+# source that uses an HTTP client is treated as a destination.
+_SOURCE_HTTP_CLIENT_PATTERN = re.compile(
+    r"\b(?:requests\.(?:get|post|put|patch|delete|head|request|Session)"
+    r"|httpx\.|aiohttp\.|urllib\.request|urlopen|urlretrieve|http\.client"
+    r"|fetch\s*\(|axios\b|got\s*\(|node-fetch|https?\.get\s*\(|https?\.request\s*\()",
+    re.IGNORECASE,
+)
+
+
+def _classify_source_http(text, approval_categories, enable_network_allowlist, network_allowlist):
+    client = _SOURCE_HTTP_CLIENT_PATTERN.search(text)
+    if not client:
+        return None
+    hosts: list[str] = []
+    for match in _URL_PATTERN.finditer(text):
+        try:
+            host = (urlparse(match.group(0)).hostname or "").lower()
+        except ValueError:
+            continue
+        if host and host not in hosts:
+            hosts.append(host)
+    if not hosts:
+        return None  # URL built at runtime - nothing textual to judge (see README)
+
+    blocked = [h for h in hosts if not (enable_network_allowlist and is_allowed_network_destination(h, network_allowlist))]
+    if not blocked:
+        return PolicyDecision(
+            allowed=True,
+            category="downloader",
+            network_destination=hosts[0],
+            network_destination_allowed=True,
+        )
+    tier = "approve" if "downloader" in approval_categories else "deny"
+    return PolicyDecision(
+        allowed=False,
+        category="downloader",
+        pattern=_SOURCE_HTTP_CLIENT_PATTERN.pattern,
+        matched_text=client.group(0),
+        tier=tier,
+        network_destination=blocked[0],
+        network_destination_allowed=False,
+    )

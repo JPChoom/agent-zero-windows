@@ -11,6 +11,16 @@
       <div class="scheduler-modal-content">
         <div id="scheduler-settings-root" class="scheduler-dashboard">
           <div class="scheduler-dashboard-description">Manage tasks and automated processes for Agent Zero.</div>
+          <div class="scheduler-global-setting">
+            <span class="scheduler-global-setting-label">
+              Catch up on missed scheduled runs
+              <span class="scheduler-global-setting-help">If the server was off when a task was due, run it once as soon as it's back instead of skipping to the next occurrence.</span>
+            </span>
+            <label class="switch">
+              <input type="checkbox" :checked="$store.schedulerStore.catchUpMissedRuns" @change="$store.schedulerStore.toggleCatchUpMissedRuns()">
+              <span class="slider"></span>
+            </label>
+          </div>
           <x-component path="modals/scheduler/scheduler-task-editor.html"></x-component>
           <x-component path="modals/scheduler/scheduler-task-list.html"></x-component>
         </div>
@@ -50,6 +60,31 @@
     }
     .scheduler-dashboard-description {
       padding: 0 0 1rem 0;
+    }
+
+    .scheduler-global-setting {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.6rem 0.8rem;
+      margin-bottom: 1rem;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-panel);
+    }
+
+    .scheduler-global-setting-label {
+      font-size: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .scheduler-global-setting-help {
+      font-size: 0.72rem;
+      opacity: 0.65;
+      font-weight: 400;
     }
 
     .scheduler-modal-footer {

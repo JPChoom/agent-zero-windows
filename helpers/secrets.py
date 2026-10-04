@@ -259,6 +259,40 @@ class SecretsManager:
         """Create a streaming-aware secrets filter snapshotting current secret values."""
         return StreamingSecretsFilter(self.load_secrets())
 
+    def get_host_bindings(self) -> Dict[str, List[str]]:
+        """Optional per-secret destination restriction, declared with a
+        comment directly above the key in the secrets file:
+
+            # hosts: reddit.com, oauth.reddit.com
+            REDDIT_PASSWORD=...
+
+        Returns {KEY: [hosts]} for bound keys only; a host also covers its
+        subdomains. Unbound secrets stay unrestricted. Enforced by
+        extensions/python/tool_execute_before/_09_secret_destination_guard.py.
+        """
+        bindings: Dict[str, List[str]] = {}
+        pending: List[str] | None = None
+        for raw_line in (self.read_secrets_raw() or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                m = re.match(r"#\s*hosts?\s*:\s*(.+)$", line, re.IGNORECASE)
+                if m:
+                    pending = [
+                        h.strip().lower().rstrip(".")
+                        for h in re.split(r"[,\s]+", m.group(1))
+                        if h.strip()
+                    ]
+                continue
+            key = line.split("=", 1)[0].strip()
+            if key.lower().startswith("export "):
+                key = key[7:].strip()
+            if pending and key:
+                bindings[key.upper()] = pending
+            pending = None
+        return bindings
+
     def replace_placeholders(self, text: str) -> str:
         """Replace secret placeholders with actual values"""
         if not text:

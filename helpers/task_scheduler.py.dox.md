@@ -13,6 +13,8 @@
 - Classes:
 - `TaskState` (`str`, `Enum`)
 - `TaskType` (`str`, `Enum`)
+- `SchedulerSettings` (`BaseModel`)
+  - `catch_up_missed_runs: bool` (default `True`) - whether a `ScheduledTask` whose cron occurrence was missed (server off, machine asleep) fires once for that occurrence as soon as the scheduler is back, instead of silently skipping to the next future occurrence. Persisted at `usr/scheduler/settings.json` via `get_scheduler_settings()` / `save_scheduler_settings()`, process-cached in `_scheduler_settings_cache`. Read/write API: `api/scheduler_settings_get.py`, `api/scheduler_settings_set.py`.
 - `TaskSchedule` (`BaseModel`)
   - `to_crontab(self) -> str`
 - `TaskPlan` (`BaseModel`)
@@ -37,7 +39,7 @@
 - `ScheduledTask` (`BaseTask`)
   - `create(cls, name: str, system_prompt: str, prompt: str, schedule: TaskSchedule, attachments: list[str] | None=..., context_id: str | None=..., timezone: str | None=..., project_name: str | None=..., project_color: str | None=...)`
   - `update(self, name: str | None=..., state: TaskState | None=..., system_prompt: str | None=..., prompt: str | None=..., attachments: list[str] | None=..., last_run: datetime | None=..., last_result: str | None=..., context_id: str | None=..., schedule: TaskSchedule | None=..., **kwargs)`
-  - `check_schedule(self, frequency_seconds: float=...) -> bool`
+  - `check_schedule(self, frequency_seconds: float=...) -> bool` - compares the cron's most recent occurrence at-or-before now against `last_run` (falling back to `created_at`), not just "did an occurrence land in the last tick window." This is what allows catching up a run missed during downtime: if that occurrence is newer than the last actual run, it's due regardless of how long ago it happened. When `SchedulerSettings.catch_up_missed_runs` is `False`, an occurrence older than `frequency_seconds` is still skipped (pre-catch-up behavior). `crontab.previous()` is queried at `now + 1s` since it is exclusive of the instant passed to it - without the +1s, an occurrence landing exactly on `now` would be missed.
   - `get_next_run(self) -> datetime | None`
 - `PlannedTask` (`BaseTask`)
   - `create(cls, name: str, system_prompt: str, prompt: str, plan: TaskPlan, attachments: list[str] | None=..., context_id: str | None=..., project_name: str | None=..., project_color: str | None=...)`
@@ -79,7 +81,9 @@
 - `serialize_task(task: Union[ScheduledTask, AdHocTask, PlannedTask]) -> Dict[str, Any]`: Standardized serialization for task objects with proper handling of all complex types.
 - `serialize_tasks(tasks: list[Union[ScheduledTask, AdHocTask, PlannedTask]]) -> list[Dict[str, Any]]`: Serialize a list of tasks to a list of dictionaries.
 - `deserialize_task(task_data: Dict[str, Any], task_class: Optional[Type[T]]=...) -> T`: Deserialize dictionary into appropriate task object with validation.
-- Notable constants/configuration names: `SCHEDULER_FOLDER`, `LOCAL_TIMEZONE_ALIASES`, `T`.
+- `get_scheduler_settings() -> SchedulerSettings`: Loads `usr/scheduler/settings.json`, process-cached; falls back to defaults if the file is missing or unreadable.
+- `save_scheduler_settings(settings: SchedulerSettings) -> SchedulerSettings`: Persists and updates the process cache.
+- Notable constants/configuration names: `SCHEDULER_FOLDER`, `SCHEDULER_SETTINGS_FILE`, `LOCAL_TIMEZONE_ALIASES`, `T`.
 
 ## Runtime Contracts
 
@@ -87,6 +91,7 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, network calls, settings/state persistence, secret handling, scheduler state.
 - Imported dependency areas include: `agent`, `asyncio`, `crontab`, `datetime`, `enum`, `helpers`, `helpers.defer`, `helpers.files`, `helpers.localization`, `helpers.persist_chat`, `helpers.print_style`, `initialize`, `nest_asyncio`, `os`, `os.path`, `pydantic`.
+- `SchedulerTaskList.get()` uses `helpers/sync_async.run_sync` for save/reload instead of a nested `asyncio.run` (it is called from inside running loops). The job loop now ticks the scheduler on native Windows (see `helpers/job_loop.py.dox.md`).
 
 ## Key Concepts
 
@@ -104,6 +109,7 @@
 - Run targeted tests for changed helper behavior; run security regressions for auth, filesystem, WebSocket, tunnel, upload, or secret-handling helpers.
 - Related tests observed by source search:
   - `tests/test_task_scheduler_timezone.py`
+  - `tests/test_task_scheduler_catchup.py`
   - `tests/test_timezone_regressions.py`
   - `tests/test_tool_action_contracts.py`
 

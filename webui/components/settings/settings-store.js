@@ -29,6 +29,14 @@ const TAB_ITEMS = Object.freeze([
     ],
   },
   {
+    id: "appearance",
+    label: "Appearance",
+    icon: "palette",
+    sections: [
+      { id: "section-appearance", label: "Theme", icon: "palette" },
+    ],
+  },
+  {
     id: "skills",
     label: "Skills",
     icon: "school",
@@ -47,6 +55,7 @@ const TAB_ITEMS = Object.freeze([
       { id: "section-litellm", label: "LiteLLM", icon: "tune" },
       { id: "section-secrets", label: "Secrets", icon: "lock" },
       { id: "section-auth", label: "Authentication", icon: "passkey" },
+      { id: "section-security", label: "Security", icon: "shield_lock" },
       { id: "section-external-api", label: "External API", icon: "api" },
       { id: "section-tunnel", label: "Remote Control", icon: "share" },
     ],

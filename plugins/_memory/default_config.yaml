@@ -5,9 +5,13 @@ memory_recall_interval: 3
 memory_recall_history_len: 10000
 memory_recall_memories_max_search: 12
 memory_recall_solutions_max_search: 8
-memory_recall_memories_max_result: 5
-memory_recall_solutions_max_result: 3
-memory_recall_similarity_threshold: 0.7
+# Recall goes into every turn's prompt; full solution write-ups are long, so
+# fewer and closer matches keep unrelated past work (e.g. one big project's
+# history) from crowding a small local model's context. Use projects to
+# scope memories (project_memory_isolation).
+memory_recall_memories_max_result: 3
+memory_recall_solutions_max_result: 2
+memory_recall_similarity_threshold: 0.75
 memory_recall_query_prep: false
 memory_recall_post_filter: false
 memory_memorize_enabled: true

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import fnmatch
+import functools
 import hashlib
 import json
 import os
@@ -36,6 +37,35 @@ SHADOW_REPO_BACKUP_PREFIX = "repo.git.invalid"
 _AUTO_SNAPSHOT_LOCK = threading.RLock()
 _AUTO_SNAPSHOT_TIMERS: dict[str, threading.Timer] = {}
 _AUTO_SNAPSHOT_PAYLOADS: dict[str, dict[str, Any]] = {}
+
+# One lock per shadow repo. A debounced snapshot (timer thread) can overlap
+# panel API calls on the same repo, and concurrent git runs collide on
+# index.lock / config.lock. Re-entrant because public methods nest.
+_REPO_LOCKS: dict[str, threading.RLock] = {}
+_REPO_LOCKS_GUARD = threading.Lock()
+# Shadow repos whose identity config was already written by this process.
+_CONFIGURED_REPOS: set[str] = set()
+# Git lock files that can only be stale once this process holds the repo
+# lock - a git run killed by GIT_TIMEOUT_SECONDS leaves them behind.
+_STALE_GIT_LOCK_FILES = ("index.lock", "config.lock", "HEAD.lock")
+
+
+def _repo_lock(repo_git_path: Path) -> threading.RLock:
+    key = str(repo_git_path)
+    with _REPO_LOCKS_GUARD:
+        lock = _REPO_LOCKS.get(key)
+        if lock is None:
+            lock = _REPO_LOCKS[key] = threading.RLock()
+        return lock
+
+
+def _serialized(method):
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with _repo_lock(self.workspace.repo_git_path):
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 STATUS_LABELS = {
     "A": "added",
@@ -710,6 +740,7 @@ class TimeTravelService:
     def __init__(self, workspace: WorkspaceInfo):
         self.workspace = workspace
 
+    @_serialized
     def ensure_repo(self) -> None:
         self.workspace.shadow_path.mkdir(parents=True, exist_ok=True)
         if not self._shadow_repo_valid():
@@ -717,12 +748,31 @@ class TimeTravelService:
         if not self._shadow_repo_valid():
             self._initialize_shadow_repo(quarantine_existing=True)
         self._ensure_current_head_ref()
+        self._remove_stale_git_locks()
 
+        repo_key = str(self.workspace.repo_git_path)
+        if repo_key in _CONFIGURED_REPOS:
+            return
         self._git("config", "user.name", "Agent Zero Time Travel")
         self._git("config", "user.email", "time-travel@agent-zero.local")
         self._git("config", "core.autocrlf", "false")
         self._git("config", "core.filemode", "true")
+        _CONFIGURED_REPOS.add(repo_key)
 
+    def _remove_stale_git_locks(self) -> None:
+        # Only called under the repo lock, and the shadow repo is private to
+        # this process, so any lock file here belongs to a dead git run.
+        for name in _STALE_GIT_LOCK_FILES:
+            lock_path = self.workspace.repo_git_path / name
+            if not lock_path.exists():
+                continue
+            try:
+                lock_path.unlink()
+                PrintStyle.warning(f"Time Travel removed stale {name} from {self.workspace.display_path} history")
+            except OSError:
+                pass
+
+    @_serialized
     def current_hash(self) -> str:
         self.ensure_repo()
         completed = self._git("rev-parse", "--verify", "HEAD", check=False)
@@ -732,6 +782,7 @@ class TimeTravelService:
         current = self.current_hash()
         return current[:12] if current else ""
 
+    @_serialized
     def snapshot(
         self,
         *,
@@ -790,6 +841,7 @@ class TimeTravelService:
             metadata=full_metadata,
         )
 
+    @_serialized
     def history_list(self, *, limit: int = 100, offset: int = 0, file_filter: str = "") -> dict[str, Any]:
         self._ensure_workspace_dir()
         self.ensure_repo()
@@ -823,6 +875,7 @@ class TimeTravelService:
             "has_more": len(window) > limit,
         }
 
+    @_serialized
     def history_diff(self, *, commit_hash: str, path: str, mode: str = "commit") -> dict[str, Any]:
         self.ensure_repo()
         path = self._safe_rel_path(path)
@@ -838,6 +891,7 @@ class TimeTravelService:
 
         return self._patch_payload(base, target, path)
 
+    @_serialized
     def preview(self, *, operation: str, commit_hash: str) -> dict[str, Any]:
         self.ensure_repo()
         operation = str(operation or "").strip().lower()
@@ -870,6 +924,7 @@ class TimeTravelService:
             "previews": previews,
         }
 
+    @_serialized
     def travel(self, *, commit_hash: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         self._ensure_workspace_dir()
         self.ensure_repo()
@@ -891,6 +946,7 @@ class TimeTravelService:
             "affected_files": affected,
         }
 
+    @_serialized
     def revert(self, *, commit_hash: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         self._ensure_workspace_dir()
         self.ensure_repo()
@@ -923,6 +979,7 @@ class TimeTravelService:
             "affected_files": after.files,
         }
 
+    @_serialized
     def present_summary(self) -> dict[str, Any]:
         self.ensure_repo()
         current_tree, _paths = self._current_tree()
@@ -940,6 +997,7 @@ class TimeTravelService:
             "files": changed,
         }
 
+    @_serialized
     def commit_object(self, commit_hash: str, *, current_hash: str = "") -> dict[str, Any]:
         commit_hash = self._validate_commit(commit_hash)
         show = self._git("show", "-s", "--format=%H%x00%h%x00%cI%x00%s%x00%B", commit_hash).stdout
@@ -960,11 +1018,13 @@ class TimeTravelService:
             "files": self.commit_files(full_hash),
         }
 
+    @_serialized
     def commit_files(self, commit_hash: str) -> list[dict[str, Any]]:
         commit_hash = self._validate_commit(commit_hash)
         parent = self._first_parent(commit_hash) or EMPTY_TREE
         return self.diff_files(parent, commit_hash)
 
+    @_serialized
     def diff_files(self, base: str, target: str, *, path_filter: str = "") -> list[dict[str, Any]]:
         args = ["diff", "--name-status", "-z", "--find-renames", base, target]
         path_filter = str(path_filter or "").strip()
@@ -1285,6 +1345,7 @@ class TimeTravelService:
             return
 
     def _initialize_shadow_repo(self, *, quarantine_existing: bool = False) -> None:
+        _CONFIGURED_REPOS.discard(str(self.workspace.repo_git_path))
         if quarantine_existing and self.workspace.repo_git_path.exists():
             backup_path = self._next_invalid_repo_backup_path()
             shutil.move(str(self.workspace.repo_git_path), str(backup_path))

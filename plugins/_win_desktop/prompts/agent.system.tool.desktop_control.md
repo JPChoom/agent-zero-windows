@@ -1,52 +1,14 @@
 ### desktop_control
-move the mouse, click, scroll, or type on the user's real Windows desktop
+mouse, scroll and keyboard on the user's real Windows desktop
 args: `action`, optional `window`, `x`, `y`, `button`, `clicks`, `amount`, `text`, `keys`
-
-actions:
-- `focus` - needs `window`; brings a window to the front
-- `move` - needs `x`, `y`
-- `click` - needs `x`, `y`; optional `button` (`left`|`right`|`middle`), `clicks` (1-3)
-- `scroll` - needs `x`, `y`, `amount` (positive scrolls up, negative down)
-- `type` - needs `text`, types it literally into the focused window
-- `key` - needs `keys`, a combination like `ctrl+c`, `alt+tab`, `enter`, `f5`
-
-targeting the right window:
-- input always goes to whichever window has focus. Pass `window` with part of
-  the target's title bar text on any action to focus it first; the action is
-  refused if no window matches, if several do, or if Windows will not bring it
-  forward
-- ALWAYS pass `window` when typing or pressing keys. Without it the text lands
-  in whatever happened to be focused - this has appended text to a user's
-  unrelated unsaved document
-- launching an application does not reliably focus it, and an existing window
-  of that application may be reused. After launching, take a
-  `desktop_screenshot` and use `focus` before typing
-
-rules:
-- coordinates are in desktop space at the size reported by
-  `desktop_screenshot`, NOT the size of the attached image
-- that space covers ALL monitors as one area, so it can be much wider than a
-  single screen. (0, 0) is the top-left of the screenshot, and an x larger
-  than one monitor's width is normal and valid
-- always call `desktop_screenshot` first to see where things are, and again
-  afterwards to confirm the action did what you expected
-- this drives the user's real machine: it can close windows, discard unsaved
-  work, or confirm dialogs. Prefer a terminal command or a file edit when one
-  would achieve the same result more reliably
-- never use it to enter passwords or accept security or permission prompts
-- disabled unless the user turns it on, and blocked while the kill switch is
-  active; if it reports being disabled, tell the user rather than retrying
-
-example:
+actions: `focus` (needs `window`), `move` (`x`,`y`), `click` (`x`,`y`, `button` left|right|middle, `clicks` 1-3), `scroll` (`x`,`y`, `amount` +up/-down), `type` (`text`, literal), `key` (`keys` e.g. `ctrl+c`, `alt+tab`, `enter`)
+- input goes to the focused window: ALWAYS pass `window` (part of its title) when typing or pressing keys - without it text has landed in a user's unrelated unsaved document. Refused if no window or several match
+- launching an app does not reliably focus it: take a `desktop_screenshot`, then `focus`, before typing
+- coordinates are in desktop space at the size `desktop_screenshot` reports (all monitors as one area; x beyond one monitor is normal), not the attached image's size
+- screenshot before acting and again after to confirm
+- it drives the real machine (can close windows, lose unsaved work, confirm dialogs): prefer a terminal command or file edit when one works
+- never enter passwords or accept security/permission prompts; if it reports disabled or kill-switch blocked, tell the user instead of retrying
 ~~~json
-{
-  "thoughts": ["Notepad is open; focus it before typing so the text cannot land elsewhere."],
-  "headline": "Typing into Notepad",
-  "tool_name": "desktop_control",
-  "tool_args": {
-    "action": "type",
-    "window": "Notepad",
-    "text": "Hello"
-  }
-}
+{"thoughts": ["Focus Notepad so the text can't land elsewhere."], "headline": "Typing into Notepad", "tool_name": "desktop_control",
+ "tool_args": {"action": "type", "window": "Notepad", "text": "Hello"}}
 ~~~

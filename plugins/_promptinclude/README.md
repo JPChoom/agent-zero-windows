@@ -8,8 +8,9 @@ This plugin scans a workspace for `*.promptinclude.md` files, applies gitignore-
 
 ## Main Behavior
 
-- **Workspace scanning**
-  - Recursively searches for files matching `*.promptinclude.md`.
+- **Trusted locations only**
+  - Reads files matching `*.promptinclude.md` from `usr/promptincludes/` and the active project's root folder - top level only, never recursively through the workdir (where cloned repositories and downloads could plant one).
+  - Shows a notification when an include is added or changed.
 - **Ignore support**
   - Respects ignore patterns derived from gitignore-style content.
 - **Budgeted inclusion**

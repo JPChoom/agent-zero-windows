@@ -35,12 +35,21 @@
 
   <style>
     .text-buttons-row {
+      box-sizing: border-box;
       width: 100%;
       display: flex;
       flex-wrap: wrap;
-      gap: var(--spacing-xs);
-      padding-top: var(--spacing-xs);
-      margin-left: var(--spacing-xs);
+      align-items: center;
+      gap: 2px var(--spacing-xxs);
+      padding: var(--spacing-xxs) var(--spacing-xs) 0;
+    }
+    /* Named container so extensions in this row (e.g. the model switcher's
+       pills) can collapse by the row's own width, not the viewport's. */
+    .chat-bottom-actions-bar {
+      container: chat-actions / inline-size;
+    }
+    .text-buttons-row .text-button {
+      white-space: nowrap;
     }
     .text-buttons-row > x-extension:not(:empty) { display: contents; }
     .text-buttons-row > x-extension:empty { display: none; }
@@ -53,7 +62,7 @@
       color: var(--color-text);
       font-family: "Rubik", Arial, Helvetica, sans-serif;
       font-size: 0.6rem;
-      padding: 6px var(--spacing-sm);
+      padding: 3px var(--spacing-sm);
       cursor: pointer;
       opacity: 0.8;
       transition: all 0.3s;
@@ -79,17 +88,9 @@
     .text-button p { margin-block: 0; }
 
     @media (max-width: 768px) {
-      .text-buttons-row {
-        width: 90%;
-        white-space: pre-wrap;
-      }
       .text-button svg { width: 18px; height: 18px; }
     }
     @media (max-width: 640px) {
-      .text-buttons-row {
-        width: 90%;
-        white-space: pre-wrap;
-      }
       .text-button { max-height: 25px; }
       .text-button p { display: none; }
     }

@@ -22,7 +22,7 @@
       id="sidebar-header-panel"
       class="sidebar-header-panel"
       x-ref="headerPanel"
-      :class="{ 'sidebar-header-panel-open': $store.sidebar.headOpen() }"
+      :class="{ 'sidebar-header-panel-open': $store.sidebar.headOpen(), 'is-offscreen': !$store.sidebar.isOpen && !$store.sidebar.menuOpen }"
     >
       <div id="logo-bar">
         <a href="https://github.com/agent0ai/agent-zero" target="_blank" rel="noopener noreferrer" aria-label="Agent Zero on GitHub">
@@ -35,11 +35,7 @@
       </div>
 
       <div class="icons-section" id="hide-button">
-        <!-- Sidebar Toggle Button -->
-        <button id="toggle-sidebar" class="toggle-sidebar-button" @click="$store.sidebar.toggle()" aria-label="Toggle Sidebar" aria-expanded="false">
-          <span class="material-symbols-outlined" aria-hidden="true">menu</span>
-        </button>
-
+        <!-- Show/hide lives on the edge tab in left-sidebar.html. -->
         <button class="config-button header-action-button" id="header-dashboard" @click="deselectChat()" title="Dashboard" aria-label="Dashboard" tabindex="-1">
           <span class="material-symbols-outlined" aria-hidden="true">home</span>
         </button>
@@ -79,14 +75,34 @@
         </button>
       </div>
 
-      <!-- Stop propagation so @click.window menuClick does not treat in-menu clicks as outside the header panel (fixed menu + confirm flow). -->
+      <!-- Teleported to <body>: this used to render as a position:fixed
+           child of .sidebar-header-panel, which is itself a position:fixed
+           stacking-context-establishing element - per CSS stacking rules a
+           position:fixed descendant's z-index is only compared against its
+           OWN stacking-context ancestor's siblings, not the whole page, so
+           this dropdown was silently painting BEHIND unrelated sidebar
+           content (e.g. the chat list) despite z-index:9999 and correct
+           on-screen coordinates. Teleporting makes it a direct child of
+           body, a true sibling of everything else, so z-index resolves
+           against the whole page as intended.
+           @click.stop still protects it from the @click.window menuClick
+           listener on .sidebar-header-stack (that listener treats a click
+           outside $refs.headerPanel as "close the menu"; .stop prevents
+           the click from ever bubbling to window in the first place,
+           regardless of where in the DOM this element now lives). -->
+      <template x-teleport="body">
       <div
         class="dropdown-menu quick-actions-dropdown"
         x-show="$store.sidebar.menuOpen"
         :style="$store.sidebar.dropdownStyle"
         @click.stop
       >
-        <div id="sidebar-quick-actions-dropdown-slot-start"></div>
+        <!-- Extension points rendered in place. quick-actions.html used to
+             x-teleport them into empty slot divs here, which crashed Alpine
+             ("appendChild of null") whenever it loaded before this
+             dropdown existed - and that crash left later components (e.g.
+             the welcome composer) uninitialized. -->
+        <x-extension id="sidebar-quick-actions-dropdown-start"></x-extension>
 
         <div class="dropdown-header">Navigation</div>
 
@@ -175,16 +191,17 @@
           <span>Restart A0</span>
         </button>
 
-        <div id="sidebar-quick-actions-dropdown-slot-end"></div>
+        <x-extension id="sidebar-quick-actions-dropdown-end"></x-extension>
       </div>
+      </template>
     </div>
   </div>
 
 
   <style>
     :root {
-      /* Width must fit #hide-button's full icon row (6 buttons: toggle,
-         dashboard, plugins, settings, kill-switch, more) - each 1.85rem
+      /* Width must fit #hide-button's full icon row (5 buttons: dashboard,
+         plugins, settings, kill-switch, more) - each 1.85rem
          wide with spacing-xs gaps, plus the panel's own spacing-sm
          horizontal padding on both sides, while still fitting inside the
          250px sidebar (left-sidebar.html) with the panel's own
@@ -197,11 +214,19 @@
       --header-panel-collapsed-width: 3.1rem;
     }
 
-    /* Shell: fixed panel with hover expansion */
+    /* Shell: fixed panel with hover expansion. Centered in the 250px
+       sidebar (left-sidebar.html) via a calc()'d `left` tied to the same
+       width variable used below, NOT transform:translateX(-50%) - a
+       transform on this element would give its position:fixed
+       .quick-actions-dropdown child (sidebar-store.js's menuPos()) a new
+       containing block, making that dropdown clip against this panel's
+       own overflow:hidden instead of escaping to the viewport as
+       intended. calc() achieves the same visual centering without that
+       side effect. */
     .sidebar-header-panel {
       position: fixed;
       top: var(--spacing-md);
-      left: var(--spacing-md);
+      left: calc((250px - var(--header-panel-collapsed-width)) / 2);
       width: var(--header-panel-collapsed-width);
       box-sizing: border-box;
       z-index: 1004;
@@ -211,24 +236,23 @@
       padding: var(--spacing-xs) var(--spacing-sm);
       background-color: var(--color-chat-background);
       border: none;
-      border-radius: 8px;
+      border-radius: 16px;
       box-shadow: 0 2px 13px 2px rgba(0, 0, 0, 0.35);
       overflow: hidden;
       white-space: nowrap;
-      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                  left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
                   background-color var(--transition-speed),
-                  border-color var(--transition-speed), 
+                  border-color var(--transition-speed),
                   box-shadow var(--transition-speed);
     }
 
     #logo-bar {
       display: flex;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: center;
       width: calc(var(--header-panel-expanded-width) - (var(--spacing-sm) * 2));
       padding-top: var(--spacing-xxs);
-      /* Align logo with the center of the 2.2rem hamburger */
-      padding-left: 0.1rem;
     }
 
     #logo-bar a {
@@ -256,13 +280,13 @@
     /* Expanded wordmark logo */
     #a0-logo {
       width: 100%;
-      left: 8px;
+      left: 0;
       -webkit-mask-image: url(/public/a0-fullDark.svg);
       mask-image: url(/public/a0-fullDark.svg);
       -webkit-mask-size: contain;
       mask-size: contain;
-      -webkit-mask-position: left center;
-      mask-position: left center;
+      -webkit-mask-position: center center;
+      mask-position: center center;
       opacity: 0;
     }
 
@@ -280,6 +304,7 @@
 
     #hide-button {
       display: flex;
+      align-self: center;
       gap: var(--spacing-xs);
       width: max-content;
       margin-top: var(--spacing-xs);
@@ -398,12 +423,22 @@
       padding-left: calc(var(--spacing-md) + 1.55rem);
     }
 
+    /* Sidebar hidden: the whole pill slides off the left edge with the
+       panel (via left, never a transform - see the shell comment). The
+       edge tab in left-sidebar.html brings both back. */
+    .sidebar-header-panel.is-offscreen {
+      width: var(--header-panel-expanded-width);
+      left: calc(-1 * var(--header-panel-expanded-width) - 40px);
+      pointer-events: none;
+    }
+
     /* --- Desktop Hover Expand --- */
     @media (min-width: 769px) {
       .sidebar-header-panel.sidebar-header-panel-open,
       .sidebar-header-panel:hover,
       .sidebar-header-panel:focus-within {
         width: var(--header-panel-expanded-width);
+        left: calc((250px - var(--header-panel-expanded-width)) / 2);
       }
 
       .sidebar-header-panel.sidebar-header-panel-open #a0-logo,
@@ -441,6 +476,7 @@
 
       .sidebar-header-panel.sidebar-header-panel-open {
         width: var(--header-panel-expanded-width);
+        left: calc((250px - var(--header-panel-expanded-width)) / 2);
       }
 
       .sidebar-header-panel.sidebar-header-panel-open #a0-logo {

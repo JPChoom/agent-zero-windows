@@ -26,7 +26,7 @@
 - `get_remote_releases(author: str, repo: str) -> GitRemoteReleasesResult`
 - `get_remote_commits_since_local(repo_path: str) -> GitRemoteCommitsInfo`
 - `get_repo_release_info(repo_path: str) -> GitRepoReleaseInfo`
-- `get_git_info()`
+- `get_git_info()`: cached for 30s (`_GIT_INFO_TTL_SECONDS`, returns a copy); uncached reads go through `_read_git_info()`. Errors are not cached.
 - `get_version()`
 - `is_official_agent_zero_repo() -> bool`: Return True when origin points to agent0ai/agent-zero.
 - `clone_repo(url: str, dest: str, token: str | None=...)`: Clone a git repository. Uses http.extraHeader for token auth (never stored in URL/config).
@@ -39,7 +39,7 @@
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem writes, filesystem deletion, network calls, subprocess/runtime control, plugin state, settings/state persistence, secret handling.
-- Imported dependency areas include: `base64`, `dataclasses`, `datetime`, `git`, `giturlparse`, `helpers`, `helpers.localization`, `os`, `re`, `subprocess`, `urllib.parse`.
+- Imported dependency areas include: `base64`, `dataclasses`, `datetime`, `git`, `giturlparse`, `helpers`, `helpers.localization`, `os`, `re`, `subprocess`, `time`, `urllib.parse`.
 
 ## Key Concepts
 

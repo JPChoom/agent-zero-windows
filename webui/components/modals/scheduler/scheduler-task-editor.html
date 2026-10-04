@@ -94,35 +94,117 @@
                     <div class="scheduler-form-field full-width"
                          x-show="$store.schedulerStore.editingTask.type === 'scheduled'">
                         <div class="label-help-wrapper">
-                            <label class="scheduler-form-label">Schedule</label>
-                            <div class="scheduler-form-help">Cron schedule for automated execution (minute hour day month weekday)</div>
+                            <label class="scheduler-form-label">Recurrence</label>
+                            <div class="scheduler-form-help">How often this task runs</div>
                         </div>
-                        <div class="scheduler-schedule-builder">
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Minute</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.minute"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Hour</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.hour"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Day</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.day"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Month</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.month"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Weekday</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.weekday"
-                                       placeholder="*" maxlength="9">
-                            </div>
+
+                        <select class="recurrence-preset-select"
+                                x-model="$store.schedulerStore.recurrenceUI.preset"
+                                x-init="$nextTick(() => { $el.value = $store.schedulerStore.recurrenceUI.preset })"
+                                @change="$store.schedulerStore.applyRecurrenceUI()">
+                            <template x-for="opt in $store.schedulerStore.recurrencePresetOptions" :key="opt.id">
+                                <option :value="opt.id" x-text="opt.label"></option>
+                            </template>
+                        </select>
+
+                        <div class="recurrence-controls">
+                            <!-- Every N minutes -->
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'minutes'">
+                                <div class="recurrence-row">
+                                    <span>Every</span>
+                                    <input type="number" min="1" max="59" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.intervalValue"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    <span>minute(s)</span>
+                                </div>
+                            </template>
+
+                            <!-- Every N hours, at a fixed minute -->
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'hours'">
+                                <div class="recurrence-row">
+                                    <span>Every</span>
+                                    <input type="number" min="1" max="23" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.intervalValue"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    <span>hour(s), at minute</span>
+                                    <input type="number" min="0" max="59" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.minute"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                </div>
+                            </template>
+
+                            <!-- Daily / Weekdays / Weekends: just a time -->
+                            <template x-if="['daily', 'weekdays', 'weekends'].includes($store.schedulerStore.recurrenceUI.preset)">
+                                <div class="recurrence-row">
+                                    <span>At</span>
+                                    <input type="number" min="0" max="23" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.hour"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    <span>:</span>
+                                    <input type="number" min="0" max="59" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.minute"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                </div>
+                            </template>
+
+                            <!-- Weekly on specific days -->
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'weekly'">
+                                <div class="recurrence-weekly">
+                                    <div class="recurrence-weekday-toggles">
+                                        <template x-for="day in $store.schedulerStore.weekdayOptions" :key="day.id">
+                                            <button type="button" class="recurrence-weekday-btn"
+                                                    :class="{ active: $store.schedulerStore.recurrenceUI.weekdays.includes(day.id) }"
+                                                    @click="$store.schedulerStore.toggleRecurrenceWeekday(day.id)"
+                                                    x-text="day.label"></button>
+                                        </template>
+                                    </div>
+                                    <div class="recurrence-row">
+                                        <span>At</span>
+                                        <input type="number" min="0" max="23" class="recurrence-number"
+                                               x-model.number="$store.schedulerStore.recurrenceUI.hour"
+                                               @input="$store.schedulerStore.applyRecurrenceUI()">
+                                        <span>:</span>
+                                        <input type="number" min="0" max="59" class="recurrence-number"
+                                               x-model.number="$store.schedulerStore.recurrenceUI.minute"
+                                               @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- Custom: raw cron fields for power users -->
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'custom'">
+                                <div class="scheduler-schedule-builder">
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Minute</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.minute"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Hour</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.hour"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Day</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.day"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Month</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.month"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Weekday</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.weekday"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="recurrence-cron-preview" x-show="$store.schedulerStore.recurrenceUI.preset !== 'custom'">
+                            Cron: <code x-text="$store.schedulerStore.cronPreview()"></code>
                         </div>
                     </div>
 
@@ -299,35 +381,112 @@
                     <div class="scheduler-form-field full-width"
                          x-show="$store.schedulerStore.editingTask && $store.schedulerStore.editingTask.type === 'scheduled'">
                         <div class="label-help-wrapper">
-                            <label class="scheduler-form-label">Schedule (Cron Expression)</label>
-                            <div class="scheduler-form-help">Format: minute hour day month weekday (e.g., "* * * * *" for every minute)</div>
+                            <label class="scheduler-form-label">Recurrence</label>
+                            <div class="scheduler-form-help">How often this task runs</div>
                         </div>
-                        <div class="scheduler-schedule-builder">
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Minute</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.minute"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Hour</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.hour"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Day</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.day"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Month</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.month"
-                                       placeholder="*" maxlength="9">
-                            </div>
-                            <div class="scheduler-schedule-field">
-                                <span class="scheduler-schedule-label">Weekday</span>
-                                <input type="text" x-model="$store.schedulerStore.editingTask.schedule.weekday"
-                                       placeholder="*" maxlength="9">
-                            </div>
+
+                        <select class="recurrence-preset-select"
+                                x-model="$store.schedulerStore.recurrenceUI.preset"
+                                x-init="$nextTick(() => { $el.value = $store.schedulerStore.recurrenceUI.preset })"
+                                @change="$store.schedulerStore.applyRecurrenceUI()">
+                            <template x-for="opt in $store.schedulerStore.recurrencePresetOptions" :key="opt.id">
+                                <option :value="opt.id" x-text="opt.label"></option>
+                            </template>
+                        </select>
+
+                        <div class="recurrence-controls">
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'minutes'">
+                                <div class="recurrence-row">
+                                    <span>Every</span>
+                                    <input type="number" min="1" max="59" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.intervalValue"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    <span>minute(s)</span>
+                                </div>
+                            </template>
+
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'hours'">
+                                <div class="recurrence-row">
+                                    <span>Every</span>
+                                    <input type="number" min="1" max="23" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.intervalValue"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    <span>hour(s), at minute</span>
+                                    <input type="number" min="0" max="59" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.minute"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                </div>
+                            </template>
+
+                            <template x-if="['daily', 'weekdays', 'weekends'].includes($store.schedulerStore.recurrenceUI.preset)">
+                                <div class="recurrence-row">
+                                    <span>At</span>
+                                    <input type="number" min="0" max="23" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.hour"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    <span>:</span>
+                                    <input type="number" min="0" max="59" class="recurrence-number"
+                                           x-model.number="$store.schedulerStore.recurrenceUI.minute"
+                                           @input="$store.schedulerStore.applyRecurrenceUI()">
+                                </div>
+                            </template>
+
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'weekly'">
+                                <div class="recurrence-weekly">
+                                    <div class="recurrence-weekday-toggles">
+                                        <template x-for="day in $store.schedulerStore.weekdayOptions" :key="day.id">
+                                            <button type="button" class="recurrence-weekday-btn"
+                                                    :class="{ active: $store.schedulerStore.recurrenceUI.weekdays.includes(day.id) }"
+                                                    @click="$store.schedulerStore.toggleRecurrenceWeekday(day.id)"
+                                                    x-text="day.label"></button>
+                                        </template>
+                                    </div>
+                                    <div class="recurrence-row">
+                                        <span>At</span>
+                                        <input type="number" min="0" max="23" class="recurrence-number"
+                                               x-model.number="$store.schedulerStore.recurrenceUI.hour"
+                                               @input="$store.schedulerStore.applyRecurrenceUI()">
+                                        <span>:</span>
+                                        <input type="number" min="0" max="59" class="recurrence-number"
+                                               x-model.number="$store.schedulerStore.recurrenceUI.minute"
+                                               @input="$store.schedulerStore.applyRecurrenceUI()">
+                                    </div>
+                                </div>
+                            </template>
+
+                            <template x-if="$store.schedulerStore.recurrenceUI.preset === 'custom'">
+                                <div class="scheduler-schedule-builder">
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Minute</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.minute"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Hour</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.hour"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Day</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.day"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Month</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.month"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                    <div class="scheduler-schedule-field">
+                                        <span class="scheduler-schedule-label">Weekday</span>
+                                        <input type="text" x-model="$store.schedulerStore.editingTask.schedule.weekday"
+                                               placeholder="*" maxlength="9">
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="recurrence-cron-preview" x-show="$store.schedulerStore.recurrenceUI.preset !== 'custom'">
+                            Cron: <code x-text="$store.schedulerStore.cronPreview()"></code>
                         </div>
                     </div>
 

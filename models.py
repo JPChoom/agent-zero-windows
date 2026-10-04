@@ -367,12 +367,11 @@ def apply_rate_limiter_sync(
 ):
     if not model_config:
         return
-    import asyncio, nest_asyncio
+    # Never asyncio.run() inside a running loop (nested loop -> lost task
+    # wakeups, permanent freeze). See helpers/sync_async.py.
+    from helpers.sync_async import run_sync
 
-    nest_asyncio.apply()
-    return asyncio.run(
-        apply_rate_limiter(model_config, input_text, rate_limiter_callback)
-    )
+    return run_sync(apply_rate_limiter(model_config, input_text, rate_limiter_callback))
 
 
 class LiteLLMChatWrapper(SimpleChatModel):
@@ -524,6 +523,15 @@ class LiteLLMChatWrapper(SimpleChatModel):
 
         result = ChatGenerationResult()
         call_kwargs = _merge_litellm_call_kwargs(self.kwargs, kwargs)
+        # Same structural idle bound as _run_unified: this path holds the
+        # backend's model-call slot for the whole stream, and with no timeout
+        # a provider that stops responding mid-stream (no error, no data)
+        # held that slot forever - blocking every other model call on the
+        # same backend.
+        stream_idle_timeout_s: float = float(
+            call_kwargs.pop("a0_stream_idle_timeout_seconds", DEFAULT_STREAM_IDLE_TIMEOUT_SECONDS)
+        )
+        call_kwargs.pop("a0_total_timeout_seconds", None)
         transport = LiteLLMTransport(
             model=self.model_name,
             messages=msgs,
@@ -536,7 +544,19 @@ class LiteLLMChatWrapper(SimpleChatModel):
         # a separate code path from this fork's own unified_call().
         concurrency_key = model_concurrency.backend_key(self.model_name, call_kwargs)
         async with model_concurrency.model_call_slot(concurrency_key):
-            async for parsed in transport.astream():
+            stream_iter = transport.astream()
+            while True:
+                try:
+                    parsed = await asyncio.wait_for(
+                        stream_iter.__anext__(), timeout=stream_idle_timeout_s
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    await stream_iter.aclose()
+                    raise TimeoutError(
+                        f"Model call stalled: no response received for {stream_idle_timeout_s}s"
+                    )
                 output = result.add_chunk(parsed)
                 if output["response_delta"]:
                     yield ChatGenerationChunk(

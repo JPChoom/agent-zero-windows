@@ -176,6 +176,7 @@ class _SecurityContext:
     csrf_cookie: str | None
     remote_addr: str | None
     api_key: str | None
+    proxied: bool = False
 
 
 _ws_contexts: dict[str, _SecurityContext] = {}
@@ -390,31 +391,41 @@ class WsHandler:
 
 # Security check (aligned with api.py decorators)
 
+def _is_proxied(headers) -> bool:
+    from helpers.access_control import is_proxied
+
+    return is_proxied(headers)
+
+
 def _check_security(handler_cls: type[WsHandler], ctx: _SecurityContext) -> dict[str, Any] | None:
     """Return an error payload dict if the check fails, or ``None`` on success."""
 
+    from helpers.access_control import constant_time_equals
+
     if handler_cls.requires_loopback():
-        if not ctx.remote_addr or not is_loopback_address(ctx.remote_addr):
+        # Loopback + no proxy headers (see helpers/access_control.py): a
+        # tunnel client also connects from localhost.
+        if not ctx.remote_addr or not is_loopback_address(ctx.remote_addr) or ctx.proxied:
             return {"code": "FORBIDDEN", "error": "Access denied"}
 
     if handler_cls.requires_auth():
         from helpers import login
         user_pass_hash = login.get_credentials_hash()
-        if user_pass_hash and ctx.auth_hash != user_pass_hash:
+        if user_pass_hash and not constant_time_equals(ctx.auth_hash, user_pass_hash):
             return {"code": "AUTH_REQUIRED", "error": "Authentication required"}
 
     if handler_cls.requires_csrf():
         if not ctx.csrf_token:
             return {"code": "CSRF_MISSING", "error": "CSRF token not initialised"}
-        if not ctx.client_csrf_token or ctx.client_csrf_token != ctx.csrf_token:
+        if not ctx.client_csrf_token or not constant_time_equals(ctx.client_csrf_token, ctx.csrf_token):
             return {"code": "CSRF_INVALID", "error": "CSRF token missing or invalid"}
-        if ctx.csrf_cookie != ctx.csrf_token:
+        if not constant_time_equals(ctx.csrf_cookie, ctx.csrf_token):
             return {"code": "CSRF_COOKIE", "error": "CSRF cookie mismatch"}
 
     if handler_cls.requires_api_key():
         from helpers.settings import get_settings
         valid_key = get_settings().get("mcp_server_token")
-        if not ctx.api_key or ctx.api_key != valid_key:
+        if not ctx.api_key or not valid_key or not constant_time_equals(ctx.api_key, valid_key):
             return {"code": "API_KEY_REQUIRED", "error": "API key required"}
 
     return None
@@ -455,7 +466,7 @@ def register_ws_namespace(
             if len(parts) == 3:
                 _, plugin_name, handler_name = parts
                 plugin_dir = plugins.find_plugin_dir(plugin_name)
-                if plugin_dir:
+                if plugin_dir and not plugins.is_review_pending(plugin_name):
                     plugin_file = Path(plugin_dir) / "api" / f"{handler_name}.py"
                     if plugin_file.is_file():
                         classes = load_classes_from_file(str(plugin_file), WsHandler)
@@ -498,6 +509,7 @@ def register_ws_namespace(
                     (auth.get("api_key") or auth.get("apiKey"))
                     if isinstance(auth, dict) else None
                 ),
+                proxied=_is_proxied(request.headers),
             )
             user_id = session.get("user_id") or "single_user"
 

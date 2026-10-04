@@ -6,7 +6,8 @@
 
 ## Ownership
 
-- Ordered Python files own prior tool-output replacement, parallel recursion guards, and secret unmasking before execution.
+- Ordered Python files own the host-bound secret guard (`_09_`), prior tool-output replacement and secret unmasking (`_10_`), parallel recursion guards (`_20_`), and audit capture (`_95_`).
+- `_09_secret_destination_guard.py` must run before `_10_unmask_secrets.py`: it refuses calls that would send a secret bound with a `# hosts:` comment (`helpers/secrets.py get_host_bindings`) anywhere but those hosts, including browser typing into a page on another host or an undeterminable destination. It is `FAIL_LOUD`.
 
 ## Local Contracts
 

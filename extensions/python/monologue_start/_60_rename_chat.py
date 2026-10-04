@@ -17,6 +17,14 @@ class RenameChat(Extension):
         if not self.agent:
             return
 
+        # Auto-rename only fills in a name for a still-unnamed chat. Once a
+        # chat has a name - generated here or set manually via
+        # api/chat_rename.py - it sticks; this used to fire on every
+        # monologue_start and silently overwrite a name the user had just
+        # set by hand.
+        if self.agent.context.name:
+            return
+
         try:
             # prepare history
             from plugins._model_config.helpers.model_config import get_utility_model_config

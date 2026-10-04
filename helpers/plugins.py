@@ -58,6 +58,12 @@ CONFIG_FILE_NAME = "config.json"
 CONFIG_DEFAULT_FILE_NAME = "default_config.yaml"
 DISABLED_FILE_NAME = ".toggle-0"
 ENABLED_FILE_NAME = ".toggle-1"
+# Written into a newly installed third-party plugin's folder by the
+# installer. While present the plugin is inert: never enabled, its hooks.py
+# is never imported, its API handlers are not routed. The user enabling it
+# (toggle_plugin, global scope) runs the deferred install hook and removes
+# the marker. See plugins/_plugin_installer/helpers/install.py.
+REVIEW_PENDING_FILE_NAME = ".review-pending"
 TOGGLE_FILE_PATTERN = ".toggle-[01]"
 
 HOOKS_SCRIPT = "hooks.py"
@@ -495,6 +501,9 @@ def get_enabled_plugins(agent: Agent | None):
         # go through paths in reverse order and determine the state
         enabled = determined_toggle_from_paths(enabled, reversed(plugin_paths))
 
+        if enabled and is_review_pending(plugin):
+            enabled = False
+
         if enabled:
             active.append(plugin)
 
@@ -515,9 +524,20 @@ def determined_toggle_from_paths(default: bool, paths: Iterator[str]):
     return enabled
 
 
+def is_review_pending(plugin_name: str) -> bool:
+    plugin_dir = find_plugin_dir(plugin_name)
+    if not plugin_dir:
+        return False
+    return files.exists(files.get_abs_path(plugin_dir, REVIEW_PENDING_FILE_NAME))
+
+
 def get_toggle_state(plugin_name: str) -> ToggleState:
     meta = get_plugin_meta(plugin_name)
     if not meta:
+        return "disabled"
+    # A plugin awaiting review stays off even if its own plugin.yaml claims
+    # always_enabled - that flag is author-controlled.
+    if is_review_pending(plugin_name):
         return "disabled"
     if meta.always_enabled:
         return "enabled"
@@ -557,6 +577,20 @@ def toggle_plugin(
     disabled_file = determine_plugin_asset_path(
         plugin_name, project_name, agent_profile, DISABLED_FILE_NAME
     )
+
+    # First global enable of a plugin awaiting review: this is the user's
+    # explicit decision to trust it, so run its deferred install hook now.
+    if enabled and not project_name and not agent_profile and is_review_pending(plugin_name):
+        plugin_dir = find_plugin_dir(plugin_name)
+        marker = files.get_abs_path(plugin_dir, REVIEW_PENDING_FILE_NAME) if plugin_dir else ""
+        if marker:
+            files.delete_file(marker)
+        try:
+            call_plugin_hook(plugin_name, "install")
+        except Exception:
+            if marker:
+                files.write_file(marker, "")
+            raise
 
     # ensure clean state by deleting both potential files first
     files.delete_file(enabled_file)
@@ -860,6 +894,11 @@ def call_plugin_hook(
 ):
     hooks = None
 
+    # Importing hooks.py executes the plugin's code - never for a plugin the
+    # user hasn't reviewed and enabled yet.
+    if is_review_pending(plugin_name):
+        return default
+
     # use cached hooks if enabled
     if not cache.has(HOOKS_CACHE_AREA, plugin_name):
         plugin_dir = find_plugin_dir(plugin_name)
@@ -881,7 +920,11 @@ def call_plugin_hook(
         return default
 
     if asyncio.iscoroutinefunction(hook):
-        return asyncio.run(functions.safe_call(hook, *args, default=default, **kwargs))
+        # Never asyncio.run() inside a running loop (nested loop -> lost
+        # task wakeups, permanent freeze). See helpers/sync_async.py.
+        from helpers.sync_async import run_sync
+
+        return run_sync(functions.safe_call(hook, *args, default=default, **kwargs))
 
     return functions.safe_call(hook, *args, default=default, **kwargs)
 

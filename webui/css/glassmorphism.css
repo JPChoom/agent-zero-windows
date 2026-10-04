@@ -15,20 +15,26 @@
   --glass-border-light: rgba(255, 255, 255, 0.55);
   --glass-highlight: rgba(255, 255, 255, 0.07);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  /* User-selectable backdrop tint, set via the Preferences "Backdrop"
+     swatches (preferences-store.js _applyBackdropHue). 0deg keeps the
+     original blue gradient below unchanged. This is a fixed value the
+     user picks, not an animation - the drift keyframes below only ever
+     touch transform, never filter, so the color never cycles on its
+     own. */
+  --backdrop-hue: 0deg;
 }
 
 .light-mode {
   --glass-shadow: 0 8px 32px rgba(60, 60, 110, 0.14);
 }
 
-/* Subtle blue-only gradient-mesh backdrop, fixed behind everything.
-   inset: -10% oversizes the layer so the drift animation's translate/
-   scale never reveals a flat edge; gradient stop percentages stay
-   relative to this element's own box (not scaled/panned), so blob
-   positions are simple and predictable at any viewport size.
-   Deliberately no hue-rotate here (unlike the theme's original version)
-   - a hue rotation sweeps through the whole color wheel, which would
-   break the "stays blue" requirement partway through every cycle. */
+/* Colorful gradient-mesh backdrop, fixed behind everything. inset: -10%
+   oversizes the layer so the drift animation's translate/scale never
+   reveals a flat edge; gradient stop percentages stay relative to this
+   element's own box (not scaled/panned), so blob positions are simple
+   and predictable at any viewport size. The stops below are authored
+   in blue; --backdrop-hue rotates the whole backdrop to the user's
+   chosen color without needing a separate gradient per color. */
 body::before {
   content: "";
   position: fixed;
@@ -40,7 +46,7 @@ body::before {
     radial-gradient(circle at 20% 85%, #234f9e 0%, transparent 55%),
     radial-gradient(circle at 85% 80%, #0f1f45 0%, transparent 55%),
     var(--color-background-dark);
-  filter: saturate(100%);
+  filter: saturate(100%) hue-rotate(var(--backdrop-hue));
 }
 
 .light-mode body::before {
@@ -50,11 +56,27 @@ body::before {
     radial-gradient(circle at 20% 85%, #6690dc 0%, transparent 55%),
     radial-gradient(circle at 85% 80%, #385e9e 0%, transparent 55%),
     var(--color-background-light);
-  filter: saturate(90%);
+  filter: saturate(90%) hue-rotate(var(--backdrop-hue));
+}
+
+/* User-uploaded wallpaper (preferences-store.js setWallpaperFile), in
+   place of the gradient above. Higher specificity than the plain
+   `body::before` rules (one extra class) so it wins without !important,
+   in both light and dark mode. --backdrop-image/-size/-repeat are set by
+   _applyWallpaperBlob/_applyWallpaperFit; inset stays 0 (not -10%) since
+   there's no drift animation to oversize for here. */
+body.has-wallpaper::before {
+  inset: 0;
+  background-image: var(--backdrop-image);
+  background-size: var(--backdrop-image-size, cover);
+  background-repeat: var(--backdrop-image-repeat, no-repeat);
+  background-position: center;
+  filter: none;
+  animation: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  body::before {
+  body:not(.has-wallpaper)::before {
     animation: glass-drift 60s ease-in-out infinite alternate;
   }
 }
@@ -75,13 +97,18 @@ body,
   background-color: transparent !important;
 }
 
-/* Shared glass-surface treatment */
+/* Shared glass-surface treatment. #input-section is deliberately excluded:
+   the chat input pill (.input-row, chat-bar-input.html) already carries
+   its own glass card styling, so giving the whole wrapper a second glass
+   panel behind it produced a visible boxed strip around the input +
+   bottom-actions row. Leaving it transparent lets both float directly
+   over the chat backdrop instead. */
 #left-panel,
-#input-section,
 .modal-inner,
 .modal-container,
 .settings-modal-content,
 .dropdown-menu,
+.right-canvas-rail,
 .confirm-dialog,
 .message-user .message-text,
 nav ul li a {
@@ -93,11 +120,11 @@ nav ul li a {
 }
 
 .light-mode #left-panel,
-.light-mode #input-section,
 .light-mode .modal-inner,
 .light-mode .modal-container,
 .light-mode .settings-modal-content,
 .light-mode .dropdown-menu,
+.light-mode .right-canvas-rail,
 .light-mode .confirm-dialog,
 .light-mode .message-user .message-text,
 .light-mode nav ul li a {

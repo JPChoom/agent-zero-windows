@@ -453,3 +453,43 @@ def test_external_workdir_workspace_option_is_locked(monkeypatch: pytest.MonkeyP
 
     with pytest.raises(WorkspaceRejectedError):
         resolve_workspace("", workspace_id=workdir["id"])
+
+
+def test_concurrent_snapshots_and_history_reads_do_not_collide_on_git_locks(workspace):
+    # A debounced snapshot (timer thread) can overlap panel API calls on the
+    # same shadow repo; unserialized they failed on index.lock / config.lock.
+    root, _service = workspace
+    for index in range(40):
+        (root / f"file_{index}.txt").write_text(f"{index}\n", encoding="utf-8")
+
+    errors: list[BaseException] = []
+
+    def worker(index: int) -> None:
+        try:
+            service = TimeTravelService(_service.workspace)
+            (root / f"worker_{index}.txt").write_text(f"{index}\n", encoding="utf-8")
+            service.snapshot(trigger="watchdog")
+            service.history_list(limit=5)
+        except BaseException as exc:  # noqa: BLE001 - surfaced by the assert
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+
+
+def test_stale_index_lock_from_killed_git_run_is_cleared(workspace):
+    root, service = workspace
+    (root / "a.txt").write_text("one\n", encoding="utf-8")
+    service.snapshot(trigger="manual")
+
+    (service.workspace.repo_git_path / "index.lock").write_text("", encoding="utf-8")
+    (root / "a.txt").write_text("two\n", encoding="utf-8")
+
+    result = service.snapshot(trigger="manual")
+    assert result.created is True
+    assert not (service.workspace.repo_git_path / "index.lock").exists()

@@ -71,6 +71,21 @@ class Plugins(ApiHandler):
             entry = result[0]
             path = entry.get("path", "")
             settings = files.read_file_json(path) if path else {}
+            # A saved config.json is read as-is here (this generic editor
+            # shows/edits exactly what's persisted), which skips the
+            # get_plugin_config plugin hook that helpers.plugins.get_plugin_config()
+            # normally runs - so a plugin that added a config key after
+            # some users already had a saved file (see _model_config's
+            # vision_model) would show as missing/undefined here even
+            # though every other read path backfills it. Run the same
+            # hook here so this editor sees the same shape.
+            settings = plugins.call_plugin_hook(
+                plugin_name,
+                "get_plugin_config",
+                default=settings,
+                project_name=project_name,
+                agent_profile=agent_profile,
+            )
             loaded_project_name = entry.get("project_name", "")
             loaded_agent_profile = entry.get("agent_profile", "")
         else:

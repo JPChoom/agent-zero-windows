@@ -1,0 +1,104 @@
+<html>
+<head>
+  <title>Approval needed</title>
+  <script type="module">
+    import { store } from "/plugins/_safety_policy/webui/approval-popup-store.js";
+  </script>
+</head>
+
+<body>
+  <div x-data>
+    <template x-if="$store.safetyApprovalPopup && $store.safetyApprovalPopup.request">
+      <div class="sp-approval">
+        <div class="sp-approval-head">
+          <span class="material-symbols-outlined sp-approval-icon">shield</span>
+          <div>
+            <div class="sp-approval-title"
+                 x-text="$store.safetyApprovalPopup.request.host
+                   ? 'A0 wants to download from ' + $store.safetyApprovalPopup.request.host
+                   : 'A0 wants to run a command that needs your approval'"></div>
+            <div class="sp-approval-sub">
+              <span x-text="'Category: ' + ($store.safetyApprovalPopup.request.category || 'unknown')"></span>
+              <template x-if="$store.safetyApprovalPopup.remainingSeconds !== null">
+                <span x-text="' · auto-denies in ' + $store.safetyApprovalPopup.remainingSeconds + 's'"></span>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <pre class="sp-approval-command" x-text="$store.safetyApprovalPopup.request.command"></pre>
+
+        <div class="sp-approval-note" x-show="$store.safetyApprovalPopup.request.host">
+          "Always allow" adds this host to the safety policy's allowed download hosts, so A0 won't ask about it again. You can remove it later in the Safety Policy plugin settings.
+        </div>
+
+        <div class="sp-approval-actions">
+          <button type="button" class="btn btn-cancel"
+                  :disabled="$store.safetyApprovalPopup.busy"
+                  @click="$store.safetyApprovalPopup.respond(false)">Deny</button>
+          <button type="button" class="btn btn-ok"
+                  :disabled="$store.safetyApprovalPopup.busy"
+                  @click="$store.safetyApprovalPopup.respond(true)">Allow once</button>
+          <template x-if="$store.safetyApprovalPopup.request.host">
+            <button type="button" class="btn btn-ok"
+                    :disabled="$store.safetyApprovalPopup.busy"
+                    @click="$store.safetyApprovalPopup.respond(true, true)"
+                    x-text="'Always allow ' + $store.safetyApprovalPopup.request.host"></button>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .sp-approval {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 640px;
+    }
+    .sp-approval-head {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .sp-approval-icon {
+      font-size: 28px;
+      color: var(--color-warning, #e0a030);
+    }
+    .sp-approval-title {
+      font-size: 1rem;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+    }
+    .sp-approval-sub {
+      font-size: 0.8rem;
+      opacity: 0.65;
+      margin-top: 2px;
+    }
+    .sp-approval-command {
+      margin: 0;
+      padding: 10px 12px;
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: var(--font-family-code, monospace);
+      font-size: 0.8rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--color-background) 80%, #000 20%);
+    }
+    .sp-approval-note {
+      font-size: 0.8rem;
+      opacity: 0.7;
+    }
+    .sp-approval-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+  </style>
+</body>
+</html>

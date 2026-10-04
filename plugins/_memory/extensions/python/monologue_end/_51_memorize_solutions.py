@@ -104,6 +104,13 @@ class MemorizeSolutions(Extension):
                     log_item.update(heading="Invalid solutions format received.")
                     return
 
+            if isinstance(solutions, list):
+                # Solutions may draw on tool output (errors, fixes), but a
+                # "solution" phrased as an order to the agent is the shape
+                # an injection takes when it tries to persist itself.
+                from helpers.untrusted_content import looks_like_injected_instruction
+                solutions = [s for s in solutions if not looks_like_injected_instruction(str(s))]
+
             if not isinstance(solutions, list) or len(solutions) == 0:
                 log_item.update(heading="No successful solutions to memorize.")
                 return
