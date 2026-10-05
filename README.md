@@ -95,4 +95,4 @@ Issues and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). P
 
 Based on [Agent Zero](https://github.com/agent0ai/agent-zero) by Agent Zero, s.r.o. and its community. Licensed under the [MIT License](LICENSE); upstream's copyright notice is kept, with an added notice for this fork's modifications.
 
-Bundled third-party components keep their own licenses, e.g. TradingView Lightweight Charts (Apache-2.0), and the toggle-switch style adapted from [chicogale's design on uiverse.io](https://uiverse.io/chicogale/tall-starfish-3) (MIT).
+Bundled third-party components keep their own licenses, e.g. the toggle-switch style adapted from [chicogale's design on uiverse.io](https://uiverse.io/chicogale/tall-starfish-3) (MIT).
