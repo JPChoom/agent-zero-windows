@@ -72,6 +72,22 @@ The UI opens at <http://localhost:5000> (change it with `WEB_UI_PORT` / `WEB_UI_
 
 Everything personal lives in the git-ignored `usr/` folder: chats, memory, settings, `.env`, plugin settings, uploads and your work folder. Nothing from `usr/` is ever part of this repository - keep it that way when you contribute.
 
+## Security model
+
+**There is no sandbox.** Upstream Agent Zero keeps the agent inside a Docker container and reaches the host only through a bridge. This fork removes that layer on purpose: the agent's PowerShell, Python and Node processes run **directly on Windows, with the privileges of the account that started Agent Zero**. It can read, change or delete anything that account can, and use anything that account is signed in to. That is what makes native Windows integration possible, and it is also the main risk.
+
+What that means in practice:
+
+- **Use a dedicated, standard (non-administrator) Windows account**, ideally one without access to your personal files, browser profiles or password manager. Never run it as an administrator.
+- **Keep the permission mode on Manual** (the default for every new chat) unless you are watching the agent work. "Bypass permissions" exists for unattended runs; it is password-locked and expires automatically, but while it is on the agent can act without asking.
+- **Treat anything the agent reads as untrusted.** Web pages, files and command output can contain instructions aimed at the model. The fork marks outside content as data and has an infection check, but no filter is perfect.
+- **Do not expose it to the internet** except through the built-in Remote Control tunnel with the IP allowlist configured and a UI login set.
+- **Keep Terminal Access disabled** unless you need it.
+
+The safeguards in this fork - permission modes, the list of denied commands, the infection check, untrusted-content wrapping, the tunnel allowlist, the locked Bypass mode and the kill switch - **reduce risk and catch mistakes. They are defense in depth, not a boundary**, and they cannot contain a determined, manipulated or compromised agent. If you need real isolation, run it in a separate Windows user session, a virtual machine, or use the upstream Docker version instead.
+
+Report vulnerabilities privately through GitHub's *Security > Report a vulnerability*, not in a public issue.
+
 ## Tests
 
 ```powershell
