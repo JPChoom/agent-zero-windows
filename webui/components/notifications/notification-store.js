@@ -614,7 +614,8 @@ const model = {
     title = "",
     display_time = 5,
     group = "",
-    priority = defaultPriority
+    priority = defaultPriority,
+    action = null // optional { label, run } -> button on the toast (e.g. Undo)
   ) {
     const timestamp = getCurrentUserISOString();
     const notification = {
@@ -654,6 +655,7 @@ const model = {
       autoRemoveTimer: null,
       hoverTimer: null,
       isHovered: false,
+      action: action && typeof action.run === "function" ? action : null,
     };
 
     // Add to bottom of stack (newest at bottom)

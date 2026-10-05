@@ -56,7 +56,6 @@
 
 - Run targeted tests for changed helper behavior; run security regressions for auth, filesystem, WebSocket, tunnel, upload, or secret-handling helpers.
 - Related tests observed by source search:
-  - `tests/test_docker_release_plan.py`
   - `tests/test_git_version_label.py`
   - `tests/test_model_config_api_keys.py`
   - `tests/test_model_config_project_presets.py`

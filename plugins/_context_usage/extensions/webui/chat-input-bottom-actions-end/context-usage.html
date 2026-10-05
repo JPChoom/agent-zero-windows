@@ -1,0 +1,48 @@
+<html>
+<head>
+  <script type="module">
+    import { store } from "/plugins/_context_usage/webui/context-usage-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.contextUsage">
+      <button
+        type="button"
+        class="text-button context-usage-button"
+        x-show="$store.contextUsage.available"
+        style="display: none;"
+        :class="'context-usage-' + $store.contextUsage.severity"
+        title="View context window"
+        x-create="$store.contextUsage.onMount()"
+        x-destroy="$store.contextUsage.cleanup()"
+        @click="$store.contextUsage.openDetail()"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">data_usage</span>
+        <p>
+          <span x-text="$store.contextUsage.label"></span>
+          <template x-if="$store.contextUsage.percentLabel">
+            <span x-text="'(' + $store.contextUsage.percentLabel + ')'"></span>
+          </template>
+        </p>
+      </button>
+    </template>
+  </div>
+
+  <style>
+    .context-usage-button .material-symbols-outlined {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+    }
+
+    .context-usage-warning {
+      color: var(--color-warning, #d9a441);
+    }
+
+    .context-usage-critical {
+      color: var(--color-danger, #e05555);
+    }
+  </style>
+</body>
+</html>

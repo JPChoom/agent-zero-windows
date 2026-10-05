@@ -1,6 +1,6 @@
 from helpers.api import ApiHandler, Input, Output, Request, Response
 from agent import AgentContext
-from helpers import persist_chat
+from helpers import chat_trash, files, persist_chat
 from helpers.task_scheduler import TaskScheduler
 
 
@@ -12,12 +12,22 @@ class RemoveChat(ApiHandler):
         scheduler.cancel_tasks_by_context(ctxid, terminate_thread=True)
 
         context = AgentContext.use(ctxid)
+
+        # Move the saved chat to the trash first (restorable for
+        # chat_trash.RETENTION_DAYS), before reset() clears its state.
+        trash_id = chat_trash.trash_chat(ctxid, context)
+
         if context:
             # stop processing any tasks
             context.reset()
 
         AgentContext.remove(ctxid)
-        persist_chat.remove_chat(ctxid)
+        if trash_id:
+            # The trash holds the copy (and its provider-stored responses
+            # until purge); just clear anything re-saved during the reset.
+            files.delete_dir(persist_chat.get_chat_folder_path(ctxid))
+        else:
+            persist_chat.remove_chat(ctxid)
 
         await scheduler.reload()
 
@@ -31,4 +41,5 @@ class RemoveChat(ApiHandler):
 
         return {
             "message": "Context removed.",
+            "trash_id": trash_id,
         }

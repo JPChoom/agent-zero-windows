@@ -1,0 +1,11 @@
+<div
+  class="right-canvas-surface-panel calendar-canvas-surface"
+  data-surface-id="calendar"
+  :class="{
+    'is-active': $store.rightCanvas?.isSurfaceVisible('calendar'),
+    'is-mounted': $store.rightCanvas?.isSurfaceRendered('calendar')
+  }"
+  :aria-hidden="(!$store.rightCanvas?.isSurfaceVisible('calendar')).toString()"
+>
+  <x-component path="/plugins/_calendar/webui/calendar-panel.html"></x-component>
+</div>

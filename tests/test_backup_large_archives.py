@@ -17,6 +17,7 @@ class UploadedBackup:
 
 
 @pytest.mark.asyncio
+@pytest.mark.docker_layout
 async def test_pattern_scan_can_run_without_file_limit(tmp_path):
     root = tmp_path / "a0"
     usr = root / "usr"
@@ -41,6 +42,7 @@ async def test_pattern_scan_can_run_without_file_limit(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.docker_layout
 async def test_create_backup_uses_unlimited_pattern_scan(tmp_path, monkeypatch):
     source_file = tmp_path / "source.txt"
     source_file.write_text("payload\n", encoding="utf-8")
@@ -90,6 +92,7 @@ async def test_create_backup_uses_unlimited_pattern_scan(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.docker_layout
 async def test_restore_can_reach_files_after_50000_archive_entries(tmp_path):
     old_root = "/old-a0"
     archive_root = old_root.lstrip("/")

@@ -1,7 +1,7 @@
 ## Environment
 You run natively on a Windows 11 host - not Docker, Linux, Kali, WSL, a VM, or a container.
-- native shell: Windows PowerShell; Agent Zero root: C:\a0
-- Python: C:\a0\.venv\Scripts\python.exe (environment C:\a0\.venv)
+- native shell: Windows PowerShell; Agent Zero root: {{a0_root}}
+- Python: {{python_path}} (environment {{python_env}})
 - use Windows paths (C:\folder\file.ext) and PowerShell syntax; no Bash or Linux commands (apt, sudo, chmod, grep, sed, awk, cat, touch, mkdir -p, rm) unless the task targets a Linux or remote system
 - PowerShell equivalents: Get-ChildItem, Get-Content, Set-Content, Select-String, New-Item, Copy-Item, Move-Item, Remove-Item, Test-Path, Get-Process, Stop-Process
 - packages/tools: winget, Chocolatey, NuGet, dotnet, pip (Python above), MSBuild, Git - check a tool is installed before relying on it

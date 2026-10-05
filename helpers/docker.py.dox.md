@@ -41,7 +41,6 @@
 - Related tests observed by source search:
   - `tests/test_browser_agent_regressions.py`
   - `tests/test_default_prompt_budget.py`
-  - `tests/test_docker_release_plan.py`
   - `tests/test_document_query_plugin.py`
   - `tests/test_host_browser_connector.py`
   - `tests/test_model_search.py`

@@ -408,6 +408,7 @@ def test_explicit_private_auth_hard_link_is_rejected(tmp_path, monkeypatch):
         codex.resolve_auth_write_path()
 
 
+@pytest.mark.posix_only
 def test_write_auth_file_uses_atomic_replace_and_private_permissions(tmp_path, monkeypatch):
     auth_path = tmp_path / "auth.json"
     replacements: list[tuple[Path, Path]] = []
@@ -431,6 +432,7 @@ def test_write_auth_file_uses_atomic_replace_and_private_permissions(tmp_path, m
     assert list(tmp_path.glob(".auth.json.*.tmp")) == []
 
 
+@pytest.mark.posix_only
 def test_write_auth_file_falls_back_for_file_bind_mount(tmp_path, monkeypatch):
     auth_path = tmp_path / "auth.json"
     auth_path.write_text(json.dumps({"tokens": {"refresh_token": "refresh-0"}}), encoding="utf-8")
@@ -449,6 +451,7 @@ def test_write_auth_file_falls_back_for_file_bind_mount(tmp_path, monkeypatch):
     assert list(tmp_path.glob(".auth.json.*.tmp")) == []
 
 
+@pytest.mark.posix_only
 def test_write_auth_file_falls_back_when_parent_rejects_temporary_files(tmp_path, monkeypatch):
     auth_path = tmp_path / "auth.json"
     auth_path.write_text(json.dumps({"tokens": {"refresh_token": "refresh-0"}}), encoding="utf-8")
@@ -470,6 +473,7 @@ def test_write_auth_file_falls_back_when_parent_rejects_temporary_files(tmp_path
     assert not auth_path.with_name(".auth.json.lock").exists()
 
 
+@pytest.mark.needs_symlinks
 def test_resolve_auth_write_path_preserves_custom_symlink_target(tmp_path, monkeypatch):
     target = tmp_path / "mounted" / "auth.json"
     target.parent.mkdir()

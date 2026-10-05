@@ -11,6 +11,9 @@ from agent import AgentConfig, AgentContext, AgentContextType
 from helpers import runtime, tokens
 
 
+_USER_OWNED_SECTIONS = ("# Behavioral prompt includes", "# Behavioral rules")
+
+
 def _iter_prompt_files():
     yield from (PROJECT_ROOT / "prompts").rglob("*.md")
     yield from (PROJECT_ROOT / "agents" / "agent0" / "prompts").rglob("*.md")
@@ -35,7 +38,14 @@ async def _build_system_text(profile: str = "agent0") -> str:
     )
     try:
         system = await ctx.agent0.get_system_prompt(ctx.agent0.loop_data)
-        return "\n\n".join(system)
+        # Drop the parts that come from the local user's own data (their
+        # usr/promptincludes files and saved behaviour rules): the budget
+        # guards framework prompt creep, and must not depend on - or read -
+        # whatever the person running the tests has configured.
+        return "\n\n".join(
+            part for part in system
+            if not part.lstrip().startswith(_USER_OWNED_SECTIONS)
+        )
     finally:
         AgentContext.remove(ctx.id)
         runtime.args.clear()

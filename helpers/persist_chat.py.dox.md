@@ -22,7 +22,8 @@
 - `_convert_v080_chats()`
 - `load_json_chats(jsons: list[str])`: Load contexts from JSON strings
 - `export_json_chat(context: AgentContext)`: Export context as JSON string
-- `remove_chat(ctxid)`: Remove a chat or task context
+- `remove_chat(ctxid)`: Remove a chat or task context (erases the folder and provider-stored responses; user chat deletes go through `helpers/chat_trash.py` instead)
+- `delete_provider_responses_for_data(data)`: delete provider-stored responses referenced by a serialized chat (used by `remove_chat` and chat-trash purges)
 - `remove_msg_files(ctxid)`: Remove all message files for a chat or task context
 - `mark_chat_saved(context: AgentContext) -> None`
 - `saved_chat_ids() -> set[str]`

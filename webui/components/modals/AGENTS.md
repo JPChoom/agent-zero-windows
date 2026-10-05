@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- Each direct child folder owns one modal workflow and its store.
+- Each direct child folder owns one modal workflow and its store (e.g. `chat-trash/` owns the "Recently deleted" chats modal over `/chat_trash`).
 - Modal HTML files own body content, titles, scoped styles, and `data-modal-footer` content.
 - Modal store files own modal-local state and cleanup.
 

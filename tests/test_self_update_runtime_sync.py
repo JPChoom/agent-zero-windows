@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 
 import stat
 import sys
@@ -33,6 +34,7 @@ def docker_run_ui():
 """
 
 
+@pytest.mark.posix_only
 def test_self_update_runtime_sync_replaces_stale_manager(tmp_path):
     source = tmp_path / "source_self_update_manager.py"
     target = tmp_path / "self_update_manager.py"
@@ -121,6 +123,7 @@ def test_self_update_runtime_sync_missing_target_is_quiet(tmp_path):
     assert "not found" in result["reason"]
 
 
+@pytest.mark.needs_symlinks
 def test_self_update_runtime_sync_skips_non_regular_target(tmp_path):
     source = tmp_path / "source_self_update_manager.py"
     target = tmp_path / "self_update_manager.py"

@@ -7,14 +7,14 @@
 
 ## Ownership
 
-- `openrouter_release_notes_system_prompt.md` is consumed by `.github/scripts/docker_release_plan.py`.
+- `clean_generated_files.ps1`, `export_safe_source.ps1` and `verify_install.ps1` are Windows maintenance scripts; they default to the repo root (`Split-Path -Parent $PSScriptRoot`), never a fixed install path.
 - Additional repository maintenance scripts belong here when they are not runtime application code.
 
 ## Local Contracts
 
 - Do not commit secrets, generated credentials, private release notes, or local machine paths.
 - Scripts used by CI must have stable inputs and fail with actionable errors.
-- Keep script behavior synchronized with `.github/AGENTS.md`, workflow YAML, and tests.
+- Keep script behavior synchronized with callers and tests.
 
 ## Work Guidance
 
@@ -25,7 +25,6 @@
 ## Verification
 
 - Run targeted tests for any automation script with coverage.
-- For release-note prompt changes, inspect generated output format expectations in `.github/scripts/docker_release_plan.py`.
 
 ## Child DOX Index
 

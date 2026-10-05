@@ -1,3 +1,4 @@
+import pytest
 import asyncio
 import base64
 import sys
@@ -59,6 +60,7 @@ def test_image_get_blocks_image_paths_outside_base_dir(tmp_path, monkeypatch):
     assert response.get_data(as_text=True) == "Path is outside of allowed directory"
 
 
+@pytest.mark.needs_symlinks
 def test_image_get_blocks_symlink_escape_from_base_dir(tmp_path, monkeypatch):
     base_dir = tmp_path / "a0"
     _patch_base_dir(monkeypatch, base_dir)

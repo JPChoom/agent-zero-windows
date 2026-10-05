@@ -1,0 +1,266 @@
+<!-- Personality Selector - named system-prompt overlays, per chat -->
+<script type="module">
+  import { store } from "/plugins/_personality/webui/personality-store.js";
+</script>
+
+<div x-data>
+<template x-if="$store.personality">
+<div class="personality-root" x-data="{
+       showDropdown: false,
+       editing: null,
+       startCreate() { this.editing = { id: null, name: '', prompt: '' }; },
+       startEdit(p) { this.editing = { id: p.id, name: p.name, prompt: p.prompt }; },
+       async doSave() {
+         if (!this.editing.name.trim()) return;
+         const saved = await $store.personality.save(this.editing.id, this.editing.name, this.editing.prompt);
+         if (saved) this.editing = null;
+       },
+     }"
+     x-init="
+       await $store.personality.refresh($store.chats?.selected || '');
+       $watch('$store.chats.selected', v => $store.personality.refresh(v || ''));
+     ">
+  <div class="personality-anchor" @click.outside="showDropdown = false; editing = null">
+    <button type="button" class="text-button" @click="showDropdown = !showDropdown">
+      <span class="material-symbols-outlined" style="font-size: 14px;">theater_comedy</span>
+      <span x-text="$store.personality.label()"></span>
+    </button>
+
+    <div class="personality-dropdown" x-show="showDropdown" x-keep-in-view x-transition.opacity style="display: none;">
+      <template x-if="!editing">
+        <div>
+          <div class="personality-dropdown-header">Personality</div>
+          <template x-for="p in $store.personality.personalities" :key="p.id">
+            <div class="personality-item" :class="{ 'is-active': p.id === $store.personality.activeId }">
+              <button type="button" class="personality-item-main" @click="$store.personality.select(p.id); showDropdown = false">
+                <span class="personality-item-name" x-text="p.name"></span>
+                <span class="material-symbols-outlined personality-item-check" x-show="p.id === $store.personality.activeId">check</span>
+              </button>
+              <button type="button" class="personality-item-action" title="Edit" @click.stop="startEdit(p)">
+                <span class="material-symbols-outlined">edit</span>
+              </button>
+              <button type="button" class="personality-item-action" title="Delete" x-show="p.id !== 'default'"
+                      @click.stop="$confirmClick($event, () => $store.personality.remove(p.id))">
+                <span class="material-symbols-outlined">delete</span>
+              </button>
+            </div>
+          </template>
+
+          <div class="personality-dropdown-separator"></div>
+          <button type="button" class="personality-new-btn" @click="startCreate()">
+            <span class="material-symbols-outlined" style="font-size: 15px;">add</span>
+            <span>New personality</span>
+          </button>
+        </div>
+      </template>
+
+      <template x-if="editing">
+        <div class="personality-editor" @click.stop>
+          <div class="personality-dropdown-header" x-text="editing.id ? 'Edit personality' : 'New personality'"></div>
+          <input type="text" class="personality-editor-name" placeholder="Name" x-model="editing.name">
+          <textarea class="personality-editor-prompt" rows="8" placeholder="System prompt text..." x-model="editing.prompt"></textarea>
+          <div class="personality-editor-actions">
+            <button type="button" class="personality-editor-cancel" @click="editing = null">Cancel</button>
+            <button type="button" class="personality-editor-save" @click="doSave()">Save</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+</template>
+</div>
+
+<style>
+  /* Keeps this button a direct flex item of .text-buttons-row
+     (bottom-actions-bar.html), same fix as mode-selector.html - the
+     shared CSS there only flattens one div[x-data] level deep, and the
+     x-if template here adds a second one. */
+  .personality-root {
+    display: contents;
+  }
+
+  .personality-anchor {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .personality-dropdown {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    min-width: 240px;
+    max-width: 320px;
+    max-height: 420px;
+    overflow-y: auto;
+    background-color: var(--color-panel);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: var(--shadow-lg, 0 4px 16px rgba(0, 0, 0, 0.25));
+    z-index: 100;
+  }
+
+  .personality-dropdown-header {
+    padding: 4px 8px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.6;
+  }
+
+  .personality-item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    border-radius: 6px;
+  }
+
+  .personality-item:hover,
+  .personality-item.is-active {
+    background: color-mix(in srgb, var(--color-highlight) 10%, transparent);
+  }
+
+  .personality-item-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 8px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .personality-item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .personality-item-check {
+    font-size: 15px;
+    color: var(--color-highlight);
+    flex-shrink: 0;
+  }
+
+  .personality-item-action {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    opacity: 0.6;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+
+  .personality-item-action:hover {
+    opacity: 1;
+    background: var(--color-background-hover);
+  }
+
+  .personality-item-action .material-symbols-outlined {
+    font-size: 15px;
+  }
+
+  .personality-dropdown-separator {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--color-border);
+    opacity: 0.4;
+  }
+
+  .personality-new-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.78rem;
+    opacity: 0.75;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+
+  .personality-new-btn:hover {
+    opacity: 1;
+    background: var(--color-background-hover);
+  }
+
+  .personality-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px;
+    width: 280px;
+  }
+
+  .personality-editor-name {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--color-input);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.82rem;
+  }
+
+  .personality-editor-prompt {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--color-input);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 0.78rem;
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .personality-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .personality-editor-cancel,
+  .personality-editor-save {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: none;
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .personality-editor-cancel {
+    background: transparent;
+    color: var(--color-text-muted);
+  }
+
+  .personality-editor-cancel:hover {
+    background: var(--color-background-hover);
+  }
+
+  .personality-editor-save {
+    background: var(--color-highlight);
+    color: white;
+  }
+</style>

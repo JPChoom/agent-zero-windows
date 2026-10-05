@@ -1,0 +1,8 @@
+name: _personality
+title: Personalities
+description: Named system-prompt overlays (e.g. "Brutally Honest") the user can pick per chat, on top of whichever agent profile is active.
+version: 1.0.0
+always_enabled: true
+settings_sections: []
+per_project_config: false
+per_agent_config: false

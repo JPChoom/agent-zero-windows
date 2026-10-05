@@ -99,7 +99,7 @@ try {
     else {
         Write-Warning "pytest is not installed in this virtual environment."
         Write-Warning "Compile validation passed; automated tests were skipped."
-        Write-Warning "Optional install command: C:\a0\.venv\Scripts\python.exe -m pip install pytest"
+        Write-Warning "Optional install command: $(Join-Path (Split-Path -Parent $PSScriptRoot) '.venv\Scripts\python.exe') -m pip install pytest"
     }
 }
 finally {

@@ -285,9 +285,36 @@ body.a0-theme .scheduler-task-item:hover {
   background: var(--color-background-hover);
 }
 
+/* Chat rows are pills; the selected one gets an accent fill and rim
+   (an inset side bar reads oddly on a pill). */
+body.a0-theme .chat-container {
+  border-radius: 999px;
+}
+
+body.a0-theme .chat-container:not(.chat-has-children):not(.chat-child-container) .chat-list-button {
+  padding-left: 10px;
+}
+
 body.a0-theme .chat-container.chat-selected {
   background: var(--accent-soft);
-  box-shadow: inset 2px 0 0 var(--accent-ui);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* Rename / close: accent pills. The pointer-hover selector must outrank
+   chats-list.html's ".device-pointer .chat-container:hover ..." rule. */
+body.a0-theme .chat-container .chat-list-action-btn,
+body.a0-theme.device-pointer .chat-container:hover .chat-list-action-btn {
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--s2));
+  color: var(--accent-ui);
+}
+
+body.a0-theme .chat-container .chat-list-action-btn:hover,
+body.a0-theme.device-pointer .chat-container:hover .chat-list-action-btn:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 34%, var(--s2));
+  color: var(--t0);
 }
 
 body.a0-theme .chat-name { color: var(--t1); }

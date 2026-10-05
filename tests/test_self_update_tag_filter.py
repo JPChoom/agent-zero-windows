@@ -758,6 +758,7 @@ def test_self_update_manager_queues_update_with_main_latest_defaults(monkeypatch
     assert captured["payload"]["tag"] == "latest"
 
 
+@pytest.mark.needs_symlinks
 def test_self_update_manager_usr_backup_skips_broken_symlinks(tmp_path):
     manager = load_self_update_manager()
     repo_dir = tmp_path / "repo"
@@ -783,6 +784,7 @@ def test_self_update_manager_usr_backup_skips_broken_symlinks(tmp_path):
     assert "usr/workdir/reachy-mini-mcp/.venv/bin/python" not in names
 
 
+@pytest.mark.posix_only
 def test_self_update_manager_usr_backup_skips_runtime_sockets():
     manager = load_self_update_manager()
     with tempfile.TemporaryDirectory(prefix="a0su-", dir="/tmp") as temp_root:
@@ -829,6 +831,7 @@ def test_self_update_manager_usr_backup_skips_runtime_sockets():
         )
 
 
+@pytest.mark.posix_only
 def test_self_update_manager_usr_backup_skips_transient_desktop_ssh_agent_dir(tmp_path):
     manager = load_self_update_manager()
     repo_dir = tmp_path / "repo"
@@ -876,6 +879,7 @@ def test_self_update_manager_usr_backup_skips_transient_desktop_ssh_agent_dir(tm
     )
 
 
+@pytest.mark.posix_only
 def test_self_update_manager_cleans_transient_desktop_agent_state():
     manager = load_self_update_manager()
     with tempfile.TemporaryDirectory(prefix="a0su-", dir="/tmp") as temp_root:

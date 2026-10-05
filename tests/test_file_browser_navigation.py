@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 import sys
 
@@ -149,6 +150,7 @@ def test_file_browser_dropdown_escapes_scroll_container_and_header_is_opaque() -
     assert "border-bottom: 1px solid var(--color-border);" in html
 
 
+@pytest.mark.docker_layout
 def test_file_browser_empty_api_path_uses_default_workdir_contract() -> None:
     api_source = read("api", "get_work_dir_files.py")
     api_dox = read("api", "get_work_dir_files.py.dox.md")
@@ -194,6 +196,7 @@ def test_file_browser_is_registered_as_right_canvas_surface() -> None:
     assert "chatInputStore.browseFiles" not in welcome_store
 
 
+@pytest.mark.docker_layout
 def test_file_browser_reports_missing_directory(tmp_path: Path) -> None:
     missing_directory = tmp_path / "missing"
 

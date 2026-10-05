@@ -45,7 +45,6 @@
   - `tests/test_api_chat_lifetime.py`
   - `tests/test_browser_agent_regressions.py`
   - `tests/test_chat_compaction.py`
-  - `tests/test_docker_release_plan.py`
   - `tests/test_document_query_fallback.py`
   - `tests/test_download_toast_regressions.py`
 

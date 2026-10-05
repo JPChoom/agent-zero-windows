@@ -70,6 +70,8 @@ ProtocolHandler = Callable[
 
 _PROTOCOL_HANDLERS: dict[str, ProtocolHandler] = {}
 
+_WINDOWS_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
+
 
 def register_protocol_handler(scheme: str, handler: ProtocolHandler) -> None:
     """Register or replace a fetch handler for a URI scheme."""
@@ -85,6 +87,10 @@ async def fetch_public_resource(
     config = config or {}
     parsed = urlparse(uri)
     scheme = (parsed.scheme or "file").lower()
+    # urlparse reads a Windows drive letter ("C:\docs\a.pdf", "c:/docs") as a
+    # one-letter scheme; drive and UNC paths are local files.
+    if _WINDOWS_PATH.match(uri):
+        scheme = "file"
     handler = _PROTOCOL_HANDLERS.get(scheme)
     if not handler:
         raise ValueError(f"Unsupported document scheme: {scheme}")

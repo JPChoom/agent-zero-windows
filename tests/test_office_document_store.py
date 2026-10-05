@@ -631,6 +631,7 @@ def test_markdown_editor_save_rejects_stale_canvas_overwrite(office_state):
     assert "Older canvas text" not in Path(doc["path"]).read_text(encoding="utf-8")
 
 
+@pytest.mark.linux_only
 def test_markdown_session_rejects_office_binaries(office_state):
     manager = editor_markdown_sessions.MarkdownSessionManager()
     doc = document_store.create_document("document", "Desktop Only", "odt", "Native text")
@@ -791,6 +792,7 @@ def test_office_binary_open_requires_explicit_desktop_without_cold_session(offic
         monkeypatch.delattr(api_package, "office_session", raising=False)
 
 
+@pytest.mark.linux_only
 def test_official_desktop_session_manager_opens_binary_session(office_state, tmp_path, monkeypatch):
     class FakeProcess:
         pid = 4242
@@ -1037,6 +1039,7 @@ def test_official_desktop_session_manager_opens_binary_session(office_state, tmp
     assert manager.close(payload["session_id"], save_first=False)["persistent"] is True
 
 
+@pytest.mark.linux_only
 def test_shutdown_panel_launcher_requires_second_click(tmp_path):
     profile_dir = tmp_path / "desktop" / "profiles" / desktop_session.SYSTEM_SESSION_ID
     profile_dir.mkdir(parents=True)
@@ -1137,6 +1140,7 @@ def test_desktop_session_sync_consumes_shutdown_marker(tmp_path, monkeypatch):
     assert manager.get(session.session_id) is None
 
 
+@pytest.mark.linux_only
 def test_desktop_session_cleanup_preserves_live_owner_manifest(tmp_path, monkeypatch):
     session_dir = tmp_path / "sessions"
     legacy_session_dir = tmp_path / "legacy-sessions"
@@ -1500,6 +1504,7 @@ def test_cleanup_hook_removes_retired_supervisor_program_after_marker(tmp_path, 
     ]
 
 
+@pytest.mark.linux_only
 def test_office_runtime_dependency_install_waits_out_apt_locks(monkeypatch):
     calls = []
     installed_state = {"libreoffice-core": False}
@@ -1575,6 +1580,7 @@ def test_desktop_cleanup_moves_retired_state_to_plugin_state(tmp_path, monkeypat
     assert not retired_state.exists()
 
 
+@pytest.mark.linux_only
 def test_cleanup_hook_installs_missing_desktop_session_dependencies(monkeypatch):
     calls = []
     installed_state = {"xpra": False}
@@ -1602,6 +1608,7 @@ def test_cleanup_hook_installs_missing_desktop_session_dependencies(monkeypatch)
     assert calls[1][:4] == ["apt-get", "install", "-y", "--no-install-recommends"]
 
 
+@pytest.mark.linux_only
 def test_cleanup_hook_enables_official_xpra_repo_when_kali_lacks_candidate(tmp_path, monkeypatch):
     calls = []
     installed_state = {"xpra": False, "ca-certificates": True}
@@ -1645,6 +1652,7 @@ def test_cleanup_hook_enables_official_xpra_repo_when_kali_lacks_candidate(tmp_p
     assert calls[-1][:4] == ["apt-get", "install", "-y", "--no-install-recommends"]
 
 
+@pytest.mark.linux_only
 def test_cleanup_hook_uses_trixie_xpra_components_for_kali_arm64(tmp_path, monkeypatch):
     calls = []
     installed_state = {"xpra-server": False, "xpra-x11": False, "xpra-html5": False, "ca-certificates": True}
@@ -1689,6 +1697,7 @@ def test_cleanup_hook_uses_trixie_xpra_components_for_kali_arm64(tmp_path, monke
     assert calls[-1][-3:] == ["xpra-server", "xpra-x11", "xpra-html5"]
 
 
+@pytest.mark.linux_only
 def test_cleanup_hook_skips_optional_xpra_client_codec_conflict(monkeypatch):
     calls = []
     installed_state = {
@@ -1737,6 +1746,7 @@ def test_cleanup_hook_skips_optional_xpra_client_codec_conflict(monkeypatch):
     assert calls[-1][-2:] == ["xpra-client", "xpra-client-gtk3"]
 
 
+@pytest.mark.linux_only
 def test_cleanup_hook_reports_required_xpra_codec_conflict(monkeypatch):
     codec_error = (
         "E: Unable to satisfy dependencies. Reached two conflicting assignments:\n"

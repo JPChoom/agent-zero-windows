@@ -16,7 +16,6 @@
 - Preserve the two-runtime model documented in the root contract: framework runtime under `/opt/venv-a0` and agent execution runtime under `/opt/venv`.
 - Do not bake secrets, local `.env` values, or user data into images.
 - Keep compose mounts aligned with `usr/`, `logs/`, and other runtime-state expectations.
-- Image changes that affect GitHub publishing must stay synchronized with `.github/workflows/docker-publish.yml`.
 
 ## Work Guidance
 

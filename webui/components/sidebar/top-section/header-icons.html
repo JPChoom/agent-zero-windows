@@ -126,14 +126,14 @@
           <span>Remote Control</span>
         </button>
 
-        <button class="dropdown-item" @click="open('https://space-agent.ai/', '_blank', 'noopener,noreferrer'); $store.sidebar.menuClose()">
-          <span class="material-symbols-outlined">rocket_launch</span>
-          <span>Space Agent</span>
-        </button>
-
         <button class="dropdown-item" @click="openModal('components/modals/scheduler/scheduler-modal.html'); $store.sidebar.menuClose()">
           <span class="material-symbols-outlined">schedule</span>
           <span>Tasks</span>
+        </button>
+
+        <button class="dropdown-item" @click="openModal('modals/chat-trash/chat-trash.html'); $store.sidebar.menuClose()">
+          <span class="material-symbols-outlined">restore_from_trash</span>
+          <span>Recently deleted</span>
         </button>
 
         <button class="dropdown-item" @click="openModal('settings/settings.html'); $store.sidebar.menuClose()">

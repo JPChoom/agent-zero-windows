@@ -169,6 +169,7 @@ def test_shadow_repo_empty_head_is_repaired_without_losing_history(workspace):
     ]
 
 
+@pytest.mark.needs_symlinks
 def test_workspace_identity_canonicalizes_symlink_aliases():
     name = f"tt-{uuid.uuid4().hex}"
     root = PROJECT_ROOT / "usr" / "time-travel-tests" / name
@@ -265,6 +266,7 @@ def test_metadata_policy_tracks_safe_project_files_and_preserves_exclusions(work
     assert (root / ".a0proj" / "secrets.env").read_text(encoding="utf-8") == "SECRET=two\n"
 
 
+@pytest.mark.needs_symlinks
 def test_symlink_entries_are_snapshotted_and_deleted_without_following_targets(workspace, tmp_path: Path):
     root, service = workspace
     outside = tmp_path / "outside.txt"

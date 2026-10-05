@@ -12,8 +12,17 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def _restore_real_helpers_package() -> None:
+    # Only undo a stub `helpers` left by another test module. The real
+    # package is a namespace package (no __init__.py, so __file__ is None);
+    # recognise it by its __path__ instead - wiping the real helpers.*
+    # modules here split already-imported modules (e.g. models) from fresh
+    # copies other tests then patch, breaking their mocks.
     helpers_module = sys.modules.get("helpers")
-    if helpers_module is None or getattr(helpers_module, "__file__", ""):
+    if helpers_module is None:
+        return
+    real_dir = str(PROJECT_ROOT / "helpers")
+    paths = [str(p) for p in (getattr(helpers_module, "__path__", None) or [])]
+    if any(Path(p) == Path(real_dir) for p in paths):
         return
 
     for name in list(sys.modules):

@@ -226,6 +226,7 @@ def test_provider_data_dir_rejects_unsafe_slugs(provider_slug):
     assert exc_info.value.code == "invalid_provider_slug"
 
 
+@pytest.mark.posix_only
 def test_write_private_json_does_not_reuse_preexisting_temp_file(tmp_path):
     path = tmp_path / "auth.json"
     stale_tmp = tmp_path / "auth.json.tmp"
@@ -273,6 +274,7 @@ def test_write_private_json_does_not_follow_preexisting_temp_symlink(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
+@pytest.mark.posix_only
 def test_write_private_json_sets_generated_temp_private_before_dump(tmp_path, monkeypatch):
     observed_modes = []
     real_dump = provider_base.json.dump

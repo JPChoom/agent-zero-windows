@@ -65,7 +65,6 @@
   - `tests/test_a0_connector_computer_use_metadata.py`
   - `tests/test_a0_connector_prompt_gating.py`
   - `tests/test_browser_agent_regressions.py`
-  - `tests/test_docker_release_plan.py`
   - `tests/test_download_toast_regressions.py`
   - `tests/test_git_version_label.py`
   - `tests/test_host_browser_connector.py`

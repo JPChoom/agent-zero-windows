@@ -376,11 +376,15 @@ async def test_agent_executes_native_responses_function_call_and_records_output(
 
     recorded = agent.history.all_messages()[0]
     metadata = result_from_metadata(recorded.metadata)
-    assert recorded.content["tool_result"] == "done:a0"
+    # "lookup" is not a trusted tool, so its output is wrapped as untrusted
+    # data - in history AND in the item sent back to the model
+    # (helpers/untrusted_content.py; agent.hist_add_tool_result).
+    wrapped = '<untrusted_content source="lookup">\ndone:a0\n</untrusted_content>'
+    assert recorded.content["tool_result"] == wrapped
     assert metadata.input_items == [
         {
             "type": "function_call_output",
             "call_id": "call_1",
-            "output": "done:a0",
+            "output": wrapped,
         }
     ]

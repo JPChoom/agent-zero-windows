@@ -69,8 +69,10 @@ Direct child DOX files:
 | --- | --- |
 | [_a0_connector/AGENTS.md](_a0_connector/AGENTS.md) | HTTP and WebSocket connector integration with remote tools and runtime bridges. |
 | [_browser/AGENTS.md](_browser/AGENTS.md) | Playwright browser tool, helpers, viewer, and browser panel UI. |
+| [_calendar/AGENTS.md](_calendar/AGENTS.md) | Calendar right-canvas surface over the task scheduler. |
 | [_chat_branching/AGENTS.md](_chat_branching/AGENTS.md) | Chat branching from an existing message. |
 | [_chat_compaction/AGENTS.md](_chat_compaction/AGENTS.md) | Full-chat compaction into a summary message. |
+| [_context_usage/AGENTS.md](_context_usage/AGENTS.md) | Context-window usage indicator in the chat input bar. |
 | [_code_execution/AGENTS.md](_code_execution/AGENTS.md) | Terminal, Python, and Node.js execution tools and shell runtimes. |
 | [_desktop/AGENTS.md](_desktop/AGENTS.md) | Linux desktop runtime, sessions, and desktop surface. |
 | [_discovery/AGENTS.md](_discovery/AGENTS.md) | Welcome-screen plugin discovery cards and promotions. |
@@ -86,6 +88,7 @@ Direct child DOX files:
 | [_office/AGENTS.md](_office/AGENTS.md) | LibreOffice office artifacts and office canvas sessions. |
 | [_onboarding/AGENTS.md](_onboarding/AGENTS.md) | First-time model onboarding wizard. |
 | [_orchestrator/AGENTS.md](_orchestrator/AGENTS.md) | Load-on-demand skill for delegating coding work to external terminal coding agent CLIs. |
+| [_personality/AGENTS.md](_personality/AGENTS.md) | Per-chat personality system-prompt overlays. |
 | [_permissions/AGENTS.md](_permissions/AGENTS.md) | Per-tool permission gate, per-chat in-memory modes, and the password-locked Bypass mode. |
 | [_plugin_installer/AGENTS.md](_plugin_installer/AGENTS.md) | Plugin install and update flows from ZIP, Git, and Plugin Index. |
 | [_plugin_scan/AGENTS.md](_plugin_scan/AGENTS.md) | LLM-guided security scanner for third-party plugins. |
@@ -99,3 +102,4 @@ Direct child DOX files:
 | [_whatsapp_integration/AGENTS.md](_whatsapp_integration/AGENTS.md) | WhatsApp Baileys bridge integration. |
 | [_whats_new/AGENTS.md](_whats_new/AGENTS.md) | Version-gated What's New showcase modal, card list, and startup trigger. |
 | [_whisper_stt/AGENTS.md](_whisper_stt/AGENTS.md) | Whisper speech-to-text integration. |
+| [terminal_access/AGENTS.md](terminal_access/AGENTS.md) | Hardened, disabled-by-default Windows command execution. |

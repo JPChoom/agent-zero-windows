@@ -4,16 +4,22 @@ import atexit
 try:
     import fcntl
 except ImportError:
-    # Safely mock the missing Linux fcntl library for Windows
-    import sys
-    from types import ModuleType
-    mock_fcntl = ModuleType('fcntl')
-    mock_fcntl.fcntl = lambda fd, op, arg=0: 0
-    mock_fcntl.ioctl = lambda fd, op, arg=0, mutate_flag=True: 0
-    mock_fcntl.flock = lambda fd, op: None
-    mock_fcntl.lockf = lambda fd, operation, length=0, start=0, whence=0: None
-    sys.modules['fcntl'] = mock_fcntl
-    import fcntl
+    # Windows has no fcntl. Use a module-local no-op stand-in - never put it
+    # in sys.modules: a process-wide fake (as before) leaked into every
+    # later `import fcntl`, e.g. the OAuth token lock in
+    # plugins/_oauth/helpers/codex.py, which then crashed on fcntl.LOCK_EX.
+    from types import SimpleNamespace
+
+    fcntl = SimpleNamespace(
+        LOCK_SH=1,
+        LOCK_EX=2,
+        LOCK_NB=4,
+        LOCK_UN=8,
+        fcntl=lambda fd, op, arg=0: 0,
+        ioctl=lambda fd, op, arg=0, mutate_flag=True: 0,
+        flock=lambda fd, op: None,
+        lockf=lambda fd, operation, length=0, start=0, whence=0: None,
+    )
 
 import hashlib
 import json

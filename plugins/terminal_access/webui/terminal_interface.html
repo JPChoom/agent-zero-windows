@@ -1,0 +1,23 @@
+<div x-data>
+  <template x-if="$store.terminalAccessStore">
+    <div x-init="$store.terminalAccessStore.onOpen()" x-destroy="$store.terminalAccessStore.cleanup()">
+      <div class="terminal-access-container">
+        <h2>Terminal Access</h2>
+        <div class="command-input-section">
+          <label for="command">Command:</label>
+          <input type="text" id="command" x-model="command" placeholder="Enter command (e.g., dir, ps, echo hello)" />
+          <label for="shell">Shell:</label>
+          <select id="shell" x-model="shell">
+            <option value="powershell">PowerShell</option>
+            <option value="cmd">Command Prompt</option>
+          </select>
+          <button @click="executeCommand">Execute</button>
+        </div>
+        <div class="output-section">
+          <h3>Output:</h3>
+          <pre x-text="output"></pre>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>

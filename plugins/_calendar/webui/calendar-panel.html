@@ -1,0 +1,720 @@
+<html>
+<head>
+  <script type="module">
+    import { store } from "/plugins/_calendar/webui/calendar-store.js";
+  </script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.calendar">
+      <div class="calendar-panel" x-init="$store.calendar.onOpen()">
+        <div class="calendar-toolbar">
+          <div class="calendar-toolbar-nav">
+            <button type="button" class="calendar-nav-button" title="Previous" aria-label="Previous" @click="$store.calendar.prevPeriod()">
+              <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+            </button>
+            <button type="button" class="calendar-today-button" @click="$store.calendar.goToday()">Today</button>
+            <button type="button" class="calendar-nav-button" title="Next" aria-label="Next" @click="$store.calendar.nextPeriod()">
+              <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+            </button>
+          </div>
+          <div class="calendar-month-label">
+            <span x-text="$store.calendar.periodLabel"></span>
+            <span class="calendar-loading-spinner material-symbols-outlined" aria-hidden="true" x-show="$store.calendar.loading" style="display: none;">progress_activity</span>
+          </div>
+          <div class="calendar-view-toggle" role="group" aria-label="Calendar view">
+            <button
+              type="button"
+              class="calendar-view-button"
+              :class="{ 'is-active': $store.calendar.viewMode === 'month' }"
+              @click="$store.calendar.setViewMode('month')"
+            >Month</button>
+            <button
+              type="button"
+              class="calendar-view-button"
+              :class="{ 'is-active': $store.calendar.viewMode === 'week' }"
+              @click="$store.calendar.setViewMode('week')"
+            >Week</button>
+            <button
+              type="button"
+              class="calendar-view-button"
+              :class="{ 'is-active': $store.calendar.viewMode === 'day' }"
+              @click="$store.calendar.setViewMode('day')"
+            >Day</button>
+          </div>
+          <button type="button" class="btn btn-ok calendar-new-button" @click="$store.calendar.openDayCreate()">
+            <span class="material-symbols-outlined" aria-hidden="true">add</span>
+            <span>New task</span>
+          </button>
+        </div>
+
+        <div class="calendar-error" x-show="$store.calendar.error" style="display: none;">
+          <span class="material-symbols-outlined" aria-hidden="true">error</span>
+          <span x-text="$store.calendar.error"></span>
+        </div>
+
+        <template x-if="$store.calendar.viewMode === 'month'">
+          <div class="calendar-grid" x-transition:enter="calendar-fade-enter" x-transition:enter-start="calendar-fade-enter-start" x-transition:enter-end="calendar-fade-enter-end">
+            <div class="calendar-weekday-row">
+              <template x-for="label in $store.calendar.weekdayLabels" :key="label">
+                <div class="calendar-weekday-cell" x-text="label"></div>
+              </template>
+            </div>
+
+            <template x-for="(week, weekIndex) in $store.calendar.calendarWeeks" :key="weekIndex">
+              <div class="calendar-week">
+                <template x-for="day in week" :key="day.dateKey">
+                  <div
+                    class="calendar-day"
+                    :class="{ 'is-outside-month': !day.isCurrentMonth, 'is-today': day.isToday }"
+                    @click="$store.calendar.openDayCreate(day.dateKey)"
+                  >
+                    <button
+                      type="button"
+                      class="calendar-day-number"
+                      title="View day"
+                      @click.stop="$store.calendar.selectDay(day.dateKey)"
+                      x-text="day.dayNumber"
+                    ></button>
+                    <div class="calendar-day-events">
+                      <template x-for="event in day.events.slice(0, 3)" :key="event.id">
+                        <button
+                          type="button"
+                          class="calendar-event-pill"
+                          :class="'calendar-event-' + event.task_type"
+                          :title="event.name"
+                          @click.stop="$store.calendar.openEvent(event)"
+                        >
+                          <span class="calendar-event-time" x-text="$store.calendar.formatEventTime(event)"></span>
+                          <span class="calendar-event-name" x-text="event.name"></span>
+                        </button>
+                      </template>
+                      <template x-if="day.events.length > 3">
+                        <div class="calendar-event-overflow" x-text="'+' + (day.events.length - 3) + ' more'"></div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <template x-if="$store.calendar.isTimeGridView">
+          <div class="calendar-time-grid" :class="'calendar-time-grid-' + $store.calendar.viewMode" x-transition:enter="calendar-fade-enter" x-transition:enter-start="calendar-fade-enter-start" x-transition:enter-end="calendar-fade-enter-end">
+            <div class="calendar-time-header">
+              <div class="calendar-time-gutter-spacer"></div>
+              <template x-for="day in $store.calendar.timeGridDays" :key="day.dateKey + '-header'">
+                <button
+                  type="button"
+                  class="calendar-time-day-header"
+                  :class="{ 'is-today': day.isToday }"
+                  title="View day"
+                  @click="$store.calendar.selectDay(day.dateKey)"
+                >
+                  <span class="calendar-time-day-name" x-text="day.weekdayLabel"></span>
+                  <span class="calendar-time-day-number" x-text="day.dayNumber"></span>
+                </button>
+              </template>
+            </div>
+
+            <div class="calendar-time-body">
+              <div class="calendar-time-gutter" :style="'height:' + $store.calendar.totalGridHeight + 'px'">
+                <template x-for="hour in $store.calendar.hourRows" :key="'gutter-' + hour">
+                  <div class="calendar-hour-label" :style="'height:' + $store.calendar.hourRowHeight + 'px'" x-text="$store.calendar.hourLabel(hour)"></div>
+                </template>
+              </div>
+              <template x-for="day in $store.calendar.timeGridDays" :key="day.dateKey + '-col'">
+                <div class="calendar-time-column" :class="{ 'is-today': day.isToday }" :style="'height:' + $store.calendar.totalGridHeight + 'px'">
+                  <template x-for="hour in $store.calendar.hourRows" :key="day.dateKey + '-hour-' + hour">
+                    <div
+                      class="calendar-hour-row"
+                      :style="'height:' + $store.calendar.hourRowHeight + 'px'"
+                      @click="$store.calendar.openHourCreate(day.dateKey, hour)"
+                    ></div>
+                  </template>
+                  <template x-if="day.isToday">
+                    <div class="calendar-time-now-line" :style="'top:' + $store.calendar.nowIndicatorTop + 'px'">
+                      <span class="calendar-time-now-dot"></span>
+                    </div>
+                  </template>
+                  <template x-for="event in day.events" :key="event.id">
+                    <button
+                      type="button"
+                      class="calendar-time-event"
+                      :class="'calendar-event-' + event.task_type"
+                      :style="'top:' + $store.calendar.eventTopPx(event) + 'px; ' + $store.calendar.eventColumnStyle(event)"
+                      :title="event.name"
+                      @click.stop="$store.calendar.openEvent(event)"
+                    >
+                      <span class="calendar-event-time" x-text="$store.calendar.formatEventTime(event)"></span>
+                      <span class="calendar-event-name" x-text="event.name"></span>
+                    </button>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .calendar-panel {
+      /* Follows the user's accent (css/theme.css --accent); falls back to
+         the base primary color outside the theme. */
+      --calendar-primary: var(--accent, var(--color-primary));
+      --calendar-border: color-mix(in srgb, var(--color-border) 58%, transparent);
+      --calendar-surface: color-mix(in srgb, var(--color-background) 92%, #000 8%);
+      --calendar-accent-scheduled: var(--calendar-primary);
+      --calendar-accent-planned: #9b6bd6;
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      background: var(--color-background);
+      color: var(--color-text);
+      container-type: inline-size;
+    }
+
+    .calendar-fade-enter {
+      transition: opacity 0.16s ease;
+    }
+
+    .calendar-fade-enter-start {
+      opacity: 0;
+    }
+
+    .calendar-fade-enter-end {
+      opacity: 1;
+    }
+
+    .calendar-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 0.85rem;
+      border-bottom: 1px solid var(--calendar-border);
+      background: color-mix(in srgb, var(--color-panel) 42%, transparent);
+      backdrop-filter: blur(calc(var(--glass-blur, 22px) * 0.6)) saturate(var(--glass-saturate, 165%));
+      -webkit-backdrop-filter: blur(calc(var(--glass-blur, 22px) * 0.6)) saturate(var(--glass-saturate, 165%));
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+    }
+
+    .calendar-toolbar-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex: 0 0 auto;
+    }
+
+    .calendar-nav-button,
+    .calendar-today-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: var(--calendar-surface);
+      border: 1px solid var(--calendar-border);
+      color: var(--color-text);
+      border-radius: 0.5rem;
+      padding: 0.3rem 0.55rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .calendar-nav-button:hover,
+    .calendar-today-button:hover {
+      background: color-mix(in srgb, var(--calendar-primary) 14%, var(--calendar-surface));
+      border-color: color-mix(in srgb, var(--calendar-primary) 32%, var(--calendar-border));
+    }
+
+    .calendar-nav-button:active,
+    .calendar-today-button:active {
+      transform: scale(0.94);
+    }
+
+    .calendar-new-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.85rem;
+    }
+
+    .calendar-month-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      text-align: center;
+      font-weight: 600;
+      font-size: 1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .calendar-loading-spinner {
+      font-size: 16px;
+      opacity: 0.65;
+      animation: calendar-spin 0.9s linear infinite;
+    }
+
+    @keyframes calendar-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .calendar-view-toggle {
+      display: inline-flex;
+      flex: 0 0 auto;
+      border: 1px solid var(--calendar-border);
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+
+    .calendar-view-button {
+      background: var(--calendar-surface);
+      border: none;
+      color: var(--color-text);
+      padding: 0.3rem 0.6rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: background-color 0.15s ease, opacity 0.15s ease;
+    }
+
+    .calendar-view-button:hover:not(.is-active) {
+      opacity: 1;
+      background: color-mix(in srgb, var(--calendar-primary) 8%, var(--calendar-surface));
+    }
+
+    .calendar-view-button + .calendar-view-button {
+      border-left: 1px solid var(--calendar-border);
+    }
+
+    .calendar-view-button.is-active {
+      opacity: 1;
+      font-weight: 600;
+      background: color-mix(in srgb, var(--calendar-primary) 22%, var(--calendar-surface));
+    }
+
+    .calendar-error {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin: 0.5rem 0.85rem 0;
+      padding: 0.45rem 0.7rem;
+      border-radius: 0.5rem;
+      border: 1px solid color-mix(in srgb, var(--color-danger, #e05555) 40%, transparent);
+      background: color-mix(in srgb, var(--color-danger, #e05555) 12%, var(--calendar-surface));
+      color: var(--color-danger, #e05555);
+      font-size: 0.82rem;
+    }
+
+    .calendar-error .material-symbols-outlined {
+      font-size: 18px;
+      flex: 0 0 auto;
+    }
+
+    .calendar-grid {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .calendar-weekday-row,
+    .calendar-week {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+
+    .calendar-weekday-row {
+      flex: 0 0 auto;
+      border-bottom: 1px solid var(--calendar-border);
+    }
+
+    .calendar-weekday-cell {
+      padding: 0.35rem 0.4rem;
+      text-align: center;
+      font-size: 0.75rem;
+      opacity: 0.7;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .calendar-week {
+      position: relative;
+      flex: 1 1 0;
+      min-height: 5.5rem;
+      z-index: 0;
+    }
+
+    /* Let an expanded pill in this row paint over the row below it
+       instead of being covered by it. */
+    .calendar-week:has(.calendar-event-pill:hover) {
+      z-index: 5;
+    }
+
+    .calendar-day {
+      position: relative;
+      border-right: 1px solid var(--calendar-border);
+      border-bottom: 1px solid var(--calendar-border);
+      padding: 0.3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      cursor: pointer;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* Let the hovered pill escape the cell's clipping so it can grow. */
+    .calendar-day:has(.calendar-event-pill:hover) {
+      overflow: visible;
+      z-index: 1;
+    }
+
+    .calendar-day {
+      transition: background-color 0.15s ease;
+    }
+
+    .calendar-day:hover {
+      background: color-mix(in srgb, var(--calendar-primary) 6%, transparent);
+    }
+
+    .calendar-day.is-outside-month {
+      opacity: 0.4;
+    }
+
+    .calendar-day.is-today {
+      background: color-mix(in srgb, var(--calendar-primary) 7%, transparent);
+    }
+
+    .calendar-day.is-today:hover {
+      background: color-mix(in srgb, var(--calendar-primary) 11%, transparent);
+    }
+
+    .calendar-day.is-today .calendar-day-number {
+      background: var(--calendar-primary);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .calendar-day-number {
+      font: inherit;
+      font-size: 0.8rem;
+      width: 1.5rem;
+      height: 1.5rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      background: none;
+      border: none;
+      border-radius: 999px;
+      color: var(--color-text);
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+
+    .calendar-day-number:hover {
+      background: color-mix(in srgb, var(--calendar-primary) 20%, transparent);
+    }
+
+    .calendar-day-events {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .calendar-day-events:has(.calendar-event-pill:hover) {
+      overflow: visible;
+    }
+
+    .calendar-event-pill {
+      display: flex;
+      align-items: baseline;
+      gap: 0.3rem;
+      border: none;
+      border-left: 3px solid var(--calendar-accent-scheduled);
+      border-radius: 0.25rem;
+      padding: 0.1rem 0.35rem;
+      font-size: 0.72rem;
+      text-align: left;
+      cursor: pointer;
+      background: color-mix(in srgb, var(--calendar-accent-scheduled) 14%, var(--calendar-surface));
+      color: var(--color-text);
+      overflow: hidden;
+      white-space: nowrap;
+      transition: box-shadow 0.12s ease, background-color 0.12s ease;
+    }
+
+    .calendar-event-pill.calendar-event-planned {
+      border-left-color: var(--calendar-accent-planned);
+      background: color-mix(in srgb, var(--calendar-accent-planned) 16%, var(--calendar-surface));
+    }
+
+    /* Reveal the full time + name for a pill that got truncated by the
+       month grid's tight rows. Stays in normal flow (not absolute) so it
+       grows downward in place instead of collapsing out of the flex stack
+       - taking it out of flow would shift the sibling pill below up under
+       the cursor and steal the hover right back. */
+    .calendar-event-pill:hover,
+    .calendar-event-pill:focus-visible {
+      position: relative;
+      z-index: 10;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+      height: auto;
+      white-space: normal;
+      background: color-mix(in srgb, var(--calendar-accent-scheduled) 22%, var(--calendar-surface));
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    }
+
+    .calendar-event-pill.calendar-event-planned:hover,
+    .calendar-event-pill.calendar-event-planned:focus-visible {
+      background: color-mix(in srgb, var(--calendar-accent-planned) 26%, var(--calendar-surface));
+    }
+
+    .calendar-event-pill:hover .calendar-event-time,
+    .calendar-event-pill:focus-visible .calendar-event-time {
+      opacity: 0.8;
+      font-size: 0.65rem;
+    }
+
+    .calendar-event-pill:hover .calendar-event-name,
+    .calendar-event-pill:focus-visible .calendar-event-name {
+      overflow: visible;
+      white-space: normal;
+    }
+
+    .calendar-event-time {
+      opacity: 0.75;
+      flex: 0 0 auto;
+    }
+
+    .calendar-event-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .calendar-event-overflow {
+      font-size: 0.7rem;
+      opacity: 0.65;
+      padding: 0 0.35rem;
+    }
+
+    /* Week/day hourly time-grid */
+
+    .calendar-time-grid {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    .calendar-time-header {
+      display: flex;
+      flex: 0 0 auto;
+      border-bottom: 1px solid var(--calendar-border);
+    }
+
+    .calendar-time-gutter-spacer {
+      flex: 0 0 3.5rem;
+    }
+
+    .calendar-time-day-header {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.15rem;
+      padding: 0.4rem 0.2rem;
+      background: none;
+      border: none;
+      border-left: 1px solid var(--calendar-border);
+      color: var(--color-text);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .calendar-time-day-header:hover {
+      background: color-mix(in srgb, var(--calendar-primary) 6%, transparent);
+    }
+
+    .calendar-time-day-name {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      opacity: 0.7;
+      letter-spacing: 0.03em;
+    }
+
+    .calendar-time-day-number {
+      font-size: 0.95rem;
+      font-weight: 600;
+      width: 1.6rem;
+      height: 1.6rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+    }
+
+    .calendar-time-day-header.is-today .calendar-time-day-number {
+      background: var(--calendar-primary);
+      color: #fff;
+    }
+
+    .calendar-time-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+    }
+
+    .calendar-time-gutter {
+      flex: 0 0 3.5rem;
+      border-right: 1px solid var(--calendar-border);
+    }
+
+    .calendar-hour-label {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: 0 0.4rem;
+      font-size: 0.68rem;
+      opacity: 0.65;
+      transform: translateY(-0.5em);
+      box-sizing: border-box;
+      border-top: 1px solid transparent;
+    }
+
+    .calendar-time-column {
+      position: relative;
+      flex: 1 1 0;
+      min-width: 0;
+      border-left: 1px solid var(--calendar-border);
+    }
+
+    .calendar-time-column.is-today {
+      background: color-mix(in srgb, var(--calendar-primary) 5%, transparent);
+      box-shadow: inset 1px 0 0 color-mix(in srgb, var(--calendar-primary) 30%, transparent);
+    }
+
+    .calendar-hour-row {
+      border-bottom: 1px solid var(--calendar-border);
+      box-sizing: border-box;
+      cursor: pointer;
+      transition: background-color 0.1s ease;
+    }
+
+    .calendar-hour-row:hover {
+      background: color-mix(in srgb, var(--calendar-primary) 6%, transparent);
+    }
+
+    .calendar-time-now-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--color-danger, #e05555);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .calendar-time-now-dot {
+      position: absolute;
+      left: -3px;
+      top: 50%;
+      width: 8px;
+      height: 8px;
+      transform: translateY(-50%);
+      border-radius: 999px;
+      background: var(--color-danger, #e05555);
+    }
+
+    .calendar-time-event {
+      position: absolute;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      border: none;
+      border-left: 3px solid var(--calendar-accent-scheduled);
+      border-radius: 0.25rem;
+      padding: 0.1rem 0.35rem;
+      font-size: 0.72rem;
+      text-align: left;
+      cursor: pointer;
+      background: color-mix(in srgb, var(--calendar-accent-scheduled) 28%, var(--calendar-surface));
+      color: var(--color-text);
+      overflow: hidden;
+      white-space: nowrap;
+      z-index: 2;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      transition: box-shadow 0.12s ease;
+    }
+
+    .calendar-time-event.calendar-event-planned {
+      border-left-color: var(--calendar-accent-planned);
+      background: color-mix(in srgb, var(--calendar-accent-planned) 34%, var(--calendar-surface));
+    }
+
+    /* On hover, an event claims its full column width, rises above its
+       siblings, and lets its name wrap instead of clipping - this is the
+       only way to read a task's full title when several are packed into
+       the same narrow overlap columns. */
+    .calendar-time-event:hover,
+    .calendar-time-event:focus-visible {
+      left: 2px !important;
+      width: calc(100% - 4px) !important;
+      height: auto;
+      min-height: 20px;
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 0;
+      white-space: normal;
+      z-index: 30;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    }
+
+    .calendar-time-event:hover .calendar-event-time,
+    .calendar-time-event:focus-visible .calendar-event-time {
+      opacity: 0.8;
+      font-size: 0.65rem;
+    }
+
+    .modal-inner.calendar-modal {
+      box-sizing: border-box;
+      width: min(1040px, calc(100vw - 32px));
+      height: min(760px, calc(100vh - 32px));
+      min-width: min(640px, calc(100vw - 16px));
+      min-height: min(460px, calc(100vh - 16px));
+      max-width: none;
+      max-height: none;
+      resize: both;
+      overflow: hidden;
+    }
+
+    @container (max-width: 480px) {
+      .calendar-event-time {
+        display: none;
+      }
+    }
+  </style>
+</body>
+</html>

@@ -1,0 +1,5 @@
+name: _context_usage
+title: Context Usage
+description: Live context-window usage indicator (tokens used vs. the configured chat model's context length) in the chat input bar.
+version: 1.0.0
+always_enabled: false

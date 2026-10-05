@@ -41,7 +41,6 @@
 - Related tests observed by source search:
   - `tests/test_a0_connector_prompt_gating.py`
   - `tests/test_browser_agent_regressions.py`
-  - `tests/test_docker_release_plan.py`
   - `tests/test_error_retry_plugin.py`
   - `tests/test_file_tree_visualize.py`
   - `tests/test_git_version_label.py`

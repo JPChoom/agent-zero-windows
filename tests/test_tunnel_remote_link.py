@@ -325,6 +325,7 @@ def test_zip_extraction_accepts_windows_exe_members(
     assert (destination / "tailscale.exe").read_text(encoding="utf-8") == "binary"
 
 
+@pytest.mark.linux_only
 def test_tailscale_installs_runtime_binaries_from_static_archive(
     tunnel_manager_module,
     monkeypatch,
@@ -360,6 +361,7 @@ def test_tailscale_installs_runtime_binaries_from_static_archive(
     assert not (tmp_path / "bin" / "tailscale_1.84.0_amd64.tgz").exists()
 
 
+@pytest.mark.linux_only
 def test_tailscale_installer_downloads_static_pair_when_system_daemon_is_missing(
     tunnel_manager_module,
     monkeypatch,
@@ -427,6 +429,7 @@ def test_tailscale_static_package_url_is_discovered_from_official_listing(
     )
 
 
+@pytest.mark.linux_only
 def test_tar_extraction_sanitizes_member_paths(
     tunnel_manager_module,
     tmp_path,
@@ -474,6 +477,7 @@ def test_cli_provider_installer_failures_return_actionable_error(
     assert expected_message in manager.get_last_error()
 
 
+@pytest.mark.linux_only
 def test_tailscale_preflight_starts_managed_daemon_then_runs_up_with_socket(
     tunnel_manager_module,
     monkeypatch,

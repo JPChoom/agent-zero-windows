@@ -1,0 +1,10 @@
+name: terminal_access
+title: Terminal Access (Hardened)
+description: Authenticated, workspace-confined Windows command execution. Disabled by default.
+version: 2.0.0
+settings_sections: []
+permissions:
+  - host_process_execution
+  - workspace_write
+os_support:
+  - windows

@@ -7,7 +7,8 @@
 ## Ownership
 
 - `notification-store.js` owns notification state and public helper actions.
-- `notification-toast-stack.html` owns toast rendering.
+- `notification-toast-stack.html` owns toast rendering. The stack is `position: fixed` just above the composer (`--composer-height`) and clears the docked right canvas, so toasts show on the Welcome screen too.
+- Frontend toasts may carry one action (`addFrontendToastOnly(..., action)` / `justToast(text, type, timeout, group, {label, run})`), rendered as a pill button that runs `run()` and dismisses the toast (used for chat-delete Undo).
 - `notification-modal.html` owns notification detail modal UI.
 - `notification-icons.html` owns shared notification icon markup.
 

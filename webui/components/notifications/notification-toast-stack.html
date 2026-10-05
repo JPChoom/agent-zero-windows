@@ -40,6 +40,12 @@
                         </div> -->
                     </div>
 
+                    <!-- Optional action (e.g. Undo) -->
+                    <button class="toast-action"
+                            x-show="toast.action"
+                            @click.stop="toast.action?.run(); $store.notificationStore.dismissToast(toast.toastId)"
+                            x-text="toast.action?.label || ''"></button>
+
                     <!-- Toast Dismiss -->
                     <button class="toast-dismiss"
                             @click.stop="$store.notificationStore.dismissToast(toast.toastId)"
@@ -54,9 +60,13 @@
 
     <style>
         /* Toast Stack Container */
+        /* Pinned to the window, just above the composer (--composer-height
+           comes from chat-bar.html). It used to hang off a zero-height div
+           in the page flow, which the Welcome screen pushes below the
+           viewport, hiding toasts (and their Undo) there. */
         .toast-stack-container {
-            position: absolute;
-            bottom: 5px; /* Spacing from the bottom of the zero-height container */
+            position: fixed;
+            bottom: calc(var(--composer-height, 5rem) + 10px);
             padding-right: 5px;
             z-index: 4000;
             display: flex;
@@ -64,8 +74,13 @@
             gap: 8px;
             pointer-events: none;
             max-width: 400px;
-            right: 5px; /* Anchor to the right */
+            right: 16px; /* Anchor to the right */
             align-items: flex-end;
+        }
+
+        /* Keep clear of the docked right canvas. */
+        body.right-canvas-open .toast-stack-container {
+            right: calc(var(--right-canvas-width, 0px) + 32px);
         }
 
         /* Individual Toast Items */
@@ -157,6 +172,27 @@
         }
 
         /* Toast Dismiss */
+        .toast-action {
+            align-self: center;
+            flex: 0 0 auto;
+            margin-right: 2px;
+            padding: 3px 11px;
+            border: 1px solid color-mix(in srgb, var(--accent, var(--color-primary)) 45%, transparent);
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--accent, var(--color-primary)) 16%, transparent);
+            color: var(--accent-ui, var(--color-text));
+            font-family: inherit;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+
+        .toast-action:hover {
+            border-color: var(--accent, var(--color-primary));
+            background: color-mix(in srgb, var(--accent, var(--color-primary)) 28%, transparent);
+        }
+
         .toast-dismiss {
             background: transparent; /* No background by default */
             border: none;

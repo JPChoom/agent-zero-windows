@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from plugins._telegram_integration.extensions.python._functions.agent.Agent.handle_exception.end import (
     _85_telegram_error,
 )
@@ -47,6 +49,9 @@ def test_friendly_error_message_for_rate_limit():
 
 
 def test_telegram_exception_hook_sends_once_and_cleans_stream_state(monkeypatch):
+    # The hook imports the Telegram handler, which needs aiogram - installed
+    # by the Telegram plugin itself, not by requirements.txt.
+    pytest.importorskip("aiogram")
     sends = []
     cleared = []
     typing_stopped = []

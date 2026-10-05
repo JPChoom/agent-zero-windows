@@ -1,5 +1,5 @@
 param(
-    [string]$Source = "C:\a0",
+    [string]$Source = (Split-Path -Parent $PSScriptRoot),  # repo root
     [string]$Destination = "$env:USERPROFILE\Desktop\a0-safe-source.zip"
 )
 $ErrorActionPreference = "Stop"

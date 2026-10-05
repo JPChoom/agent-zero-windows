@@ -967,6 +967,11 @@ class Agent:
             **kwargs,
         }
         extension.call_extensions_sync("hist_add_tool_result", self, data=data)
+        # Extensions may rewrite the result (e.g. wrapping external output as
+        # <untrusted_content>); the native Responses item sent back to the
+        # model must carry the same text, or that protection is bypassed.
+        if isinstance(responses_item, dict) and responses_item.get("output") == tool_result:
+            responses_item["output"] = data.get("tool_result", tool_result)
         return self.hist_add_message(False, content=data, id=msg_id, metadata=metadata)
 
     def concat_messages(

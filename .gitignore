@@ -68,6 +68,9 @@ FIRST_RUN_CREDENTIALS.txt
 
 # Stray runtime logs at repo root (e.g. browser-viewer-error.log)
 *.log
+a0_server_log.txt
+# Plugin execute.py run markers (written into the plugin folder at runtime)
+plugins/*/execute_record.json
 
 # Locally installed SearXNG service: its own venv, a full clone of the
 # upstream searxng source tree, generated logs, and a secret key file -

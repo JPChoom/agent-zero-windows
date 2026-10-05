@@ -401,6 +401,12 @@ def _delete_provider_responses_for_chat(ctxid: str) -> None:
         data = json.loads(files.read_file(_get_chat_file_path(ctxid)))
     except Exception:
         return
+    delete_provider_responses_for_data(data)
+
+
+def delete_provider_responses_for_data(data: dict[str, Any]) -> None:
+    """Delete provider-stored responses referenced by a serialized chat
+    (used for removed chats and for chats purged from helpers/chat_trash)."""
     if _responses_delete_disabled(data):
         return
     response_ids = _collect_response_ids(data)

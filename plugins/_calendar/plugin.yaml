@@ -1,0 +1,5 @@
+name: _calendar
+title: Calendar
+description: Outlook-style calendar surface for viewing and creating scheduled, planned, and ad-hoc tasks.
+version: 1.0.0
+always_enabled: false

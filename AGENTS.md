@@ -20,8 +20,7 @@ Frontend & Plugin DOX: [WebUI](webui/AGENTS.md) | [Components](webui/components/
 6. [Safety and Permissions](#safety-and-permissions)
 7. [Code Examples](#code-examples)
 8. [Git Workflow](#git-workflow)
-9. [Release Notes](#release-notes)
-10. [Troubleshooting](#troubleshooting)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -103,7 +102,6 @@ Key Files:
 - webui/js/AlpineStore.js: Store factory for reactive frontend state.
 - helpers/api.py: Base class for all API endpoints.
 - models.py: LLM provider configuration and LiteLLM wrappers; framework LiteLLM defaults such as `drop_params=True` are merged with `litellm_global_kwargs`, configured values override framework defaults, documented module-level switches such as `drop_params` are applied to LiteLLM, and merged kwargs are passed per call.
-- scripts/openrouter_release_notes_system_prompt.md: Editable system prompt used to generate GitHub release notes during Docker publishing.
 - knowledge/main/about/: Agent self-knowledge files. Not user-facing docs - written for the agent's internal reference.
 - webui/components/AGENTS.md: DOX contract for Alpine component architecture.
 - webui/js/AGENTS.md: DOX contract for frontend infrastructure, modal stack, API helpers, and extension loading.
@@ -146,13 +144,8 @@ Key Files:
 - Cleanup rule: Plugins should not permanently modify the system in ways that outlive the plugin. Deleting a plugin should not leave behind symlinks, unmanaged services, or stray files outside plugin-owned paths unless the user explicitly requested that behavior.
 
 ### Releases
-- Docker publishing automation lives in `.github/workflows/docker-publish.yml`.
-- Releasable tags follow `v{X}.{Y}` and only tags `>= v1.0` are considered by the workflow.
-- The latest eligible tag on `main` also creates or updates a GitHub release after the Docker image push succeeds.
-- GitHub release notes are generated on the fly in `.github/scripts/docker_release_plan.py` by comparing the new tag against the previous published GitHub release tag, collecting commit subjects and descriptions in that range, and sending them to OpenRouter.
-- The OpenRouter call uses `OPENROUTER_API_KEY` and `OPENROUTER_MODEL_NAME` from the workflow environment, with the system prompt stored in `scripts/openrouter_release_notes_system_prompt.md`.
-- Prioritize user-visible features, important fixes, infra or packaging changes, and breaking notes. Skip low-signal churn.
-- If the generated summary has no meaningful content, the release body falls back to `No release notes.`
+- Versions are annotated git tags `vX.Y` on `main` (first release: `v1.0`). The WebUI version label is built from `git describe` (`helpers/git.py`): branch initial + nearest tag (+ commits since it on non-`main` branches), e.g. `M v1.0`.
+- There is no publishing automation: upstream's Docker publish, release-note and stale-issue workflows were removed. Releases are tagged and published manually.
 
 ### Lifecycle Synchronization
 | Action | Backend Extension | Frontend Lifecycle |
@@ -228,18 +221,12 @@ class MyTool(Tool):
 
 ## Git Workflow
 
-- Docker publish automation lives in `.github/workflows/docker-publish.yml`.
-- Release tags handled by automation must match `vX.Y` and be `>= v1.0`.
-- Allowed release branches are configured at the top of the workflow. `main` publishes `<tag>` and `latest`; other allowed branches publish only the branch tag.
-- Manual dispatch accepts an optional tag. Without a tag it backfills missing Docker Hub tags. With a tag it rebuilds that exact target and only refreshes `latest` and the GitHub release when that tag is still the newest eligible tag on `main`.
+- Default branch is `main`. CI (`.github/workflows/tests.yml`) runs the pytest suite on Windows for pushes and pull requests.
+- Commits use the repository-local identity `JP <JPChoom@users.noreply.github.com>`; never commit with a personal email address.
+- Privacy (owner rule, non-negotiable): never commit chats, memory, settings, `.env`, uploads, workdir or anything else under `usr/` (git-ignored), and never commit personal data - email addresses, real IP addresses, local user paths, credentials, tokens, or the owner's private projects. Use documentation values (`203.0.113.x`, `example.com`) in tests and docs. Scan staged changes for personal data before every commit.
+- Plugins with user settings keep code in `plugins/<name>/` and the user's data in `usr/plugins/<name>/` (e.g. `_personality/config.json`), which is never committed.
 
 ---
-
-## Release Notes
-
-- The latest eligible `main` tag generates its GitHub release notes during Docker publish instead of reading committed Markdown files.
-- The release-note prompt is editable in `scripts/openrouter_release_notes_system_prompt.md`.
-- The commit range starts at the previous published GitHub release tag, not merely the previous semantic tag in the repository.
 
 ## Troubleshooting
 
@@ -349,7 +336,7 @@ Direct child DOX files:
 
 | Child | Scope |
 | --- | --- |
-| [.github/AGENTS.md](.github/AGENTS.md) | GitHub Actions workflows and release automation scripts. |
+| [.github/AGENTS.md](.github/AGENTS.md) | GitHub Actions test workflow. |
 | [agents/AGENTS.md](agents/AGENTS.md) | Bundled agent profiles, profile-local prompts, and profile-local tools. |
 | [api/AGENTS.md](api/AGENTS.md) | HTTP API handlers and WebSocket handler entry points. |
 | [conf/AGENTS.md](conf/AGENTS.md) | Repository-shipped configuration defaults and templates. |

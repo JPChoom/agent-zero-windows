@@ -1672,6 +1672,7 @@ def test_browser_startup_migration_runs_playwright_cache_cleanup():
     assert "PrintStyle.warning" in extension
 
 
+@pytest.mark.needs_symlinks
 def test_browser_runtime_removes_stale_profile_singletons(monkeypatch, tmp_path):
     monkeypatch.setattr(
         browser_runtime_module.files,

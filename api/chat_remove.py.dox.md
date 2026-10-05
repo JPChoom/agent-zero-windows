@@ -20,6 +20,7 @@
 - Update this file whenever request payloads, authentication or CSRF requirements, response shapes, route side effects, or WebSocket event contracts change.
 - `RemoveChat` is an `ApiHandler`.
 - `RemoveChat` defines `process(...)`.
+- Saved chats are moved to the trash (`helpers/chat_trash.trash_chat`, before `context.reset()`) and the response carries `trash_id` (null for a never-saved chat, which is erased via `persist_chat.remove_chat`). Provider-stored responses are kept until the trash entry is purged. Scheduled tasks of the chat are still removed.
 - Observed side-effect areas: filesystem writes, filesystem deletion, settings/state persistence, scheduler state.
 - Imported dependency areas include: `agent`, `helpers`, `helpers.api`, `helpers.task_scheduler`.
 
@@ -37,7 +38,7 @@
 ## Verification
 
 - Run endpoint-specific or API/WebSocket tests for changed behavior; smoke-test browser callers when no focused test exists.
-- No direct test reference was found by name search; choose the nearest behavioral test or perform a focused smoke check.
+- Trash behavior: `pytest tests/test_chat_trash.py`.
 
 ## Child DOX Index
 

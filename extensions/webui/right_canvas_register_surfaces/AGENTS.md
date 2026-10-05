@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- JavaScript files own registration of remote link, space agent, file browser, and future core canvas surfaces.
+- JavaScript files own registration of remote link, file browser, and future core canvas surfaces.
 
 ## Local Contracts
 

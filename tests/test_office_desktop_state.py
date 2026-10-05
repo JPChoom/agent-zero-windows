@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 
 import subprocess
 import struct
@@ -18,6 +19,7 @@ def _completed(command, returncode=0, stdout="", stderr=""):
     return subprocess.CompletedProcess(command, returncode, stdout, stderr)
 
 
+@pytest.mark.linux_only
 def test_desktop_state_collects_x11_state_from_mocked_tools(tmp_path, monkeypatch):
     session_dir = tmp_path / "sessions"
     profile_dir = tmp_path / "profiles" / desktop_state.SESSION_ID
@@ -93,6 +95,7 @@ def test_desktop_state_collects_x11_state_from_mocked_tools(tmp_path, monkeypatc
     assert [window["title"] for window in state["windows"]] == ["LibreOffice Calc", "Terminal"]
 
 
+@pytest.mark.linux_only
 def test_desktop_state_allows_missing_active_window_when_display_is_reachable(tmp_path, monkeypatch):
     session_dir = tmp_path / "sessions"
     profile_dir = tmp_path / "profiles" / desktop_state.SESSION_ID

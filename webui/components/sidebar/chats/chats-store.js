@@ -12,6 +12,7 @@ import {
 import { store as notificationStore } from "/components/notifications/notification-store.js";
 import { store as tasksStore } from "/components/sidebar/tasks/tasks-store.js";
 import { store as syncStore } from "/components/sync/sync-store.js";
+import { store as chatTrashStore } from "/components/modals/chat-trash/chat-trash-store.js";
 import { store as chatInputStore } from "/components/chat/input/input-store.js";
 
 const model = {
@@ -20,6 +21,11 @@ const model = {
   selectedContext: null,
   loggedIn: false,
   expandedParents: {},
+  // Chats being deleted: id -> "pending" (server call in flight) or "done"
+  // (server confirmed, waiting for a state sync without it). Kept out of
+  // the list so a sync snapshot taken before the delete cannot bring the
+  // row back.
+  _removing: {},
 
   // for convenience
   getSelectedChatId() {
@@ -53,8 +59,19 @@ const model = {
 
   // Update contexts from polling
   applyContexts(contextsList) {
+    let list = contextsList;
+    const removingIds = Object.keys(this._removing);
+    if (removingIds.length) {
+      const incoming = new Set(contextsList.map((ctx) => ctx.id));
+      const removing = { ...this._removing };
+      for (const id of removingIds) {
+        if (removing[id] === "done" && !incoming.has(id)) delete removing[id];
+      }
+      this._removing = removing;
+      list = contextsList.filter((ctx) => !removing[ctx.id]);
+    }
     // Sort by created_at time (newer first)
-    this.contexts = [...contextsList].sort(
+    this.contexts = [...list].sort(
       (a, b) => (b.created_at || 0) - (a.created_at || 0)
     );
 
@@ -139,24 +156,41 @@ const model = {
       return;
     }
 
+    if (this._removing[id]) return;
+
+    // Optimistic: the row disappears on the confirming click. Removing a
+    // long chat (folder delete, scheduler reload) and switching away from
+    // it used to block the UI for seconds, which read as a missed click.
+    const removed = this.contexts.find((ctx) => ctx.id === id);
+    this._removing = { ...this._removing, [id]: "pending" };
+    this.contexts = this.contexts.filter((ctx) => ctx.id !== id);
+    if (this.selected === id) {
+      this.switchFromContext(id).catch((e) => console.error("Error switching chat:", e));
+    }
+
     try {
-      // Switch to another context if deleting current
-      if (this.selected === id) {
-        await this.switchFromContext(id);
+      const result = await sendJsonData("/chat_remove", { context: id });
+      this._removing = { ...this._removing, [id]: "done" };
+      // Saved chats go to the trash (api/chat_trash.py) and can be undone;
+      // a never-saved empty chat has nothing to restore.
+      const trashId = result?.trash_id;
+      if (trashId) {
+        justToast("Chat moved to Recently deleted", "success", 6000, "chat-removal", {
+          label: "Undo",
+          run: () => chatTrashStore.restore(trashId),
+        });
+      } else {
+        justToast("Chat deleted", "success", 1000, "chat-removal");
       }
-
-      // Delete the chat on the server
-      await sendJsonData("/chat_remove", { context: id });
-
-      // Update the UI - remove from contexts
-      const updatedContexts = this.contexts.filter((ctx) => ctx.id !== id);
-      // Force UI update by creating a new array
-      this.contexts = [...updatedContexts];
-
-      // Show success notification
-      justToast("Chat deleted successfully", "success", 1000, "chat-removal");
     } catch (e) {
       console.error("Error deleting chat:", e);
+      const { [id]: _dropped, ...rest } = this._removing;
+      this._removing = rest;
+      if (removed && !this.contexts.some((ctx) => ctx.id === id)) {
+        this.contexts = [...this.contexts, removed].sort(
+          (a, b) => (b.created_at || 0) - (a.created_at || 0)
+        );
+      }
       toastFetchError("Error deleting chat", e);
     }
   },
