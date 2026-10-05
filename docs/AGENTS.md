@@ -10,6 +10,7 @@
 - `README.md`, `quickstart.md`, `guides/`, and `setup/` cover user-facing setup and workflows.
 - `developer/` covers compact developer references and source handoffs.
 - `res/` contains documentation images and other documentation assets.
+- `screenshots/` holds this fork's README screenshots. Check every new image for private chat names, live desktop previews, paths and personal data before adding it.
 
 ## Local Contracts
 

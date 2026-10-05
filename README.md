@@ -28,6 +28,23 @@ An unofficial, community fork of [Agent Zero](https://github.com/agent0ai/agent-
 
 **Bundled plugins added to the usual set:** Calendar, Personalities, Context Usage, Hardened Terminal Access (disabled by default), and Desktop (live view of your Windows desktop).
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><a href="docs/screenshots/01-dark-theme-wallpaper.png"><img src="docs/screenshots/01-dark-theme-wallpaper.png" alt="Dark theme with an image wallpaper, Enhanced material and a red accent"></a><br><sub>Dark theme, Enhanced glass over a wallpaper, custom accent</sub></td>
+    <td><a href="docs/screenshots/02-light-theme.png"><img src="docs/screenshots/02-light-theme.png" alt="The same screen in the light theme"></a><br><sub>Light theme</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/03-calendar-canvas.png"><img src="docs/screenshots/03-calendar-canvas.png" alt="Calendar in the floating right-hand canvas"></a><br><sub>Calendar in the floating right-hand canvas (Files, Browser, Desktop, Editor, Calendar)</sub></td>
+    <td><a href="docs/screenshots/04-desktop-viewer.png"><img src="docs/screenshots/04-desktop-viewer.png" alt="Desktop viewer panel"></a><br><sub>Desktop viewer: live view of the Windows desktop</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/05-chat-solid-material.png"><img src="docs/screenshots/05-chat-solid-material.png" alt="Chat with the Solid material"></a><br><sub>Solid material: no blur, fastest</sub></td>
+    <td><a href="docs/screenshots/06-enhanced-glass-wallpaper.png"><img src="docs/screenshots/06-enhanced-glass-wallpaper.png" alt="Enhanced glass material over a wallpaper"></a><br><sub>Enhanced glass: the sidebar and chat bubbles frost the wallpaper</sub></td>
+  </tr>
+</table>
+
 ## Requirements
 
 - Windows 10 or 11
