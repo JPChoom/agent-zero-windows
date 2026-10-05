@@ -43,6 +43,18 @@ An unofficial, community fork of [Agent Zero](https://github.com/agent0ai/agent-
     <td><a href="docs/screenshots/05-chat-solid-material.png"><img src="docs/screenshots/05-chat-solid-material.png" alt="Chat with the Solid material"></a><br><sub>Solid material: no blur, fastest</sub></td>
     <td><a href="docs/screenshots/06-enhanced-glass-wallpaper.png"><img src="docs/screenshots/06-enhanced-glass-wallpaper.png" alt="Enhanced glass material over a wallpaper"></a><br><sub>Enhanced glass: the sidebar and chat bubbles frost the wallpaper</sub></td>
   </tr>
+  <tr>
+    <td><a href="docs/screenshots/07-permission-modes.png"><img src="docs/screenshots/07-permission-modes.png" alt="The permission mode menu"></a><br><sub>Per-chat permission modes: Plan, Manual, Accept edits, Auto, Bypass</sub></td>
+    <td><a href="docs/screenshots/08-agent-profiles-menu.png"><img src="docs/screenshots/08-agent-profiles-menu.png" alt="The agent profile menu"></a><br><sub>Agent profiles, switchable per chat</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/09-personalities-menu.png"><img src="docs/screenshots/09-personalities-menu.png" alt="The personalities menu in the light theme"></a><br><sub>Personalities: named system-prompt overlays, per chat</sub></td>
+    <td><a href="docs/screenshots/10-settings-models.png"><img src="docs/screenshots/10-settings-models.png" alt="Settings, Models section"></a><br><sub>Settings: models, voice and plugins</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/11-bypass-unlock.png"><img src="docs/screenshots/11-bypass-unlock.png" alt="The Bypass unlock dialog"></a><br><sub>Bypass mode is password-locked and expires automatically</sub></td>
+    <td></td>
+  </tr>
 </table>
 
 ## Requirements
