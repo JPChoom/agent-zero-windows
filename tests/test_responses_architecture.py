@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -379,8 +380,9 @@ async def test_agent_executes_native_responses_function_call_and_records_output(
     # "lookup" is not a trusted tool, so its output is wrapped as untrusted
     # data - in history AND in the item sent back to the model
     # (helpers/untrusted_content.py; agent.hist_add_tool_result).
-    wrapped = '<untrusted_content source="lookup">\ndone:a0\n</untrusted_content>'
-    assert recorded.content["tool_result"] == wrapped
+    wrapped = recorded.content["tool_result"]
+    key = re.match(r'<untrusted_content id="([0-9a-f]+)" source="lookup">\n', wrapped).group(1)
+    assert wrapped == f'<untrusted_content id="{key}" source="lookup">\ndone:a0\n</untrusted_content id="{key}">'
     assert metadata.input_items == [
         {
             "type": "function_call_output",

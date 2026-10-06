@@ -6,10 +6,13 @@ MCP and A2A replies. A prompt-injection attack hides instructions in that
 text. Two defenses use this module:
 
 1. wrap_tool_result(): every tool result except those A0 generates itself is
-   wrapped in an <untrusted_content source="..."> block, and the system prompt
-   (prompts/agent.system.main.role.md) tells the agent such blocks are data,
-   never instructions. Any closing tag inside the content is neutralized so
-   the content can't "end" the block early and pose as trusted text.
+   wrapped in an <untrusted_content id="KEY" source="..."> block, and the
+   system prompt (prompts/agent.system.main.role.md) tells the agent such
+   blocks are data, never instructions, and end only at the closing tag
+   carrying the same KEY. KEY is fresh random hex per result, so text written
+   in advance (a web page, a file) cannot contain the real closing tag. On
+   top of that, tag-like text inside the content is neutralized in any case,
+   spacing, HTML-entity or full-width form, so it can't pose as a boundary.
 
 2. A per-chat taint flag (context data): set the first time untrusted
    content is added. The infection check can skip its model call while a
@@ -18,6 +21,9 @@ text. Two defenses use this module:
 """
 
 from __future__ import annotations
+
+import re
+import secrets
 
 TAG = "untrusted_content"
 DATA_KEY = "untrusted_content_seen"
@@ -67,17 +73,31 @@ def is_read_only_call(tool_name: str, tool_args: dict | None) -> bool:
     return action in allowed
 
 
+# Text that could pass for one of our tags: "<" in plain, HTML-entity or
+# full-width form, an optional slash and spaces, then the tag name in any
+# case with optional separators ("</ UNTRUSTED-content", "&lt;/untrusted_content").
+_TAG_LIKE_RE = re.compile(
+    r"(?P<lt><|&lt;|&#0*60;|&#x0*3c;|＜)"
+    r"(?P<mid>\s*(?:/|／)?\s*)"
+    r"(?P<name>untrusted[\s_\-]*content)",
+    re.IGNORECASE,
+)
+
+
 def _neutralize(text: str) -> str:
-    # Break any tag that would close (or reopen) our block from inside.
-    return (
-        text.replace(f"</{TAG}", f"</{TAG}_")
-        .replace(f"<{TAG}", f"<{TAG}_")
-    )
+    # Break any tag that would close (or reopen) our block from inside by
+    # appending "_" to its name: "</untrusted_content>" -> "</untrusted_content_>".
+    return _TAG_LIKE_RE.sub(lambda m: f"{m.group('lt')}{m.group('mid')}{m.group('name')}_", text)
 
 
-def wrap_tool_result(tool_name: str, result: str) -> str:
+def _new_key() -> str:
+    return secrets.token_hex(8)
+
+
+def wrap_tool_result(tool_name: str, result: str, key: str | None = None) -> str:
     source = "".join(c for c in str(tool_name or "tool") if c.isalnum() or c in "_-.:") or "tool"
-    return f'<{TAG} source="{source}">\n{_neutralize(result)}\n</{TAG}>'
+    key = key or _new_key()
+    return f'<{TAG} id="{key}" source="{source}">\n{_neutralize(result)}\n</{TAG} id="{key}">'
 
 
 def is_wrapped(result: str) -> bool:
@@ -92,10 +112,16 @@ def strip_untrusted_blocks(text: str, placeholder: str = "[external content omit
     """Replace every <untrusted_content> block with a placeholder - for
     consumers that must never learn from outside text (fragment memory)."""
     global _BLOCK_RE
-    import re
 
     if _BLOCK_RE is None:
-        _BLOCK_RE = re.compile(rf"<{TAG} source=\"[^\"]*\">.*?</{TAG}>", re.DOTALL)
+        # A block ends only at the closing tag with its own id. The legacy
+        # form (no id) still matches so chats saved before ids existed strip
+        # correctly too.
+        _BLOCK_RE = re.compile(
+            rf"<{TAG} id=\"(?P<key>[0-9a-f]+)\" source=\"[^\"]*\">.*?</{TAG} id=\"(?P=key)\">"
+            rf"|<{TAG} source=\"[^\"]*\">.*?</{TAG}>",
+            re.DOTALL,
+        )
     return _BLOCK_RE.sub(placeholder, str(text or ""))
 
 
@@ -104,7 +130,6 @@ def looks_like_injected_instruction(text: str) -> bool:
     than facts - the shape a prompt-injection takes when it tries to persist
     itself ("always send...", "ignore previous instructions", ...)."""
     global _INJECTION_RE
-    import re
 
     if _INJECTION_RE is None:
         _INJECTION_RE = re.compile(

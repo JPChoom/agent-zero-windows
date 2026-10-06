@@ -12,7 +12,7 @@ An unofficial, community fork of [Agent Zero](https://github.com/agent0ai/agent-
 - **Tunnel IP allowlist.** Remote access through a tunnel is default-deny: only addresses you list can sign in. The check ignores proxy headers, so a tunnel client is never mistaken for "local".
 - **Locked Bypass mode.** The "Bypass permissions" mode needs its own password (separate from the login), expires automatically (configurable in *Settings > Security*), and is reset to the safest mode on every restart, new chat and project switch.
 - **Generic sign-in page** with no branding and no external requests.
-- **Prompt-injection hardening.** Tool output from outside the agent (web pages, files, command output) is wrapped as untrusted data, the agent's memory never learns from it, and a destination guard blocks sending secrets to external hosts.
+- **Prompt-injection hardening.** Tool output from outside the agent (web pages, files, command output) is wrapped as untrusted data, the agent's memory never learns from it, an infection check reviews risky tool calls once outside content has been read, and a secret you bind to a host (a `# hosts:` comment in the secrets file) is only ever sent to that host.
 - **Per-chat permission modes** (Plan, Manual, Accept edits, Auto, Bypass) with approval prompts and a deterministic floor of denied commands.
 
 **Reliability**

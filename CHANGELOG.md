@@ -2,6 +2,12 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`).
 
+## Unreleased
+
+### Security
+- Untrusted-content blocks carry a fresh random id per tool result (`<untrusted_content id="…">…</untrusted_content id="…">`), so a web page or file written in advance cannot contain the real closing tag. Tag-like text inside the content is neutralized in any case, spacing, HTML-entity or full-width form. Chats saved before this change still strip correctly for memory.
+- Docs: a dedicated secondary PC is the intended setup; on a main PC it runs at your own risk.
+
 ## v1.0
 
 First release of the Windows-native fork.
@@ -10,7 +16,7 @@ First release of the Windows-native fork.
 - Tunnel IP allowlist (default-deny); the "local" check ignores proxy/forwarding headers.
 - Bypass permission mode is password-locked (separate from the login), auto-expires, and every restart, new chat and project switch returns to the safest mode.
 - Generic sign-in page: no branding, no external requests.
-- Prompt-injection hardening: external tool output is wrapped as `<untrusted_content>` (including the native Responses API path), memory never learns from it, secrets cannot be sent to external hosts.
+- Prompt-injection hardening: external tool output is wrapped as `<untrusted_content>` (including the native Responses API path), memory never learns from it, and a secret bound to a host (`# hosts:` in the secrets file) is only ever sent to that host.
 - Terminal Access plugin: authenticated, CSRF-protected, workspace-confined, command-screened, disabled by default.
 - Controlled-shutdown chat persistence.
 

@@ -179,7 +179,7 @@ Key Files:
 ### Security Architecture (summary)
 - Remote access: `helpers/access_control.py` IP allowlist wraps the whole ASGI app; unauthenticated visitors get only the generic sign-in page; login is rate-limited and audited (`usr/security_audit.jsonl`).
 - Agent permissions: per-chat in-memory modes with a password-locked, auto-expiring Bypass (`plugins/_permissions`); deterministic command floor (`plugins/_safety_policy`); infection check (`plugins/_infection_check`).
-- Prompt injection: external tool output is wrapped as `<untrusted_content>` data (`helpers/untrusted_content.py`); prompt includes load only from `usr/promptincludes/` and project roots; memory never learns from external content; host-bound secrets; third-party plugins install review-pending.
+- Prompt injection: external tool output is wrapped as `<untrusted_content>` data with a fresh random id per result (`helpers/untrusted_content.py`); prompt includes load only from `usr/promptincludes/` and project roots; memory never learns from external content; host-bound secrets; third-party plugins install review-pending.
 
 ---
 
