@@ -94,7 +94,7 @@ The UI opens at <http://localhost:5000> (change it with `WEB_UI_PORT` / `WEB_UI_
 - Keep `WEB_UI_HOST=localhost`; do not expose the server directly to your LAN or the internet.
 - Set a UI login in **Settings > External Services > Authentication** before using any tunnel.
 - If you use Remote Control (a tunnel), set the allowlist in **Settings > Security** first; anything not listed is refused.
-- Run it as a normal (non-administrator) Windows account.
+- Run it on a dedicated secondary PC, as a normal (non-administrator) Windows account. On your main PC it runs at your own risk - see [Security model](#security-model).
 - See [SECURITY_LOCAL_INSTALL.md](SECURITY_LOCAL_INSTALL.md) for more.
 
 ### Your data stays local
@@ -107,13 +107,14 @@ Everything personal lives in the git-ignored `usr/` folder: chats, memory, setti
 
 What that means in practice:
 
-- **Use a dedicated, standard (non-administrator) Windows account**, ideally one without access to your personal files, browser profiles or password manager. Never run it as an administrator.
+- **Run it on a dedicated secondary PC.** That is the intended setup. Agent Zero for Windows works by giving the agent the real Windows machine it runs on, so keep that machine disposable and free of anything you can't afford to lose: personal accounts, saved passwords, private documents, production credentials. **If you run it on your main PC, you do so at your own risk.** You have been warned.
+- **Never run it as an administrator.** Use a standard Windows account.
 - **Keep the permission mode on Manual** (the default for every new chat) unless you are watching the agent work. "Bypass permissions" exists for unattended runs; it is password-locked and expires automatically, but while it is on the agent can act without asking.
 - **Treat anything the agent reads as untrusted.** Web pages, files and command output can contain instructions aimed at the model. The fork marks outside content as data and has an infection check, but no filter is perfect.
 - **Do not expose it to the internet** except through the built-in Remote Control tunnel with the IP allowlist configured and a UI login set.
 - **Keep Terminal Access disabled** unless you need it.
 
-The safeguards in this fork - permission modes, the list of denied commands, the infection check, untrusted-content wrapping, the tunnel allowlist, the locked Bypass mode and the kill switch - **reduce risk and catch mistakes. They are defense in depth, not a boundary**, and they cannot contain a determined, manipulated or compromised agent. If you need real isolation, run it in a separate Windows user session, a virtual machine, or use the upstream Docker version instead.
+The safeguards in this fork - permission modes, the list of denied commands, the infection check, untrusted-content wrapping, the tunnel allowlist, the locked Bypass mode and the kill switch - **reduce risk and catch mistakes. They are defense in depth, not a boundary**, and they cannot contain a determined, manipulated or compromised agent.
 
 Report vulnerabilities privately through GitHub's *Security > Report a vulnerability*, not in a public issue.
 
