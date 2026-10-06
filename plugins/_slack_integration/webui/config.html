@@ -1,0 +1,101 @@
+<html>
+<head><title>Slack Integration</title></head>
+<body>
+<div x-data="{
+    tests: {},
+    list(v) { return (v || []).join(', '); },
+    parse(v) { return String(v || '').split(',').map(s => s.trim()).filter(Boolean); },
+    addBot() {
+      if (!Array.isArray(config.bots)) config.bots = [];
+      config.bots.push({ name: 'slack_app', enabled: true, bot_token: '', app_token: '', allowed_users: [], channel_mode: 'mention',
+                         allowed_channels: [], default_project: '', notify_messages: false, agent_instructions: '' });
+    },
+    async test(bot, i) {
+      this.tests[i] = { busy: true, message: 'Checking...' };
+      try {
+        const api = await import('/js/api.js');
+        const r = await api.callJsonApi('/plugins/_slack_integration/test_connection', { bot });
+        this.tests[i] = { busy: false, ok: r.success, message: r.message };
+      } catch (e) {
+        this.tests[i] = { busy: false, ok: false, message: e?.message || 'Test failed' };
+      }
+    }
+  }">
+  <template x-if="config">
+    <div>
+      <div class="section-title">Slack</div>
+      <div class="section-description">
+        Talk to Agent Zero through a Slack app over Socket Mode - no public URL needed. At api.slack.com/apps:
+        enable Socket Mode, create an app-level token with <code>connections:write</code>, add bot scopes
+        <code>app_mentions:read chat:write im:history im:read files:read files:write reactions:write</code>,
+        subscribe to <code>app_mention</code> and <code>message.im</code>, then install the app. Only the members you
+        list can talk to the agent, and Slack chats are capped at the Slack permission mode (default Manual:
+        approvals appear here in the WebUI).
+      </div>
+
+      <template x-for="(bot, i) in (config.bots || [])" :key="i">
+        <div class="field-group" style="border:1px solid var(--color-border);border-radius:10px;padding:10px 12px;margin-bottom:12px">
+          <div class="field">
+            <div class="field-label"><div class="field-title">Enabled</div></div>
+            <div class="field-control"><label class="toggle"><input type="checkbox" x-model="bot.enabled" /><span class="toggler"></span></label></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Name</div><div class="field-description">A label for this bot.</div></div>
+            <div class="field-control"><input type="text" x-model="bot.name" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Bot token</div><div class="field-description">xoxb-...</div></div>
+            <div class="field-control"><input type="password" autocomplete="off" x-model="bot.bot_token" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">App-level token</div><div class="field-description">xapp-... (Socket Mode)</div></div>
+            <div class="field-control"><input type="password" autocomplete="off" x-model="bot.app_token" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Allowed users</div>
+              <div class="field-description">Slack member IDs (U...), comma separated. Empty = nobody. Messages from anyone else are ignored and logged with their ID.</div></div>
+            <div class="field-control"><input type="text" :value="list(bot.allowed_users)" @change="bot.allowed_users = parse($event.target.value)" placeholder="U0123ABCD" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">In channels</div>
+              <div class="field-description">DMs always work. Channel replies go in a thread. "Every message" needs the message.channels event and channels:history.</div></div>
+            <div class="field-control">
+              <select x-model="bot.channel_mode">
+                <option value="mention">Answer when @mentioned</option>
+                <option value="all">Every message</option>
+                <option value="off">Ignore channels (DMs only)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Allowed channels</div><div class="field-description">Channel IDs (C...), comma separated. Empty = any channel.</div></div>
+            <div class="field-control"><input type="text" :value="list(bot.allowed_channels)" @change="bot.allowed_channels = parse($event.target.value)" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Default project</div></div>
+            <div class="field-control"><input type="text" x-model="bot.default_project" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Notify in WebUI</div></div>
+            <div class="field-control"><label class="toggle"><input type="checkbox" x-model="bot.notify_messages" /><span class="toggler"></span></label></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Agent instructions</div><div class="field-description">Extra rules for the agent in Slack chats.</div></div>
+            <div class="field-control"><textarea rows="3" x-model="bot.agent_instructions"></textarea></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-description" x-text="tests[i]?.message || ''" :style="tests[i] ? (tests[i].ok ? 'color:var(--color-success, #3a3)' : 'color:var(--color-error, #c33)') : ''"></div></div>
+            <div class="field-control" style="display:flex;gap:8px">
+              <button class="btn btn-field" :disabled="tests[i]?.busy" @click="test(bot, i)">Test tokens</button>
+              <button class="btn btn-field" @click="config.bots.splice(i, 1)">Remove</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <button class="btn btn-field" @click="addBot()">Add a Slack app</button>
+    </div>
+  </template>
+</div>
+</body>
+</html>

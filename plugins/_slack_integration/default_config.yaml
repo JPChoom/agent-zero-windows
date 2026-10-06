@@ -1,0 +1,22 @@
+bots: []
+# Example app:
+# - name: my_slack
+#   enabled: true
+#   bot_token: ""             # xoxb-... (OAuth & Permissions > Bot User OAuth Token)
+#   app_token: ""             # xapp-... (Basic Information > App-Level Tokens, scope connections:write)
+#   allowed_users: []         # Slack member IDs (U...) allowed to talk to the agent.
+#                             # EMPTY = NOBODY. Ignored senders are logged with their id.
+#   channel_mode: mention     # mention (answer @mentions, in a thread) | all (every message in
+#                             # channels the app is in; needs message.channels) | off (DMs only)
+#   allowed_channels: []      # Channel IDs (C...) the app may answer in. Empty = any.
+#   user_projects: {}         # Map member id to a project name
+#   default_project: ""
+#   notify_messages: false
+#   agent_instructions: ""
+#
+# Slack app setup: enable Socket Mode; bot scopes app_mentions:read, chat:write, im:history,
+# im:read, files:read, files:write, reactions:write (channels:history for channel_mode all);
+# event subscriptions app_mention and message.im (message.channels for channel_mode all).
+#
+# Chats from Slack run at most in the permission mode set in _permissions
+# channel_mode_caps.slack (default manual); approvals appear in the WebUI.

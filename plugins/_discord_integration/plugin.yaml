@@ -1,0 +1,8 @@
+name: _discord_integration
+title: Discord Integration
+description: Talk to Agent Zero through a Discord bot - DMs and @mentions in your server, one chat per user and channel, allowlisted users only.
+version: 1.0.0
+settings_sections:
+  - external
+per_project_config: false
+per_agent_config: false

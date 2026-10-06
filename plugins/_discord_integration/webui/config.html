@@ -1,0 +1,95 @@
+<html>
+<head><title>Discord Integration</title></head>
+<body>
+<div x-data="{
+    tests: {},
+    list(v) { return (v || []).join(', '); },
+    parse(v) { return String(v || '').split(',').map(s => s.trim()).filter(Boolean); },
+    addBot() {
+      if (!Array.isArray(config.bots)) config.bots = [];
+      config.bots.push({ name: 'discord_bot', enabled: true, token: '', allowed_users: [], server_mode: 'mention',
+                         allowed_channels: [], default_project: '', notify_messages: false, agent_instructions: '' });
+    },
+    async test(bot, i) {
+      this.tests[i] = { busy: true, message: 'Checking...' };
+      try {
+        const api = await import('/js/api.js');
+        const r = await api.callJsonApi('/plugins/_discord_integration/test_connection', { bot });
+        this.tests[i] = { busy: false, ok: r.success, message: r.message };
+      } catch (e) {
+        this.tests[i] = { busy: false, ok: false, message: e?.message || 'Test failed' };
+      }
+    }
+  }">
+  <template x-if="config">
+    <div>
+      <div class="section-title">Discord</div>
+      <div class="section-description">
+        Talk to Agent Zero through your own Discord bot. Create an application at discord.com/developers,
+        add a Bot, copy its token, and invite it with the <code>bot</code> scope and Send Messages, Read Message History
+        and Attach Files permissions. Only the users you list below can talk to the agent, and Discord chats are capped
+        at the Discord permission mode (default Manual: approvals appear here in the WebUI).
+      </div>
+
+      <template x-for="(bot, i) in (config.bots || [])" :key="i">
+        <div class="field-group" style="border:1px solid var(--color-border);border-radius:10px;padding:10px 12px;margin-bottom:12px">
+          <div class="field">
+            <div class="field-label"><div class="field-title">Enabled</div></div>
+            <div class="field-control"><label class="toggle"><input type="checkbox" x-model="bot.enabled" /><span class="toggler"></span></label></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Name</div><div class="field-description">A label for this bot.</div></div>
+            <div class="field-control"><input type="text" x-model="bot.name" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Bot token</div></div>
+            <div class="field-control"><input type="password" autocomplete="off" x-model="bot.token" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Allowed users</div>
+              <div class="field-description">Discord user IDs, comma separated. Empty = nobody. Messages from anyone else are ignored and logged with their ID.</div></div>
+            <div class="field-control"><input type="text" :value="list(bot.allowed_users)" @change="bot.allowed_users = parse($event.target.value)" placeholder="123456789012345678" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">In servers</div>
+              <div class="field-description">DMs always work. "Every message" needs the Message Content intent enabled in the Developer Portal.</div></div>
+            <div class="field-control">
+              <select x-model="bot.server_mode">
+                <option value="mention">Answer when @mentioned</option>
+                <option value="all">Every message</option>
+                <option value="off">Ignore servers (DMs only)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Allowed channels</div><div class="field-description">Server channel IDs, comma separated. Empty = any channel.</div></div>
+            <div class="field-control"><input type="text" :value="list(bot.allowed_channels)" @change="bot.allowed_channels = parse($event.target.value)" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Default project</div></div>
+            <div class="field-control"><input type="text" x-model="bot.default_project" /></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Notify in WebUI</div></div>
+            <div class="field-control"><label class="toggle"><input type="checkbox" x-model="bot.notify_messages" /><span class="toggler"></span></label></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-title">Agent instructions</div><div class="field-description">Extra rules for the agent in Discord chats.</div></div>
+            <div class="field-control"><textarea rows="3" x-model="bot.agent_instructions"></textarea></div>
+          </div>
+          <div class="field">
+            <div class="field-label"><div class="field-description" x-text="tests[i]?.message || ''" :style="tests[i] ? (tests[i].ok ? 'color:var(--color-success, #3a3)' : 'color:var(--color-error, #c33)') : ''"></div></div>
+            <div class="field-control" style="display:flex;gap:8px">
+              <button class="btn btn-field" :disabled="tests[i]?.busy" @click="test(bot, i)">Test token</button>
+              <button class="btn btn-field" @click="config.bots.splice(i, 1)">Remove</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <button class="btn btn-field" @click="addBot()">Add a Discord bot</button>
+    </div>
+  </template>
+</div>
+</body>
+</html>

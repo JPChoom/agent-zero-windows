@@ -76,6 +76,7 @@ Direct child DOX files:
 | [_context_usage/AGENTS.md](_context_usage/AGENTS.md) | Context-window usage indicator in the chat input bar. |
 | [_code_execution/AGENTS.md](_code_execution/AGENTS.md) | Terminal, Python, and Node.js execution tools and shell runtimes. |
 | [_desktop/AGENTS.md](_desktop/AGENTS.md) | Linux desktop runtime, sessions, and desktop surface. |
+| [_discord_integration/AGENTS.md](_discord_integration/AGENTS.md) | Discord bot integration: DMs and @mentions, allowlisted users, per-user chats. |
 | [_discovery/AGENTS.md](_discovery/AGENTS.md) | Welcome-screen plugin discovery cards and promotions. |
 | [_document_query/AGENTS.md](_document_query/AGENTS.md) | Document parsing, indexing, and Q&A tools. |
 | [_editor/AGENTS.md](_editor/AGENTS.md) | Native Markdown editor surface and sessions. |
@@ -97,6 +98,7 @@ Direct child DOX files:
 | [_promptinclude/AGENTS.md](_promptinclude/AGENTS.md) | Promptinclude scanning (trusted folder + project root only) and prompt injection. |
 | [_safety_policy/AGENTS.md](_safety_policy/AGENTS.md) | Deterministic high-risk command floor, download-host allowlist, and shared approval registry. |
 | [_skills/AGENTS.md](_skills/AGENTS.md) | Active and hidden skill configuration and prompt injection. |
+| [_slack_integration/AGENTS.md](_slack_integration/AGENTS.md) | Slack app integration over Socket Mode: DMs and threaded @mentions, allowlisted users. |
 | [_telegram_integration/AGENTS.md](_telegram_integration/AGENTS.md) | Telegram bot integration and per-user chat sessions. |
 | [_text_editor/AGENTS.md](_text_editor/AGENTS.md) | Native text read, write, and patch tool. |
 | [_time_travel/AGENTS.md](_time_travel/AGENTS.md) | Workspace history, diff, travel, snapshot, and revert flows. |

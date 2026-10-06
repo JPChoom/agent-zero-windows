@@ -1,0 +1,18 @@
+bots: []
+# Example bot:
+# - name: my_bot
+#   enabled: true
+#   token: ""                 # Bot token from the Discord Developer Portal (Bot > Reset Token)
+#   allowed_users: []         # Discord user IDs (or usernames) allowed to talk to the agent.
+#                             # EMPTY = NOBODY. Ignored senders are logged with their id.
+#   server_mode: mention      # mention (answer when @mentioned) | all (every message; needs the
+#                             # Message Content intent enabled in the portal) | off (DMs only)
+#   allowed_channels: []      # Server channel IDs the bot may answer in. Empty = any channel.
+#   user_projects: {}         # Map Discord user id to a project name
+#   default_project: ""
+#   notify_messages: false    # WebUI notification for each incoming message
+#   agent_instructions: ""    # Extra instructions for the agent in Discord chats
+#
+# Chats from Discord run at most in the permission mode set in
+# Settings > Security > _permissions channel_mode_caps.discord (default manual);
+# approvals appear in the WebUI.
