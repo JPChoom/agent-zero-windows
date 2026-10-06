@@ -1,0 +1,11 @@
+name: _computer_use
+title: Computer Use
+description: Operate Windows apps through their UI Automation tree with trycua's cua-driver - background clicks and typing that don't move your mouse or take focus.
+version: 1.0.0
+always_enabled: false
+os_support:
+  - windows
+settings_sections:
+  - agent
+per_project_config: false
+per_agent_config: false

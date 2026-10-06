@@ -1,0 +1,21 @@
+# INPUT - deliberately off by default.
+# Read actions (list apps/windows, inspect a window's UI tree, screenshots)
+# always work. Clicking, typing, keys, menus and launching apps need this on.
+# Input into windows the agent did not open in the chat, foreground
+# delivery and window-closing hotkeys are still asked about outside Bypass;
+# sign-in/password-manager windows, terminals, lock/log-off keys and
+# secret fields are refused in every mode (helpers/policy.py).
+control_enabled: false
+
+# Path to cua-driver.exe. Empty = the newest usr/cua-driver/<version>/cua-driver.exe.
+driver_path: ""
+
+# Turn off cua-driver's default "content-free product telemetry" before the
+# daemon first starts.
+disable_telemetry: true
+
+# Most UI elements listed by one inspect.
+max_elements: 150
+
+# Seconds before a single driver call is abandoned.
+call_timeout_seconds: 60

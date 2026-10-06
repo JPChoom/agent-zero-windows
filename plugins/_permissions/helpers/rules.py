@@ -73,6 +73,8 @@ _READ_ACTIONS = {
     "skills": {"list", "search", "read_file"},
     "ytdlp": {"info", "formats"},
     "desktop_control": {"focus"},
+    "computer_use": {"apps", "windows", "inspect", "screenshot", "status"},
+    "skill_learn": {"list"},
 }
 
 # The argument that best identifies what a call will actually do, used as
@@ -83,6 +85,7 @@ _TARGET_ARGS = {
     "text_editor": ("action", "path"),
     "ytdlp": ("action", "url"),
     "desktop_control": ("action", "window"),
+    "computer_use": ("action", "app", "pid"),
     "search_engine": ("query",),
     "document_query": ("document",),
     "call_subordinate": ("profile", "message"),
@@ -206,6 +209,13 @@ _MODE_DEFAULTS: dict[str, dict[str, Decision]] = {
     "plan": {"read": "allow", "edit": "deny", "execute": "deny"},
     "bypass": {"read": "allow", "edit": "allow", "execute": "allow"},
 }
+
+
+def safer_mode(a: str, b: str) -> str:
+    """The more restrictive of two modes (MODES is ordered safest first)."""
+    ia = MODES.index(a) if a in MODES else len(MODES)
+    ib = MODES.index(b) if b in MODES else len(MODES)
+    return MODES[min(ia, ib)] if min(ia, ib) < len(MODES) else DEFAULT_MODE
 
 
 @dataclass(frozen=True)

@@ -39,6 +39,17 @@ allow: ""
 # denied. Matches the safety policy's own timeout.
 approval_timeout_seconds: 300
 
+# Highest permission mode a chat that arrived over a messaging channel may
+# run in, whatever the chat's selector says. One of plan, manual,
+# accept_edits, auto (bypass is never allowed here). Approvals for "ask"
+# decisions appear in the WebUI chat.
+channel_mode_caps:
+  telegram: manual
+  whatsapp: manual
+  email: manual
+  discord: manual
+  slack: manual
+
 # Write every ask/deny decision to the audit log. Allowed calls are not
 # logged: in auto mode that would be nearly every tool call.
 audit_decisions: true

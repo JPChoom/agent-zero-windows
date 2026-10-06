@@ -19,7 +19,46 @@ DEFAULTS = {
     "allow": "",
     "approval_timeout_seconds": 300,
     "audit_decisions": True,
+    "channel_mode_caps": {
+        "telegram": "manual",
+        "whatsapp": "manual",
+        "email": "manual",
+        "discord": "manual",
+        "slack": "manual",
+    },
 }
+
+# A chat that came in over a messaging channel carries that channel's
+# context data key (set by the integration plugin's handler).
+CHANNEL_MARKERS = {
+    "telegram": "telegram_chat_id",
+    "whatsapp": "wa_chat_id",
+    "email": "email_sender",
+    "discord": "discord_channel_id",
+    "slack": "slack_channel_id",
+}
+
+
+def channel_of(context) -> str:
+    """The messaging channel a chat belongs to, or "" for the local WebUI/API."""
+    data = getattr(context, "data", None)
+    if not isinstance(data, dict):
+        return ""
+    for channel, key in CHANNEL_MARKERS.items():
+        if data.get(key):
+            return channel
+    return ""
+
+
+def channel_cap(cfg: dict, channel: str) -> str:
+    """Highest mode a chat from `channel` may run in. Bypass is never a valid cap."""
+    caps = cfg.get("channel_mode_caps")
+    if not isinstance(caps, dict):
+        caps = {}
+    cap = str(caps.get(channel) or DEFAULTS["channel_mode_caps"].get(channel) or "manual").strip().lower()
+    if cap not in rules.MODES or cap == "bypass":
+        cap = "auto"
+    return cap
 
 
 def get_config(agent=None) -> dict:
@@ -43,8 +82,21 @@ def get_config(agent=None) -> dict:
     except (TypeError, ValueError):
         timeout = DEFAULTS["approval_timeout_seconds"]
 
+    # Remote channels never run above their cap: a message from Telegram,
+    # WhatsApp, Email, Discord or Slack must not inherit the trust of the
+    # local WebUI, whatever mode the chat was switched to.
+    mode = state["mode"]
+    channel = channel_of(context)
+    capped_from = ""
+    if channel:
+        effective = rules.safer_mode(mode, channel_cap(cfg, channel))
+        if effective != mode:
+            capped_from, mode = mode, effective
+
     return {
-        "mode": state["mode"],
+        "mode": mode,
+        "channel": channel,
+        "capped_from": capped_from,
         "bypass_expired": state["expired"],
         "ruleset": rules.Ruleset.from_config(cfg),
         "approval_timeout_seconds": max(5, timeout),

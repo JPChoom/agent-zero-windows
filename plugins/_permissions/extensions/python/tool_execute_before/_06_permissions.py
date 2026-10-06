@@ -12,22 +12,23 @@ must get its veto before any permission mode is consulted. Otherwise
 control, which is not what "accepts all permissions" means in Claude
 Code either, where prohibited actions stay prohibited in every mode.
 
-An "ask" verdict reuses the approval-future registry that _safety_policy
-already ships. That module is a plain future map with no dependency on
-its plugin being enabled, so importing it is safe; the Approve/Deny UI is
-this plugin's own, keyed on its own message type.
+An "ask" verdict goes through helpers/ask.py, which reuses the
+approval-future registry that _safety_policy already ships (a plain future
+map with no dependency on its plugin being enabled); the Approve/Deny UI
+is this plugin's own, keyed on its own message type. Tools that need an
+extra, specific confirmation (computer_use) use the same helper.
+
+Chats that arrived over a messaging channel are capped below their
+selector's mode (helpers/config.py channel_mode_caps).
 """
 
-import asyncio
 import json
-import uuid
 
 from helpers.errors import RepairableException
 from helpers.extension import Extension
 from helpers.print_style import PrintStyle
-from plugins._permissions.helpers import rules
+from plugins._permissions.helpers import ask, rules
 from plugins._permissions.helpers.config import get_config
-from plugins._safety_policy.helpers import approval_registry
 
 
 PROTECTED_MARKERS = (
@@ -116,71 +117,19 @@ class PermissionGate(Extension):
             PrintStyle(font_color="#FFA500", padding=False).print(message)
             raise RepairableException(message)
 
-        await self._ask(cfg, tool_name, tool_args or {}, verdict)
-
-    async def _ask(self, cfg, tool_name, tool_args, verdict) -> None:
-        approval_id = str(uuid.uuid4())
-        timeout = cfg["approval_timeout_seconds"]
-        target = rules.target_text(tool_name, tool_args)
         self._audit(cfg, tool_name, tool_args, verdict, "pending")
-
-        log_item = None
-        try:
-            log_item = self.agent.context.log.log(
-                type="permissions_approval_request",
-                content=(
-                    f"[permissions] {tool_name} needs approval - {verdict.reason}. "
-                    f"Waiting up to {timeout}s."
-                ),
-                kvps={
-                    "approval_id": approval_id,
-                    "tool_name": tool_name,
-                    "target": target,
-                    "reason": verdict.reason,
-                    "mode": cfg["mode"],
-                    # Offered by the UI as "always allow", so answering once
-                    # can stop the same question recurring.
-                    "suggested_rule": rules.rule_for(tool_name, tool_args),
-                    "suggested_tool_rule": rules.rule_for(
-                        tool_name, tool_args, scope="tool"
-                    ),
-                    "resolved": False,
-                },
+        reason = verdict.reason
+        if cfg.get("capped_from"):
+            reason += (
+                f" (this {cfg['channel']} chat is capped at {cfg['mode']}; "
+                f"its selector says {cfg['capped_from']})"
             )
-        except Exception:
-            pass
-
-        future = approval_registry.register(approval_id)
-        try:
-            approved = await asyncio.wait_for(future, timeout=timeout)
-        except (TimeoutError, asyncio.TimeoutError):
-            approval_registry.cleanup(approval_id)
-            self._resolve_log(log_item, approved=False, outcome="timeout")
-            raise RepairableException(
-                f"[permissions] Denied: no answer for {tool_name} within "
-                f"{timeout}s, so it was treated as denied. Tell the user "
-                "rather than retrying."
-            )
-
-        if not approved:
-            self._resolve_log(log_item, approved=False, outcome="denied")
-            raise RepairableException(
-                f"[permissions] The user declined {tool_name}. Do not retry it; "
-                "ask what they would prefer instead."
-            )
-
-        self._resolve_log(log_item, approved=True, outcome="approved")
-
-    def _resolve_log(self, log_item, approved: bool, outcome: str) -> None:
-        if not log_item:
-            return
-        try:
-            log_item.update(
-                kvps={**(log_item.kvps or {}), "resolved": True,
-                      "approved": approved, "outcome": outcome}
-            )
-        except Exception:
-            pass
+        # Answering through the shared card also offers "always allow", so
+        # answering once can stop the same question recurring.
+        await ask.request_approval(
+            self.agent, tool_name, tool_args or {}, reason,
+            cfg["mode"], cfg["approval_timeout_seconds"],
+        )
 
     def _audit(self, cfg, tool_name, tool_args, verdict, outcome: str) -> None:
         if not cfg.get("audit_decisions"):

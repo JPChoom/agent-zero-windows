@@ -17,6 +17,7 @@ from plugins._permissions.extensions.python.tool_execute_before import (
     _06_permissions as gate_mod,
 )
 from plugins._permissions.helpers import rules
+from plugins._safety_policy.helpers import approval_registry
 
 
 class _Log:
@@ -150,7 +151,7 @@ async def test_approval_lets_the_call_proceed(monkeypatch):
         asyncio.ensure_future(approve(fut))
         return fut
 
-    monkeypatch.setattr(gate_mod.approval_registry, "register", fake_register)
+    monkeypatch.setattr(approval_registry, "register", fake_register)
     assert await _gate().execute(tool_name="code_execution_tool",
                                  tool_args={"code": "ls"}) is None
     assert registered["id"]
@@ -165,7 +166,7 @@ async def test_refusal_raises_and_tells_the_agent_not_to_retry(monkeypatch):
         fut.set_result(False)
         return fut
 
-    monkeypatch.setattr(gate_mod.approval_registry, "register", fake_register)
+    monkeypatch.setattr(approval_registry, "register", fake_register)
     with pytest.raises(RepairableException) as exc:
         await _gate().execute(tool_name="code_execution_tool", tool_args={"code": "ls"})
     assert "do not retry" in str(exc.value).lower()
@@ -179,11 +180,11 @@ async def test_unanswered_prompt_times_out_as_denied(monkeypatch):
     )
     cleaned = []
     monkeypatch.setattr(
-        gate_mod.approval_registry, "register",
+        approval_registry, "register",
         lambda approval_id: asyncio.get_event_loop().create_future(),
     )
     monkeypatch.setattr(
-        gate_mod.approval_registry, "cleanup", lambda approval_id: cleaned.append(approval_id)
+        approval_registry, "cleanup", lambda approval_id: cleaned.append(approval_id)
     )
     with pytest.raises(RepairableException) as exc:
         await _gate().execute(tool_name="code_execution_tool", tool_args={"code": "ls"})
@@ -201,7 +202,7 @@ async def test_prompt_offers_a_rule_that_would_prevent_it_recurring(monkeypatch)
         fut.set_result(True)
         return fut
 
-    monkeypatch.setattr(gate_mod.approval_registry, "register", fake_register)
+    monkeypatch.setattr(approval_registry, "register", fake_register)
     agent = _Agent()
     gate = gate_mod.PermissionGate(agent=agent)  # type: ignore[arg-type]
     await gate.execute(tool_name="code_execution_tool", tool_args={"code": "git status"})

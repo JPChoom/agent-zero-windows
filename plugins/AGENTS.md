@@ -72,6 +72,7 @@ Direct child DOX files:
 | [_calendar/AGENTS.md](_calendar/AGENTS.md) | Calendar right-canvas surface over the task scheduler. |
 | [_chat_branching/AGENTS.md](_chat_branching/AGENTS.md) | Chat branching from an existing message. |
 | [_chat_compaction/AGENTS.md](_chat_compaction/AGENTS.md) | Full-chat compaction into a summary message. |
+| [_computer_use/AGENTS.md](_computer_use/AGENTS.md) | `computer_use` tool: Windows UI Automation control through trycua's cua-driver. |
 | [_context_usage/AGENTS.md](_context_usage/AGENTS.md) | Context-window usage indicator in the chat input bar. |
 | [_code_execution/AGENTS.md](_code_execution/AGENTS.md) | Terminal, Python, and Node.js execution tools and shell runtimes. |
 | [_desktop/AGENTS.md](_desktop/AGENTS.md) | Linux desktop runtime, sessions, and desktop surface. |

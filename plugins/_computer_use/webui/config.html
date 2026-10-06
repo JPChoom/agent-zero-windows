@@ -1,0 +1,69 @@
+<html>
+<head><title>Computer Use</title></head>
+<body>
+<div x-data>
+  <template x-if="config">
+    <div>
+      <div class="section-title">Computer Use</div>
+      <div class="section-description">
+        Lets the agent read and operate Windows apps through their accessibility (UI Automation) tree using
+        trycua's cua-driver. Input is sent in the background: your mouse does not move and focus is not taken.
+        Install the driver into <code>usr/cua-driver/&lt;version&gt;/</code> first (see the plugin README).
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          <div class="field-title">Allow input</div>
+          <div class="field-description">
+            Clicking, typing, keys, menus and launching apps. Off: the agent can only look.
+            Even when on, input into windows the agent did not open, foreground input and window-closing keys
+            are asked about (except in Bypass); sign-in, UAC and password-manager windows, terminals and
+            password fields are always refused.
+          </div>
+        </div>
+        <div class="field-control">
+          <label class="toggle">
+            <input type="checkbox" x-model="config.control_enabled" />
+            <span class="toggler"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          <div class="field-title">Driver path</div>
+          <div class="field-description">Leave empty to use the newest <code>usr/cua-driver/&lt;version&gt;/cua-driver.exe</code>.</div>
+        </div>
+        <div class="field-control">
+          <input type="text" x-model="config.driver_path" placeholder="usr/cua-driver/<version>/cua-driver.exe" />
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          <div class="field-title">Disable driver telemetry</div>
+          <div class="field-description">cua-driver sends content-free product telemetry by default; this turns it off before the daemon starts.</div>
+        </div>
+        <div class="field-control">
+          <label class="toggle">
+            <input type="checkbox" x-model="config.disable_telemetry"
+              x-init="if (config.disable_telemetry === undefined || config.disable_telemetry === null) config.disable_telemetry = true" />
+            <span class="toggler"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          <div class="field-title">Max elements per inspect</div>
+          <div class="field-description">Caps how much of a window's UI tree is sent to the model.</div>
+        </div>
+        <div class="field-control">
+          <input type="number" min="20" max="1000" x-model.number="config.max_elements" />
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+</body>
+</html>
