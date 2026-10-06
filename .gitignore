@@ -79,3 +79,6 @@ searxng/
 
 # Debug console/terminal dumps, not source
 user-logs/
+
+# Local backup copies
+*.bak
