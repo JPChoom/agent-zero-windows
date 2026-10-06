@@ -55,6 +55,7 @@ _READ_ONLY_TOOLS = {
     "knowledge_tool",
     "vision_load",
     "webpage_content_tool",
+    "windows_info",
 }
 
 # Tools that write files. Split out because "accept edits" mode exists

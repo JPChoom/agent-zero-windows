@@ -268,3 +268,124 @@ def test_arguments_reach_the_script_as_inert_data():
 def test_a_slow_start_is_stopped_by_the_timeout():
     with pytest.raises(sources_ps.PsError, match="took longer"):
         sources_ps.run_script("selftest", {}, timeout=0.01)
+
+
+# -- P1/P2: registry policy, tool behaviour, live actions -------------------------------
+
+from plugins._windows_intel.helpers import sources_local
+
+
+@pytest.mark.parametrize("path", [
+    r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+    r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+    r"HKLM\SYSTEM\CurrentControlSet\Services\Spooler",
+    r"HKCU\Environment",
+    r"HKCU\Control Panel\Desktop",
+])
+def test_registry_allowlist(path):
+    assert sources_local.registry_refusal(path) == ""
+
+
+@pytest.mark.parametrize("path", [
+    r"HKLM\SAM", r"HKLM\SECURITY\Policy", r"HKLM\SYSTEM\CurrentControlSet\Control\Lsa",
+    r"HKLM\SOFTWARE\Microsoft\Cryptography", r"HKCU\SOFTWARE\Microsoft\Protect",
+    r"HKCU\SOFTWARE\Microsoft\IdentityCRL\StoredIdentities", r"HKCU\SOFTWARE\Microsoft\Credentials",
+    r"HKCU\SOFTWARE\Microsoft\Internet Explorer\IntelliForms\Storage2", r"HKLM\HARDWARE",
+    r"HKLM\SOFTWAREX", "HKLM",
+])
+def test_registry_denylist_and_outside_roots(path):
+    assert sources_local.registry_refusal(path)
+
+
+class _WCtx:
+    id = "ctx-wi"
+    data = {}
+
+
+class _WAgent:
+    context = _WCtx()
+
+
+@pytest.fixture
+def wi(monkeypatch):
+    from plugins._windows_intel.tools import windows_info as mod
+
+    audits = []
+
+    async def fake_audit(record):
+        audits.append(record)
+
+    monkeypatch.setattr(mod.audit_log, "append_record", fake_audit)
+    monkeypatch.setattr(mod.kill_switch, "is_tripped", lambda: False)
+    tool = mod.WindowsInfo(agent=_WAgent(), name="windows_info", method=None, args={}, message="", loop_data=None)
+    return tool, mod, audits
+
+
+@pytest.mark.asyncio
+async def test_tool_reports_validation_errors_and_help(wi):
+    tool, _, _ = wi
+    assert "unknown action" in (await tool.execute(action="format_c")).message
+    assert "may only contain" in (await tool.execute(action="processes", name="x; rm")).message
+    assert "registry: read a registry key" in (await tool.execute(action="help", topic="registry")).message
+
+
+@pytest.mark.asyncio
+async def test_tool_refuses_while_the_kill_switch_is_tripped(wi, monkeypatch):
+    tool, mod, _ = wi
+    monkeypatch.setattr(mod.kill_switch, "is_tripped", lambda: True)
+    monkeypatch.setattr(mod.kill_switch, "denial_message", lambda: "KILL SWITCH")
+    assert (await tool.execute(action="system")).message == "KILL SWITCH"
+    assert "actions" in (await tool.execute(action="help")).message  # help still works
+
+
+@pytest.mark.asyncio
+async def test_sensitive_reads_are_audited_without_their_output(wi, monkeypatch):
+    tool, mod, audits = wi
+    monkeypatch.setattr(mod.sources_local, "env", lambda args, cfg: "SECRET OUTPUT")
+    monkeypatch.setattr(mod.sources_local, "network", lambda args, cfg: "net")
+    await tool.execute(action="env", scope="user")
+    await tool.execute(action="network")
+    assert [a["action"] for a in audits] == ["env"]
+    assert "SECRET OUTPUT" not in str(audits)
+
+
+@pytest.mark.asyncio
+async def test_security_log_says_administrator_instead_of_empty(wi):
+    tool, _, _ = wi
+    msg = (await tool.execute(action="events", log="Security")).message
+    assert "administrator" in msg and "standard user" in msg
+
+
+@pytest.mark.asyncio
+async def test_a_crashing_source_does_not_end_the_turn(wi, monkeypatch):
+    tool, mod, _ = wi
+
+    def boom(args, cfg):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mod.sources_local, "network", boom)
+    assert "failed: RuntimeError: boom" in (await tool.execute(action="network")).message
+
+
+def test_windows_info_is_read_only_for_the_permission_engine():
+    from plugins._permissions.helpers import rules
+
+    assert rules.classify("windows_info", {"action": "registry"}) == "read"
+    assert rules.decide("windows_info", {"action": "processes"}, "plan").decision == "allow"
+
+
+@windows_only
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action,args,expect", [
+    ("system", {}, "os:"), ("processes", {"limit": 3}, "pid | name"), ("services", {"limit": 3}, "name | display name"),
+    ("apps", {"limit": 3}, "name | version"), ("startup", {}, "name | where"), ("tasks", {"limit": 3}, "task | state"),
+    ("events", {"since": "7d", "limit": 3}, "System log"), ("devices", {"limit": 3}, "device | class"),
+    ("disks", {}, "volume | filesystem"), ("network", {}, "adapter | status"), ("ports", {"limit": 3}, "proto | local"),
+    ("windows", {}, "title | process"), ("env", {"scope": "process"}, "name | value"),
+    ("registry", {"path": r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "value": "CurrentBuild"}, "type: SZ"),
+])
+async def test_every_action_runs_on_this_machine(wi, action, args, expect):
+    tool, _, _ = wi
+    msg = (await tool.execute(action=action, **args)).message
+    assert expect in msg, msg[:300]
+    assert len(msg) <= 12000

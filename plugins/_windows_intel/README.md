@@ -2,7 +2,7 @@
 
 Typed, read-only questions about the Windows machine Agent Zero runs on - processes, services, installed apps, events, ports, the registry - plus a few safe per-user settings, without the agent writing free-form PowerShell each time.
 
-**Status: foundation.** This release has the building blocks: argument validation, compact capped output, secret redaction and a safe PowerShell runner. The `windows_info` and `windows_setting` tools themselves are added in the next phases.
+**`windows_info`** answers, in compact capped tables: `system` (+GPU), `processes`, `services`, `apps` (+Store), `startup`, `tasks`, `events`, `devices`, `disks` (+health), `network`, `ports`, `windows`, `registry`, `env`. The agent sees one line listing them and asks `action=help` for details. Most answers take well under a second; PowerShell is used only for events, scheduled tasks, Store apps, devices, GPU and disk health.
 
 How it stays safe:
 
@@ -11,4 +11,4 @@ How it stays safe:
 - Results are size-capped and secrets (passwords, tokens, API keys, URL credentials) are masked.
 - Anything that needs administrator rights is reported, never worked around - Agent Zero runs as a standard user.
 
-When the tools land, note that system information goes to whichever model provider you use; with a local model such as LM Studio it stays on your PC.
+**Privacy:** what the agent reads (process names, window titles, installed apps, event messages) is sent to whichever model provider you use. With a local model such as LM Studio it never leaves your PC.

@@ -102,6 +102,56 @@ SCRIPTS: dict[str, str] = {
     "selftest": """\
 emit @{ ok = $true; echo = $a.echo; psversion = $PSVersionTable.PSVersion.ToString() }
 """,
+    # args: log, level, since_hours, provider?, event_id?, limit
+    "events": """\
+$levels = @{ critical = @(1); error = @(1,2); warning = @(1,2,3); information = @(0,1,2,3,4) }
+$f = @{ LogName = $a.log; Level = $levels[$a.level]; StartTime = (Get-Date).AddHours(-[double]$a.since_hours) }
+if ($a.provider) { $f.ProviderName = $a.provider }
+if ($null -ne $a.event_id) { $f.Id = [int]$a.event_id }
+try { $ev = @(Get-WinEvent -FilterHashtable $f -MaxEvents ([int]$a.limit) -ErrorAction Stop) }
+catch { if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { $ev = @() } else { throw } }
+emit @($ev | ForEach-Object { @{ t = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss'); level = [string]$_.LevelDisplayName; provider = [string]$_.ProviderName; id = $_.Id; msg = ([string]$_.Message -replace '\\s+', ' ') } })
+""",
+    # args: name?, state, include_microsoft, logon_only, limit
+    "tasks": """\
+$t = @(Get-ScheduledTask -ErrorAction Stop)
+if (-not $a.include_microsoft) { $t = @($t | Where-Object { $_.TaskPath -notlike '\\Microsoft\\*' }) }
+if ($a.name) { $n = ([string]$a.name).ToLower(); $t = @($t | Where-Object { $_.TaskName.ToLower().Contains($n) }) }
+if ($a.state -ne 'all') { $s = [string]$a.state; $t = @($t | Where-Object { [string]$_.State -eq $s }) }
+if ($a.logon_only) { $t = @($t | Where-Object { @($_.Triggers | Where-Object { $_.CimClass.CimClassName -like '*Logon*' -or $_.CimClass.CimClassName -like '*Boot*' }).Count -gt 0 }) }
+$total = $t.Count
+$rows = @($t | Sort-Object TaskPath, TaskName | Select-Object -First ([int]$a.limit) | ForEach-Object {
+  $i = $_ | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue
+  $act = @($_.Actions)[0]
+  @{ name = $_.TaskName; path = $_.TaskPath; state = [string]$_.State; author = [string]$_.Author;
+     next = $(if ($i -and $i.NextRunTime) { $i.NextRunTime.ToString('yyyy-MM-dd HH:mm') } else { '' });
+     last = $(if ($i -and $i.LastRunTime -and $i.LastRunTime.Year -gt 2000) { $i.LastRunTime.ToString('yyyy-MM-dd HH:mm') } else { '' });
+     result = $(if ($i) { '0x{0:X}' -f $i.LastTaskResult } else { '' });
+     exe = $(if ($act) { ([string]$act.Execute + ' ' + [string]$act.Arguments).Trim() } else { '' }) }
+})
+emit @{ total = $total; rows = $rows }
+""",
+    # args: problems_only, device_class?, limit
+    "devices": """\
+$d = @(Get-PnpDevice -PresentOnly -ErrorAction Stop)
+if ($a.problems_only) { $d = @($d | Where-Object { [string]$_.Status -ne 'OK' }) }
+if ($a.device_class) { $c = ([string]$a.device_class).ToLower(); $d = @($d | Where-Object { ([string]$_.Class).ToLower() -eq $c }) }
+$rows = @($d | Sort-Object Class, FriendlyName | Select-Object -First ([int]$a.limit) | ForEach-Object {
+  @{ name = [string]$_.FriendlyName; cls = [string]$_.Class; status = [string]$_.Status; problem = [string]$_.Problem; maker = [string]$_.Manufacturer } })
+emit @{ total = $d.Count; rows = $rows }
+""",
+    # args: name?
+    "store_apps": """\
+$p = @(Get-AppxPackage -ErrorAction Stop | Where-Object { -not $_.IsFramework -and [string]$_.SignatureKind -ne 'System' })
+if ($a.name) { $n = ([string]$a.name).ToLower(); $p = @($p | Where-Object { $_.Name.ToLower().Contains($n) }) }
+emit @($p | ForEach-Object { @{ name = [string]$_.Name; version = [string]$_.Version; publisher = (([string]$_.Publisher -replace ',.*$', '') -replace '^CN=', '') } })
+""",
+    "gpu": """\
+emit @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { @{ name = [string]$_.Name; driver = [string]$_.DriverVersion; mode = ([string]$_.CurrentHorizontalResolution + 'x' + [string]$_.CurrentVerticalResolution) } })
+""",
+    "disk_health": """\
+emit @(Get-PhysicalDisk -ErrorAction Stop | ForEach-Object { @{ name = [string]$_.FriendlyName; media = [string]$_.MediaType; bus = [string]$_.BusType; health = [string]$_.HealthStatus; status = (@($_.OperationalStatus) -join ','); size = $_.Size } })
+""",
 }
 
 
