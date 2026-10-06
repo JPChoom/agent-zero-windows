@@ -101,7 +101,15 @@
                             </div>
                             <div class="metadata-item">
                                 <span class="metadata-label">Source:</span>
-                                <span class="metadata-value" x-text="$store.memoryDashboardStore.detailMemory?.knowledge_source ? 'Knowledge' : 'Conversation'"></span>
+                                <span class="metadata-value" x-text="$store.memoryDashboardStore.detailMemory?.provenance_source || ($store.memoryDashboardStore.detailMemory?.knowledge_source ? 'Knowledge' : 'Conversation')"></span>
+                            </div>
+                            <div class="metadata-item">
+                                <span class="metadata-label">Trust:</span>
+                                <span class="metadata-value" x-text="$store.memoryDashboardStore.detailMemory?.trust || 'not recorded'"></span>
+                            </div>
+                            <div class="metadata-item" x-show="$store.memoryDashboardStore.detailMemory?.project">
+                                <span class="metadata-label">Project:</span>
+                                <span class="metadata-value" x-text="$store.memoryDashboardStore.detailMemory?.project"></span>
                             </div>
                         </div>
 
@@ -111,6 +119,10 @@
                             <div class="metadata-item">
                                 <span class="metadata-label">Created:</span>
                                 <span class="metadata-value" x-text="$store.memoryDashboardStore.formatTimestamp($store.memoryDashboardStore.detailMemory?.timestamp, false)"></span>
+                            </div>
+                            <div class="metadata-item">
+                                <span class="metadata-label">Last used:</span>
+                                <span class="metadata-value" x-text="$store.memoryDashboardStore.detailMemory?.last_used ? $store.memoryDashboardStore.formatTimestamp($store.memoryDashboardStore.detailMemory.last_used, false) : 'never recalled'"></span>
                             </div>
                         </div>
 

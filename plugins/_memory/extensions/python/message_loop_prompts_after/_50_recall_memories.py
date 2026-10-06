@@ -4,6 +4,7 @@ from agent import LoopData
 from helpers import dirty_json, errors, log, plugins
 
 # Direct import - this extension lives inside the memory plugin
+from plugins._memory.helpers import provenance
 from plugins._memory.helpers.memory import Memory
 from plugins._memory.tools.memory_load import DEFAULT_THRESHOLD as DEFAULT_MEMORY_THRESHOLD
 
@@ -23,6 +24,15 @@ def _cap(text: str) -> str:
     if len(text) <= RECALL_ENTRY_MAX_CHARS:
         return text
     return text[:RECALL_ENTRY_MAX_CHARS].rstrip() + " ... [truncated - memory_load for the full entry]"
+
+
+def _labelled(doc) -> str:
+    # A memory formed in a chat that read outside content is recalled with a
+    # marker, so it is weighed as a lead to verify rather than a known fact.
+    text = _cap(doc.page_content)
+    if (getattr(doc, "metadata", None) or {}).get("trust") == "low":
+        return "[low trust - formed after reading outside content; verify before relying on it] " + text
+    return text
 
 
 class RecallMemories(Extension):
@@ -229,8 +239,11 @@ class RecallMemories(Extension):
             heading=f"{len(memories)} memories and {len(solutions)} relevant solutions found",
         )
 
-        memories_txt = "\n\n".join([_cap(mem.page_content) for mem in memories]) if memories else ""
-        solutions_txt = "\n\n".join([_cap(sol.page_content) for sol in solutions]) if solutions else ""
+        # provenance: remember when each recalled memory was last useful
+        provenance.touch(db, memories + solutions)
+
+        memories_txt = "\n\n".join([_labelled(mem) for mem in memories]) if memories else ""
+        solutions_txt = "\n\n".join([_labelled(sol) for sol in solutions]) if solutions else ""
 
         # log the full results
         if memories_txt:

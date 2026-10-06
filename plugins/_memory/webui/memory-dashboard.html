@@ -65,7 +65,49 @@
                     <button class="btn btn-cancel btn-clear" @click="$store.memoryDashboardStore.clearSearch()">
                         Clear
                     </button>
+
+                    <button class="btn btn-cancel" @click="$store.memoryDashboardStore.runHealthReport()"
+                        :disabled="$store.memoryDashboardStore.health.loading"
+                        title="Report duplicates, possible conflicts, stale and low-trust memories. Changes nothing.">
+                        <span x-text="$store.memoryDashboardStore.health.loading ? 'Checking...' : 'Health'"></span>
+                    </button>
                 </div>
+
+                <!-- Memory health report (read-only; act on items with search + delete) -->
+                <template x-if="$store.memoryDashboardStore.health.report">
+                    <div class="memory-health-report">
+                        <div class="memory-health-head">
+                            <strong>Memory health</strong>
+                            <span x-text="`${$store.memoryDashboardStore.health.report.total} memories, ${$store.memoryDashboardStore.health.report.scanned_for_similarity} compared`"></span>
+                            <button class="btn btn-icon" title="Close report" @click="$store.memoryDashboardStore.health.report = null">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <template x-for="section in $store.memoryDashboardStore.healthSections()" :key="section.key">
+                            <details class="memory-health-section">
+                                <summary x-text="`${section.title}: ${section.items.length}`"></summary>
+                                <div class="memory-health-hint" x-text="section.hint"></div>
+                                <template x-for="(item, i) in section.items" :key="section.key + i">
+                                    <div class="memory-health-item">
+                                        <template x-for="m in (item.a ? [item.a, item.b] : [item])" :key="m.id">
+                                            <div class="memory-health-memory">
+                                                <span class="memory-health-meta" x-text="`${m.area} · trust ${m.trust || '?'} · ${m.last_used ? 'used ' + m.last_used.slice(0, 10) : 'created ' + (m.timestamp || '').slice(0, 10)}`"></span>
+                                                <span x-text="m.text"></span>
+                                                <button class="btn btn-icon" title="Find this memory in the list"
+                                                    @click="$store.memoryDashboardStore.findMemoryText(m.text)">
+                                                    <span class="material-symbols-outlined">search</span>
+                                                </button>
+                                            </div>
+                                        </template>
+                                        <span class="memory-health-meta" x-show="item.score" x-text="`similarity ${item.score}`"></span>
+                                    </div>
+                                </template>
+                            </details>
+                        </template>
+                        <div class="memory-health-hint" x-show="$store.memoryDashboardStore.health.report.without_provenance"
+                            x-text="`${$store.memoryDashboardStore.health.report.without_provenance} older memories were saved before source and trust were recorded.`"></div>
+                    </div>
+                </template>
 
                 <!-- Loading state -->
                 <div x-show="$store.memoryDashboardStore.loading" class="loading-state">
@@ -719,6 +761,31 @@
                 width: 10%;
             }
         }
+        /* Memory health report */
+        .memory-health-report {
+            margin: 0 0 12px;
+            padding: 10px 12px;
+            border: 1px solid var(--color-border);
+            border-radius: 10px;
+            background: var(--color-panel);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .memory-health-head { display: flex; align-items: center; gap: 10px; }
+        .memory-health-head button { margin-left: auto; }
+        .memory-health-section summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+        .memory-health-hint { opacity: 0.75; font-size: 0.85em; margin: 2px 0 6px; }
+        .memory-health-item {
+            border-top: 1px solid var(--color-border);
+            padding: 6px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .memory-health-memory { display: flex; align-items: flex-start; gap: 8px; font-size: 0.9em; }
+        .memory-health-memory > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .memory-health-meta { opacity: 0.65; font-size: 0.8em; white-space: nowrap; }
     </style>
     </template>
     </div>

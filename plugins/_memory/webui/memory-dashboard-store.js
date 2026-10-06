@@ -59,6 +59,45 @@ const memoryDashboardStore = {
   pollingInterval: null,
   pollingEnabled: false,
 
+  // Memory health report (read-only; helpers/maintenance.py)
+  health: { loading: false, report: null },
+
+  async runHealthReport() {
+    this.health.loading = true;
+    try {
+      const response = await API.callJsonApi(MEMORY_DASHBOARD_API, {
+        action: "health_report",
+        memory_subdir: this.selectedMemorySubdir,
+      });
+      if (!response.success) throw new Error(response.error || "Health check failed");
+      this.health.report = response.report;
+    } catch (e) {
+      justToast(e?.message || "Health check failed", "error");
+    } finally {
+      this.health.loading = false;
+    }
+  },
+
+  healthSections() {
+    const r = this.health.report;
+    if (!r) return [];
+    return [
+      { key: "dup", title: "Near-duplicates", items: r.duplicates || [],
+        hint: "Almost the same memory twice. Keep one, delete the other." },
+      { key: "conf", title: "Possible conflicts", items: r.possible_conflicts || [],
+        hint: "Same topic, different wording. Read both: if they disagree, delete the wrong one." },
+      { key: "stale", title: `Not used in ${r.stale_days} days`, items: r.stale || [],
+        hint: "Not recalled for a long time. Delete what is no longer true." },
+      { key: "low", title: "Low trust", items: r.low_trust || [],
+        hint: "Formed in chats that read web pages or other outside content. Check them before relying on them." },
+    ];
+  },
+
+  findMemoryText(text) {
+    this.searchQuery = String(text || "").slice(0, 80);
+    this.searchMemories();
+  },
+
   async openModal() {
     await openModal("/plugins/_memory/webui/memory-dashboard.html");
   },

@@ -25,6 +25,8 @@ class MemoryDashboard(ApiHandler):
                 return await self._bulk_delete_memories(input)
             elif action == "update":
                 return await self._update_memory(input)
+            elif action == "health_report":
+                return await self._health_report(input)
             else:
                 return {
                     "success": False,
@@ -35,6 +37,21 @@ class MemoryDashboard(ApiHandler):
 
         except Exception as e:
             return {"success": False, "error": str(e), "memories": [], "total_count": 0}
+
+    async def _health_report(self, input: dict) -> dict:
+        """Report-only memory health check (helpers/maintenance.py)."""
+        import asyncio
+
+        from plugins._memory.helpers import maintenance
+
+        memory_subdir = input.get("memory_subdir", "default")
+        try:
+            stale_days = max(7, int(input.get("stale_days", 90)))
+        except (TypeError, ValueError):
+            stale_days = 90
+        memory = await Memory.get_by_subdir(memory_subdir, preload_knowledge=False)
+        report = await asyncio.to_thread(maintenance.build_report, memory, stale_days)
+        return {"success": True, "report": report}
 
     async def _delete_memory(self, input: dict) -> dict:
         """Delete a memory by ID from the specified subdirectory."""
@@ -229,6 +246,10 @@ class MemoryDashboard(ApiHandler):
             "source_file": metadata.get("source_file", ""),
             "file_type": metadata.get("file_type", ""),
             "consolidation_action": metadata.get("consolidation_action", ""),
+            "provenance_source": metadata.get("source", ""),
+            "trust": metadata.get("trust", ""),
+            "project": metadata.get("project", ""),
+            "last_used": metadata.get("last_used", ""),
             "tags": metadata.get("tags", []),
             "metadata": metadata,  # Include full metadata for advanced users
         }

@@ -170,6 +170,9 @@ def load_knowledge(
                         "file_type": ext,
                         "knowledge_source": True,  # Flag to distinguish from conversation memories
                         "import_timestamp": None,  # Will be set when inserted into memory
+                        # Provenance (helpers/provenance.py): files the user put in a knowledge folder.
+                        "source": "user-file",
+                        "trust": "high",
                     }
 
                     # Apply metadata to all documents

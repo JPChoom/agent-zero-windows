@@ -309,6 +309,12 @@ class MemoryConsolidator:
                                 # Merge tags lists and remove duplicates
                                 merged_tags = list(set(consolidated_metadata[field_name] + field_value))
                                 consolidated_metadata[field_name] = merged_tags
+                            elif field_name == 'trust':
+                                # A merge is only as trustworthy as its weakest input.
+                                from plugins._memory.helpers.provenance import lowest_trust
+                                consolidated_metadata['trust'] = lowest_trust(
+                                    consolidated_metadata.get('trust'), field_value
+                                ) or consolidated_metadata.get('trust')
                             # For all other fields, keep the new memory's value (don't overwrite)
                             # This preserves the new memory's metadata when there are conflicts
 

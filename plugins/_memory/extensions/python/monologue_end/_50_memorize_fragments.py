@@ -8,6 +8,7 @@ from helpers.defer import DeferredTask, THREAD_BACKGROUND
 
 # Direct import - this extension lives inside the memory plugin
 from plugins._memory.helpers.memory import Memory
+from plugins._memory.helpers import provenance
 from plugins._memory.helpers.memory_quality import filter_auto_memory_fragments
 from plugins._memory.tools.memory_load import DEFAULT_THRESHOLD as DEFAULT_MEMORY_THRESHOLD
 
@@ -165,7 +166,7 @@ class MemorizeMemories(Extension):
                         result_obj = await consolidator.process_new_memory(
                             new_memory=txt,
                             area=Memory.Area.FRAGMENTS.value,
-                            metadata={"area": Memory.Area.FRAGMENTS.value},
+                            metadata=provenance.stamp({"area": Memory.Area.FRAGMENTS.value}, self.agent, source="conversation"),
                             log_item=memory_log
                         )
 
@@ -216,7 +217,7 @@ class MemorizeMemories(Extension):
                             log_item.update(replaced=rem_txt)
 
                     # insert new memory
-                    await db.insert_text(text=txt, metadata={"area": Memory.Area.FRAGMENTS.value})
+                    await db.insert_text(text=txt, metadata=provenance.stamp({"area": Memory.Area.FRAGMENTS.value}, self.agent, source="conversation"))
 
                     log_item.update(
                         result=f"{len(memories)} entries memorized.",
