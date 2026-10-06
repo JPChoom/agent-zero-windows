@@ -4,9 +4,22 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`).
 
 ## Unreleased
 
+### New
+- **Computer Use** plugin: operate Windows apps through their UI Automation tree via trycua's cua-driver, with background input (no mouse movement, no focus steal). Input off by default; hard refusals for sign-in/UAC/password-manager windows, terminals, lock/log-off keys and secret fields; approval before touching windows the agent didn't open.
+- **Agent-learned skills** (`skill_learn`): after a long successful task the agent offers to save the procedure; drafts are checked and only installed after the user approves (in every mode), with versions kept.
+- **Memory provenance and Health report**: source, trust, project, chat and last-used on every new memory; low-trust memories are flagged on recall; the dashboard reports duplicates, possible conflicts, stale and low-trust memories without changing anything.
+- **Discord** and **Slack** (Socket Mode) integrations, allowlist-only (empty = nobody).
+- **Start at logon**: optional per-user Startup entry and no-window launcher (Settings > Developer).
+
 ### Security
 - Untrusted-content blocks carry a fresh random id per tool result (`<untrusted_content id="…">…</untrusted_content id="…">`), so a web page or file written in advance cannot contain the real closing tag. Tag-like text inside the content is neutralized in any case, spacing, HTML-entity or full-width form. Chats saved before this change still strip correctly for memory.
+- Chats arriving over Telegram, WhatsApp, Email, Discord or Slack are capped at a configurable permission mode (default Manual).
+- The command safety policy also denies agent commands that write a Run/RunOnce key or the Startup folder.
+- `memory_save` refuses instruction-shaped text, like the automatic memorizers.
 - Docs: a dedicated secondary PC is the intended setup; on a main PC it runs at your own risk.
+
+### Cleanup
+- Removed tracked `.bak` backup files and added `*.bak` to `.gitignore`.
 
 ## v1.0
 
