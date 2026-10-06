@@ -43,7 +43,10 @@ Every denial, pending approval, and resolved approval/deny is logged to
 ## Enabled by default
 
 Unlike `_coding_controller`'s completion gate, this only ever intervenes on
-commands no legitimate coding workflow needs - registry/persistence writes,
+commands no legitimate coding workflow needs - registry/persistence writes
+(including anything naming a `CurrentVersion\Run`/`RunOnce` key or the
+Startup folder, whatever tool writes it - Agent Zero's own start-at-logon
+entry is switched on by the user in Settings instead),
 credential dumping, obfuscated PowerShell, destructive deletes outside the
 workdir, disk/reboot operations, firewall/Defender changes, privilege
 escalation, and account changes. Turn it off entirely via `enforce_policy`
@@ -138,7 +141,8 @@ recommended long-term approach - regex is explicitly called out there as
 insufficient); audited/logged ALLOW decisions, not just denials/approvals;
 tamper-evident/hash-chained audit log; catching native-API
 persistence/destruction in `python`/`nodejs` that never shells out
-(`winreg`, `fs.rmSync`, `ctypes`, ...); a restricted execution broker
+(`winreg` writes are caught only when the source names a Run/RunOnce key or
+the Startup folder; `fs.rmSync`, `ctypes`, ... are not); a restricted execution broker
 running commands under a reduced-privilege token (this is inherently an
 OS-level component, not something a Python plugin can provide - the
 hand-off itself suggests a separate C#/.NET process for this).

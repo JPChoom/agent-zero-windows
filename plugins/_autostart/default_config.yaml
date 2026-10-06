@@ -1,0 +1,4 @@
+# Start at logon has no stored settings: the switch is the per-user Startup
+# entry itself (HKCU\Software\Microsoft\Windows\CurrentVersion\Run,
+# value "AgentZeroForWindows"), managed from Settings > Developer.
+{}

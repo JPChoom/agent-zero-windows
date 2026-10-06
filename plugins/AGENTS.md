@@ -68,6 +68,7 @@ Direct child DOX files:
 | Child | Scope |
 | --- | --- |
 | [_a0_connector/AGENTS.md](_a0_connector/AGENTS.md) | HTTP and WebSocket connector integration with remote tools and runtime bridges. |
+| [_autostart/AGENTS.md](_autostart/AGENTS.md) | Opt-in start at Windows logon via a per-user Startup entry and a no-window launcher. |
 | [_browser/AGENTS.md](_browser/AGENTS.md) | Playwright browser tool, helpers, viewer, and browser panel UI. |
 | [_calendar/AGENTS.md](_calendar/AGENTS.md) | Calendar right-canvas surface over the task scheduler. |
 | [_chat_branching/AGENTS.md](_chat_branching/AGENTS.md) | Chat branching from an existing message. |

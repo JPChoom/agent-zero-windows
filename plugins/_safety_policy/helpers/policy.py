@@ -29,6 +29,11 @@ _DENY_CATEGORIES: dict[str, tuple[str, ...]] = {
     "persistence": (
         r"\b(?:reg(?:\.exe)?\s+(?:add|import)|schtasks|sc(?:\.exe)?\s+create|new-service)\b",
         r"\b(?:new-scheduledtask|register-scheduledtask)\b",
+        # Logon autoruns by path, whatever writes them (Set-ItemProperty,
+        # New-ItemProperty, winreg, a file copied into the Startup folder).
+        # The user turns Agent Zero's own entry on in Settings instead.
+        r"currentversion[\\/]+(?:run|runonce)\b",
+        r"start menu[\\/]+programs[\\/]+startup|shell:startup",
     ),
     "credential_access": (
         r"\b(?:mimikatz|procdump|sekurlsa|credential)\b",

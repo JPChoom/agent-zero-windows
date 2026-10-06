@@ -1,0 +1,48 @@
+<html>
+<head><title>Start at logon</title></head>
+<body>
+<div x-data="{
+    state: null, busy: false, error: '',
+    async call(action) {
+      this.busy = true; this.error = '';
+      try {
+        const api = await import('/js/api.js');
+        const r = await api.callJsonApi('/plugins/_autostart/autostart', { action });
+        this.state = r.status || this.state;
+        if (!r.success) this.error = r.error || 'Failed';
+      } catch (e) { this.error = e?.message || 'Failed'; }
+      finally { this.busy = false; }
+    }
+  }" x-init="call('status')">
+  <div class="section-title">Start at logon</div>
+  <div class="section-description">
+    Starts Agent Zero in the background when you sign in to Windows - no window, no admin rights. It adds one entry to
+    your own Startup list, which you can also see and switch off in Task Manager &gt; Startup apps. Server output goes
+    to <code>logs/autostart.log</code>. If Agent Zero is already running at logon, nothing else is started.
+    Remote access (the tunnel) only starts if you have it configured to.
+  </div>
+
+  <div class="field">
+    <div class="field-label">
+      <div class="field-title">Status</div>
+      <div class="field-description">
+        <span x-show="!state">Checking...</span>
+        <template x-if="state">
+          <span>
+            <span x-text="state.enabled ? 'On - Agent Zero starts at logon.' : 'Off.'"></span>
+            <span x-show="state.disabled_in_task_manager"> It is registered but switched off in Task Manager; turning it on here re-enables it.</span>
+            <span x-show="state.registered && !state.points_here"> The entry points at a different install: <code x-text="state.command"></code>. Turning it on here replaces it.</span>
+            <span x-show="!state.launcher_ok"> The .venv or launcher is missing, so it cannot be turned on.</span>
+          </span>
+        </template>
+        <div x-show="error" style="color: var(--color-error, #c33)" x-text="error"></div>
+      </div>
+    </div>
+    <div class="field-control" style="display:flex;gap:8px">
+      <button class="btn btn-field" :disabled="busy || !state || !state.launcher_ok" x-show="!state || !state.enabled || !state.points_here" @click="call('enable')">Turn on</button>
+      <button class="btn btn-field" :disabled="busy" x-show="state && state.registered" @click="call('disable')">Turn off</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

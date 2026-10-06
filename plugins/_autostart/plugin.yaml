@@ -1,0 +1,11 @@
+name: _autostart
+title: Start at logon
+description: Start Agent Zero in the background when you sign in to Windows (per-user Startup entry, no admin rights, no window).
+version: 1.0.0
+always_enabled: false
+os_support:
+  - windows
+settings_sections:
+  - developer
+per_project_config: false
+per_agent_config: false
