@@ -1,0 +1,11 @@
+name: _windows_intel
+title: Windows Intelligence
+description: Read Windows system state (processes, services, apps, events, ports, registry) with typed, size-capped, read-only queries, and change a few safe per-user settings.
+version: 1.0.0
+always_enabled: false
+os_support:
+  - windows
+settings_sections:
+  - agent
+per_project_config: false
+per_agent_config: false

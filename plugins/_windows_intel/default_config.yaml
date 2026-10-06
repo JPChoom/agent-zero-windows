@@ -1,0 +1,14 @@
+# Rows returned when a query doesn't say, and the most it may ask for.
+default_limit: 50
+max_limit: 500
+
+# Hard cap on the characters of one result (the rest is summarized as
+# "narrow with ..."). Keeps small local models from drowning in a process list.
+max_output_chars: 12000
+
+# Mask password/token/key values in command lines, environment variables,
+# registry values and service paths. Leave on.
+redact_secrets: true
+
+# Seconds before one PowerShell-backed query is abandoned.
+ps_timeout_seconds: 30

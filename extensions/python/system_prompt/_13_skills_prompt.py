@@ -30,6 +30,42 @@ class SkillsPrompt(Extension):
             system_prompt.append(prompt)
 
 
+# Skill families listed as one line instead of one line each (name prefix ->
+# collapsed). The always-on catalog costs prompt tokens on every turn, and the
+# plugin-development family (a0-*) is rarely needed. Collapsed skills are
+# still searchable and loadable by name.
+DEFAULT_COLLAPSE_PREFIXES = ("a0-",)
+MIN_COLLAPSE_COUNT = 3
+
+
+def _collapse_prefixes(agent: Agent) -> tuple[str, ...]:
+    from helpers import plugins
+
+    try:
+        cfg = plugins.get_plugin_config("_skills", agent=agent) or {}
+    except Exception:
+        cfg = {}
+    raw = cfg.get("catalog_collapse_prefixes", DEFAULT_COLLAPSE_PREFIXES)
+    if not isinstance(raw, (list, tuple)):
+        return DEFAULT_COLLAPSE_PREFIXES
+    return tuple(str(p).strip() for p in raw if str(p).strip())
+
+
+def _collapse_prefixed(skills: list, prefixes: tuple[str, ...], lines: list[str]) -> list:
+    """Remove each prefix family from `skills` and add one summary line to `lines`."""
+    remaining = list(skills)
+    for prefix in prefixes:
+        family = [s for s in remaining if s.name.startswith(prefix)]
+        if len(family) < MIN_COLLAPSE_COUNT:
+            continue
+        remaining = [s for s in remaining if s not in family]
+        names = ", ".join(s.name for s in family)
+        lines.append(
+            f"- {prefix}* ({len(family)} skills; search or load by name): {names}"
+        )
+    return remaining
+
+
 @extensible
 async def build_prompt(agent: Agent) -> str:
     # Keyed on profile + project: both feed get_skill_roots()'s search
@@ -42,6 +78,7 @@ async def build_prompt(agent: Agent) -> str:
         cache_key, SKILLS_LIST_TTL_SECONDS, skills_helper.list_skills, agent=agent
     )
     result: list[str] = []
+    available = _collapse_prefixed(available, _collapse_prefixes(agent), result)
     for skill in available:
         name = skill.name.strip().replace("\n", " ")[:100]
         descr = skill.description.replace("\n", " ").strip()
