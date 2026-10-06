@@ -12,7 +12,8 @@
 - `helpers/sources_ps.py` owns the PowerShell runner and the constant scripts (`SCRIPTS`), plus `scan_problems`, the read-only script scan.
 - `helpers/config.py` owns resolved settings (`default_limit`, `max_limit`, `max_output_chars`, `redact_secrets`, `ps_timeout_seconds`).
 - `helpers/sources_local.py` owns the in-process sources (psutil, winreg, win32): system, processes, services, disks, network, ports, windows, env, installed apps, startup, registry, and the registry access policy (`REGISTRY_ALLOW`, `REGISTRY_DENY`).
-- `tools/windows_info.py` owns the agent tool: validate -> kill switch -> audit (registry, env, events, process command lines) -> source in a worker thread with a timeout -> capped text. `prompts/agent.system.tool.windows_info.md` keeps the always-on prompt to one action list; details come from `action=help`.
+- `tools/windows_info.py` owns the agent tool: validate -> kill switch -> audit (registry, env, events, process command lines) -> source in a worker thread with a timeout -> capped text. `prompts/agent.system.tool.windows_info.md` keeps the always-on prompt to one action list (details come from `action=help`) and carries the **Windows routing** rule: windows_info for state -> windows_setting for its settings -> terminal for files/git/installs -> computer_use for app UIs -> desktop_control last.
+- `helpers/settings_catalog.py` owns the `windows_setting` catalog (theme, file_extensions, hidden_files, taskbar_alignment, power_plan, wallpaper) behind a `Backend` (HKCU registry, WM_SETTINGCHANGE/SHChangeNotify refresh, `powercfg.exe` by absolute path, SystemParametersInfo); `tools/windows_setting.py` owns list/get/set.
 
 ## Local Contracts
 
@@ -25,6 +26,8 @@
 - Registry reads: only under `REGISTRY_ALLOW` roots, never paths containing a `REGISTRY_DENY` part (SAM, SECURITY, LSA, credentials, DPAPI Protect, Vault, Cryptography, IdentityCRL, TokenBroker, IntelliForms/Storage2). Values whose names look secret are masked; binary values show size and the first 16 bytes.
 - `windows_info` is listed in `_permissions` `_READ_ONLY_TOOLS` (allowed in Plan mode and capped messaging chats). Its results stay untrusted content (not in `TRUSTED_TOOLS`).
 - Expensive details are fetched only for narrowed queries (service account/binary with `name=`, task info only for the rows shown).
+- `windows_setting` writes only catalog entries, only HKCU (plus `powercfg /setactive` with a GUID taken from `powercfg /list`, and the wallpaper API with an existing image inside the work folder or `usr/uploads`). Values must be in the setting's allowed set. `set` is kill-switch gated, audited before writing, and returns the previous value with the undo call. Never add services, firewall, accounts, Run keys or anything needing administrator to the catalog.
+- Permissions: `windows_setting` `list`/`get` are reads; `set` is execute (asks in Manual, refused in Plan).
 
 ## Work Guidance
 
@@ -32,7 +35,8 @@
 
 ## Verification
 
-- `pytest tests/test_windows_intel.py` (validation matrix and injection payloads, formatter caps, redaction, script scan fixtures, registry allow/deny, tool behaviour, a live PowerShell round trip proving arguments stay data, and a live read-only run of every action).
+- `pytest tests/test_windows_intel.py` (validation matrix and injection payloads, formatter caps, redaction, script scan fixtures, registry allow/deny, tool behaviour, a live PowerShell round trip proving arguments stay data, and a live read-only run of every action); `pytest tests/test_windows_setting.py` (fake backend for writes, live read of every setting).
+- Routing quality: `tests/manual/windows_routing_eval.py --model <LM Studio model>` (manual, needs a local model).
 
 ## Child DOX Index
 

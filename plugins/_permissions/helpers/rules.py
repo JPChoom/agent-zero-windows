@@ -82,6 +82,7 @@ _READ_ACTIONS = {
     "desktop_control": {"focus"},
     "computer_use": {"apps", "windows", "inspect", "screenshot", "status"},
     "skill_learn": {"list"},
+    "windows_setting": {"list", "get"},
 }
 
 # The argument that best identifies what a call will actually do, used as
@@ -93,6 +94,7 @@ _TARGET_ARGS = {
     "ytdlp": ("action", "url"),
     "desktop_control": ("action", "window"),
     "computer_use": ("action", "app", "pid"),
+    "windows_setting": ("action", "setting", "value"),
     "search_engine": ("query",),
     "document_query": ("document",),
     "call_subordinate": ("profile", "message"),
