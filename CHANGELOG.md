@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`).
 
-## Unreleased
+## v1.1
+
+Computer Use, learned skills, auditable memory, Discord and Slack, start at logon, and security hardening.
 
 ### New
 - **Computer Use** plugin: operate Windows apps through their UI Automation tree via trycua's cua-driver, with background input (no mouse movement, no focus steal). Input off by default; hard refusals for sign-in/UAC/password-manager windows, terminals, lock/log-off keys and secret fields; approval before touching windows the agent didn't open.
