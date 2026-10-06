@@ -64,6 +64,12 @@ _EDIT_TOOLS = {
     "office_artifact",
 }
 
+# Tools that always put their own, more specific Approve/Deny card in front
+# of the user (helpers/ask.py). The mode would only add a second, vaguer
+# prompt, so outside plan mode they are allowed through to ask for
+# themselves; rules still apply.
+_SELF_CONFIRMING = {"skill_learn"}
+
 # Per-tool action arguments that flip a normally-editing tool to read-only,
 # so `text_editor(read)` is not treated as a change.
 _READ_ACTIONS = {
@@ -281,6 +287,9 @@ def decide(
                 reason=f"matched {decision} rule {rule.source!r}",
                 matched=rule.source,
             )
+
+    if tool_name in _SELF_CONFIRMING and effect != "read" and mode != "plan":
+        return Verdict("allow", f"{tool_name} asks the user itself")
 
     decision = _MODE_DEFAULTS[mode][effect]
     return Verdict(

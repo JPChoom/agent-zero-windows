@@ -1,29 +1,8 @@
 ### desktop_screenshot
-capture the user's real Windows desktop and look at it
-takes no arguments
-returns the screen resolution and attaches the image for you to see
-
-use when:
-- the user refers to something on their screen ("what does this say", "fix this error")
-- you need to confirm the state of a GUI application before or after acting on it
-- verifying the result of a desktop_control action
-
-notes:
-- this is the live desktop of the signed-in user, not a virtual display
-- it covers every monitor as a single wide image, so the desktop size in the
-  result can be several screens wide
-- coordinates you report or pass to `desktop_control` must be in desktop
-  space (the size stated in the result), not the attached image's size,
-  measured from the top-left of the image
-- do not call it repeatedly in a loop; take one screenshot, act, then take
-  another to verify
-
-example:
+capture the user's real Windows desktop (all monitors as one image) and look at it; no arguments
+use when the user refers to something on screen, or to check a GUI before/after acting
+- coordinates for `desktop_control` are in the desktop size the result states, from the image's top-left, not the image's pixel size
+- one screenshot, act, then one more to verify; never loop it
 ~~~json
-{
-  "thoughts": ["I need to see what is currently on the user's screen."],
-  "headline": "Looking at the desktop",
-  "tool_name": "desktop_screenshot",
-  "tool_args": {}
-}
+{"thoughts": ["Check what is on the user's screen"], "headline": "Looking at the desktop", "tool_name": "desktop_screenshot", "tool_args": {}}
 ~~~
