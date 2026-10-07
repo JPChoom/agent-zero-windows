@@ -2,6 +2,22 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`).
 
+## v1.2
+
+Windows Intelligence: the agent understands the Windows machine it runs on.
+
+### New
+- **`windows_info`**: 14 typed, read-only queries - system (+GPU), processes, services, apps (+Store), startup, scheduled tasks, Event Viewer, devices, disks (+health), network, ports, open windows, registry, environment - with compact, size-capped, secret-masked output. Most run in-process in well under a second; PowerShell only for events, tasks, Store apps, devices, GPU and disk health.
+- **`windows_setting`**: theme, file extensions, hidden files, taskbar alignment, power plan and wallpaper, each change audited, asked about in Manual mode and reported with the call to undo it.
+- **Windows routing rule** in the system prompt: look with `windows_info`, change with `windows_setting` or the terminal, use `computer_use` only for app UIs and `desktop_control` last.
+- Manual routing evaluation (`tests/manual/windows_routing_eval.py`) against a local model. With qwen3.8-27b in LM Studio, the right first tool was chosen for 23 of 24 Windows tasks, against 5 of 24 without these tools (the model otherwise improvised PowerShell for nearly everything, including settings changes).
+
+### Security
+- PowerShell queries are repo constants, scanned so they can only use allowlisted read-only cmdlets; arguments travel as JSON data, never inside the script or command line. Registry reads are limited to an allowlist and never touch credential stores. Administrator-only data (such as the Security log) is reported as such, never worked around.
+
+### Changed
+- The always-on skills catalog lists the `a0-*` plugin-development skills as one line (still searchable and loadable), and the desktop tool prompts are shorter, keeping the default prompt under 10,000 tokens.
+
 ## v1.1
 
 Computer Use, learned skills, auditable memory, Discord and Slack, start at logon, and security hardening.

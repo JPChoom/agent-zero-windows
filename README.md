@@ -25,6 +25,8 @@ Other projects in this space put the weight elsewhere: some focus on being reach
 
 **Runs on Windows.** The agent works in PowerShell and Windows paths, and its prompt is filled in with your real install location instead of a fixed folder.
 
+**Understands Windows (Windows Intelligence).** Instead of improvising PowerShell, the agent asks typed, read-only questions - processes, services, installed apps, what starts at sign-in, scheduled tasks, Event Viewer errors, devices, disks, network, ports, open windows, registry, environment - and gets compact answers with secrets masked. A small set of safe per-user settings (dark/light theme, file extensions, hidden files, taskbar alignment, power plan, wallpaper) can be changed directly, each change reversible and asked about first. A routing rule tells the agent to look first, change through these tools or the terminal, and drive app windows only when there is no other way.
+
 **Operates Windows apps (Computer Use).** With trycua's open-source [cua-driver](https://github.com/trycua/cua) installed, the agent reads apps through their accessibility tree and clicks or types **in the background** - your mouse doesn't move and focus isn't taken. Input is off by default; sign-in, UAC and password-manager windows, terminals and password fields are always refused, and touching a window the agent didn't open asks you first.
 
 **Learns skills, with your approval.** After a long task that worked, the agent offers to save the procedure as a skill. Drafts are checked, shown to you in full, and only become active when you approve - in every mode, Bypass included. Updates create a new version and keep the old one.
@@ -53,7 +55,7 @@ Other projects in this space put the weight elsewhere: some focus on being reach
 - Floating sidebar that slides away, floating right-hand canvas (Files, Browser, Desktop, Editor, Calendar), chat bubbles, accent-styled buttons and toggles.
 - **Recently deleted** chats: deleting a chat moves it to a trash for 30 days, with Undo and Restore.
 
-**Bundled plugins added to the usual set:** Computer Use, Discord, Slack, Start at logon, Calendar, Personalities, Context Usage, Hardened Terminal Access (disabled by default), and Desktop (live view of your Windows desktop). Discord and Slack need their library installed once (see each plugin's README); Computer Use needs the cua-driver download described in `plugins/_computer_use/README.md`.
+**Bundled plugins added to the usual set:** Windows Intelligence, Computer Use, Discord, Slack, Start at logon, Calendar, Personalities, Context Usage, Hardened Terminal Access (disabled by default), and Desktop (live view of your Windows desktop). Discord and Slack need their library installed once (see each plugin's README); Computer Use needs the cua-driver download described in `plugins/_computer_use/README.md`.
 
 ## Screenshots
 

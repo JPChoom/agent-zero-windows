@@ -11,6 +11,7 @@
 - Shared fixtures should be added only when multiple tests need them.
 - `conftest.py` (autouse) pins the per-chat permission default to `auto` and clears in-memory modes, so tests that run tools through the real `tool_execute_before` chain don't wait on approval prompts or depend on the developer's `usr/settings.json`. Permission tests patch `mode_state` explicitly (their patches win).
 - Runtime artifacts created during tests should use pytest temporary directories or existing isolated test helpers.
+- `tests/manual/` holds scripts that need a live local model or other local services (e.g. `windows_routing_eval.py`). They are not collected by pytest (no `test_` prefix) and are run by hand.
 
 ## Local Contracts
 
