@@ -52,7 +52,7 @@ def pending_dir(name: str = "") -> Path:
 def validate_name(name: str) -> str:
     name = str(name or "").strip().lower().replace(" ", "-")
     if not NAME_RE.match(name):
-        raise ValueError("name must be 3-64 characters of lowercase letters, digits and hyphens, e.g. 'export-blender-step'.")
+        raise ValueError("name must be 3-64 characters of lowercase letters, digits and hyphens, e.g. 'export-monthly-report'.")
     return name
 
 
