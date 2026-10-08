@@ -1,4 +1,4 @@
-<html>
+<html class="perm-unlock-modal">
 <head>
   <title>Unlock Bypass permissions</title>
   <script type="module">
@@ -42,7 +42,8 @@
   </div>
 
   <style>
-    .perm-unlock { display: flex; flex-direction: column; gap: 10px; max-width: 460px; }
+    .modal-inner.perm-unlock-modal { width: min(92vw, 520px); }
+    .perm-unlock { display: flex; flex-direction: column; gap: 10px; }
     .perm-unlock-body { display: flex; flex-direction: column; gap: 10px; }
     .perm-unlock-warn { display: flex; gap: 8px; font-size: 0.85rem; opacity: 0.85; }
     .perm-unlock-warn .material-symbols-outlined { color: #ef4444; }
