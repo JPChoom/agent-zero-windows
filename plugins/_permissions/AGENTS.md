@@ -29,7 +29,7 @@
 
 ## Verification
 
-- `pytest tests/test_permissions_api.py tests/test_permissions_bypass_lock.py tests/test_permissions_gate.py`
+- `pytest tests/test_permissions_api.py tests/test_permissions_bypass_lock.py tests/test_permissions_gate.py tests/test_tool_gates_fail_loud.py` (the last one goes through the real extension dispatcher; the gate tests call `execute()` directly and cannot see a swallowed refusal).
 
 ## Child DOX Index
 

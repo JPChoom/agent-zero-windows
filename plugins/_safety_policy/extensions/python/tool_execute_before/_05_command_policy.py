@@ -46,6 +46,7 @@ def _format_network_destination_note(decision) -> str:
 
 
 class SafetyCommandPolicy(Extension):
+    FAIL_LOUD = True  # its refusal is a raised exception; isolating it would let the command run
 
     async def execute(self, tool_name: str = "", tool_args: dict | None = None, **kwargs):
         if tool_name != "code_execution_tool" or not self.agent or not tool_args:

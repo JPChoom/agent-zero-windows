@@ -39,6 +39,7 @@
 - Banner/card fields may include `title`, `html`, `description`, `thumbnail`, `icon`, `cta_text`, `cta_action`, and `dismissible` depending on type.
 - Community discovery cards should use `type: "feature"`; reserve `hero` cards for core system features.
 - Supported discovery CTA actions are `open-plugin-config:<plugin_folder_name>`, `open-plugin-hub`, and `open-url:<url>`.
+- Plugin tool gates (`tool_execute_before`/`tool_execute_after` extensions that refuse by raising, e.g. `_safety_policy`, `_permissions`, `_coding_controller`) must set `FAIL_LOUD = True`; the dispatcher otherwise swallows the refusal and the tool runs. `tests/test_tool_gates_fail_loud.py` enforces this.
 - Plugin deletion or disablement should not leave unmanaged services, symlinks, or files outside plugin-owned paths unless explicitly documented with cleanup.
 - Third-party installs (`_plugin_installer`) land with a `.review-pending` marker (`helpers/plugins.py REVIEW_PENDING_FILE_NAME`): the plugin counts as disabled even with `always_enabled`, its `hooks.py` is never imported, and its API/WebSocket handlers are not routed until the user enables it globally, which runs the deferred install hook and removes the marker.
 

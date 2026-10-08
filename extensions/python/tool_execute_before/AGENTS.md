@@ -14,6 +14,7 @@
 - Unmask only values required by the target tool.
 - Preserve safety checks and do not expose secrets to logs or unrelated tools.
 - Keep ordering stable where replacement must occur before unmasking or execution.
+- A gate that refuses by raising (here or in a plugin, on `tool_execute_before` or `tool_execute_after`) must set `FAIL_LOUD = True`. The dispatcher isolates extensions by default and swallows their exceptions, so without it the refusal is only logged and the tool runs anyway.
 
 ## Work Guidance
 
@@ -22,6 +23,7 @@
 ## Verification
 
 - Smoke-test tool execution with masked secret arguments and prior-output references after changes.
+- `pytest tests/test_tool_gates_fail_loud.py` (refusals reach the caller through the real dispatcher; every raising gate is `FAIL_LOUD`).
 
 ## Child DOX Index
 

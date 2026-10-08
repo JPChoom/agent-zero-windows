@@ -25,6 +25,7 @@ from plugins._coding_controller.helpers.config import get_config, get_config_for
 
 
 class CodingCompletionGate(Extension):
+    FAIL_LOUD = True  # it blocks a premature "done" by raising; isolating it would let the response through
 
     async def execute(self, response=None, tool_name: str = "", **kwargs):
         if tool_name != "response" or not self.agent or response is None:

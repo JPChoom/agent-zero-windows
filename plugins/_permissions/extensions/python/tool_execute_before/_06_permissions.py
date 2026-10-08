@@ -51,6 +51,7 @@ def _references_protected_target(tool_args) -> str:
 
 
 class PermissionGate(Extension):
+    FAIL_LOUD = True  # deny, Plan mode and a Deny click are raised exceptions; isolating them would let the tool run
 
     async def execute(self, tool_name: str = "", tool_args: dict | None = None, **kwargs):
         if not tool_name or not self.agent:
