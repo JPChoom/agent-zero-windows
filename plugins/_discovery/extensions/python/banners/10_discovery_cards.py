@@ -57,11 +57,14 @@ class DiscoveryCardsExtension(Extension):
 
     async def execute(self, banners: list = [], frontend_context: dict = {}, **kwargs):
         # Optional logic: only show specific cards if plugins aren't already configured.
-        # Telegram, Email, Whatsapp are built-in, so we only need to check if they've been configured.
+        # Telegram, Email, WhatsApp, Discord and Slack are built-in channels, so we only need to
+        # check if they've been configured.
 
         telegram_config = plugins.get_plugin_config("_telegram_integration") or {}
         email_config = plugins.get_plugin_config("_email_integration") or {}
         whatsapp_config = plugins.get_plugin_config("_whatsapp_integration") or {}
+        discord_bots = (plugins.get_plugin_config("_discord_integration") or {}).get("bots") or []
+        slack_bots = (plugins.get_plugin_config("_slack_integration") or {}).get("bots") or []
         oauth_summary = self._oauth_summary()
         oauth_accounts = oauth_summary.get("oauth_accounts") if isinstance(oauth_summary, dict) else {}
         connected_count = int(oauth_accounts.get("connected_count") or 0) if isinstance(oauth_accounts, dict) else 0
@@ -132,7 +135,37 @@ class DiscoveryCardsExtension(Extension):
                 "show_in_onboarding": True
             })
 
-        # 5. OAuth account providers
+        # 5. Discord
+        if not any((bot or {}).get("token") for bot in discord_bots):
+            banners.append({
+                "id": "discovery-discord",
+                "type": "feature",
+                "title": "Discord",
+                "description": "Chat with Agent Zero in Discord DMs and servers.",
+                "icon": "forum",
+                "cta_text": "Connect",
+                "cta_action": "open-plugin-config:_discord_integration",
+                "dismissible": True,
+                "priority": 50,
+                "show_in_onboarding": True
+            })
+
+        # 6. Slack
+        if not any((bot or {}).get("bot_token") and (bot or {}).get("app_token") for bot in slack_bots):
+            banners.append({
+                "id": "discovery-slack",
+                "type": "feature",
+                "title": "Slack",
+                "description": "Chat with Agent Zero in Slack DMs and threads.",
+                "icon": "tag",
+                "cta_text": "Connect",
+                "cta_action": "open-plugin-config:_slack_integration",
+                "dismissible": True,
+                "priority": 50,
+                "show_in_onboarding": True
+            })
+
+        # 7. OAuth account providers
         oauth_card = {
             "id": "discovery-oauth-accounts",
             "type": "hero",
