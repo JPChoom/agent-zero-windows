@@ -66,12 +66,28 @@ const model = {
     this.dragDropOverlayVisible = false;
   },
 
+  // Areas marked data-own-drop (the File Browser) handle drops themselves.
+  // The full-screen "drop to attach" overlay sits above every window, so the
+  // pointer position decides, not the event target (which may be the overlay).
+  ownDropRegionAt(e) {
+    for (const el of document.querySelectorAll("[data-own-drop]")) {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+        return el;
+      }
+    }
+    return null;
+  },
+
+  // Only files dragged in from the computer can be attached; drags inside the
+  // page (e.g. moving rows in the File Browser) never show the overlay.
+  isFileDrag(e) {
+    return Array.from(e.dataTransfer?.types || []).includes("Files");
+  },
+
   // Setup drag and drop event handlers
   setupDragDropHandlers() {
-    console.log("Setting up drag and drop handlers...");
-    let dragCounter = 0;
-
-    // Prevent default drag behaviors
+    // Prevent the browser from opening dropped files
     ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
       document.addEventListener(
         eventName,
@@ -83,28 +99,23 @@ const model = {
       );
     });
 
-    // Handle drag enter
-    document.addEventListener(
-      "dragenter",
-      (e) => {
-        console.log("Drag enter detected");
-        dragCounter++;
-        if (dragCounter === 1) {
-          console.log("Showing drag drop overlay");
-          this.showDragDropOverlay();
-        }
-      },
-      false
-    );
+    // Show the overlay while files are over the page, except over areas that
+    // take their own drops.
+    const updateOverlay = (e) => {
+      if (!this.isFileDrag(e) || this.ownDropRegionAt(e)) {
+        if (this.dragDropOverlayVisible) this.hideDragDropOverlay();
+        return;
+      }
+      if (!this.dragDropOverlayVisible) this.showDragDropOverlay();
+    };
+    document.addEventListener("dragenter", updateOverlay, false);
+    document.addEventListener("dragover", updateOverlay, false);
 
-    // Handle drag leave
+    // Leaving the window (no related target) hides it
     document.addEventListener(
       "dragleave",
       (e) => {
-        dragCounter--;
-        if (dragCounter === 0) {
-          this.hideDragDropOverlay();
-        }
+        if (!e.relatedTarget) this.hideDragDropOverlay();
       },
       false
     );
@@ -113,10 +124,9 @@ const model = {
     document.addEventListener(
       "drop",
       async (e) => {
-        const dataTransfer = e.dataTransfer;
-        console.log("Drop detected with files:", dataTransfer?.files?.length || 0);
-        dragCounter = 0;
         this.hideDragDropOverlay();
+        if (!this.isFileDrag(e) || this.ownDropRegionAt(e)) return;
+        const dataTransfer = e.dataTransfer;
 
         let files = [];
         try {

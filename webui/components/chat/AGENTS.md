@@ -16,6 +16,7 @@
 ## Local Contracts
 
 - Preserve Store Gating for all store-backed chat components.
+- Page-wide drag/drop (`attachments/attachmentsStore.js`) only reacts to files dragged in from the computer (`dataTransfer.types` contains `Files`), and never where the pointer is over an element marked `data-own-drop` (the File Browser): the full-screen overlay sits above every window, so the pointer position decides, not the event target. Mark any future drop zone `data-own-drop`.
 - Use shared API, WebSocket, notification, and attachment helpers where available.
 - Do not bypass CSRF or WebSocket state-sync expectations.
 - The shared composer can be mounted on the Welcome screen with no selected chat; sending from that state must create and select a chat context before dispatch.

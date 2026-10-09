@@ -502,8 +502,15 @@ const model = {
     this.savePrefs();
   },
 
+  // The browser can be mounted twice (the floating window and a hidden canvas
+  // panel). Use the visible one, preferring the floating window.
+  rootElement() {
+    const visible = [...document.querySelectorAll(".fb")].filter((el) => el.getClientRects().length);
+    return visible.find((el) => el.closest(".modal-inner")) || visible[0] || null;
+  },
+
   isNarrow() {
-    return (document.querySelector(".fb")?.clientWidth || 1000) <= 520;
+    return (this.rootElement()?.clientWidth || 1000) <= 520;
   },
 
   // On narrow screens the navigation pane overlays the list; close it after a pick.
@@ -775,7 +782,7 @@ const model = {
     if (!entry) this.clearSelection();
     // Positioned inside .fb (the draggable modal is transformed, so fixed
     // coordinates would be offset); kept within its bounds.
-    const box = (event.currentTarget?.closest?.(".fb") || document.querySelector(".fb"))?.getBoundingClientRect();
+    const box = (event.currentTarget?.closest?.(".fb") || this.rootElement())?.getBoundingClientRect();
     const width = 240;
     const height = entry ? 400 : 290;
     const left = box ? event.clientX - box.left : event.clientX;
@@ -1299,7 +1306,7 @@ const model = {
   // modal, keys pressed with nothing focused still reach it (but never steal
   // a text selection's Ctrl+C or keys typed elsewhere).
   onWindowKeydown(event) {
-    const root = document.querySelector(".fb");
+    const root = this.rootElement();
     if (!root || event.defaultPrevented || root.contains(event.target)) return;
     if (event.target !== document.body && event.target !== document.documentElement) return;
     if (String(window.getSelection?.() || "")) return;
@@ -1337,13 +1344,13 @@ const model = {
     requestAnimationFrame(() => {
       const active = document.activeElement;
       if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) && active.closest(".fb")) return;
-      document.querySelector(".fb")?.focus({ preventScroll: true });
+      this.rootElement()?.focus({ preventScroll: true });
     });
   },
 
   scrollIntoView(path) {
     requestAnimationFrame(() => {
-      const row = document.querySelector(`.fb-row[data-path="${CSS.escape(path)}"]`);
+      const row = this.rootElement()?.querySelector(`.fb-row[data-path="${CSS.escape(path)}"]`);
       row?.scrollIntoView({ block: "nearest" });
     });
   },

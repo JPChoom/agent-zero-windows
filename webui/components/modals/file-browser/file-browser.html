@@ -24,7 +24,7 @@
     x-destroy="$store.fileBrowser.onUnmount(xAttrs($el) || {})"
   >
     <template x-if="$store.fileBrowser">
-      <div class="fb" tabindex="0" x-data="{ get fb() { return $store.fileBrowser } }"
+      <div class="fb" tabindex="0" data-own-drop x-data="{ get fb() { return $store.fileBrowser } }"
            @keydown="fb.onKeydown($event)" @keydown.window="fb.onWindowKeydown($event)" @click="fb.menu = null">
 
         <!-- Navigation bar -->

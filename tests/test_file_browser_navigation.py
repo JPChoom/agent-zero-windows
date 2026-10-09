@@ -146,3 +146,16 @@ def test_file_browser_folder_drag_and_drop_contract() -> None:
     assert 'dt.setData("DownloadURL"' in store  # drag out to the desktop (Chromium)
     assert ':draggable="!fb.isPickerMode()"' in html
     assert "fb.onRowDrop($event, entry)" in html
+
+
+def test_chat_attachment_drop_stays_out_of_the_file_browser() -> None:
+    html = read("webui", "components", "modals", "file-browser", "file-browser.html")
+    store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
+    attachments = read("webui", "components", "chat", "attachments", "attachmentsStore.js")
+
+    assert 'class="fb" tabindex="0" data-own-drop' in html
+    assert 'document.querySelectorAll("[data-own-drop]")' in attachments
+    assert "if (!this.isFileDrag(e) || this.ownDropRegionAt(e)) return;" in attachments  # drop
+    # Two mounted copies (window + hidden canvas): always use the visible one.
+    assert 'document.querySelector(".fb")' not in store
+    assert "rootElement()" in store
