@@ -37,6 +37,8 @@ Other projects in this space put the weight elsewhere: some focus on being reach
 
 **Start at logon** (optional): one per-user Startup entry starts Agent Zero in the background, without a window.
 
+**Updates from inside the app.** *Settings > Check for updates* shows the newest release of this fork and installs it with one click: it fast-forwards your git checkout to the release, installs new packages if needed, and keeps the previous version for a one-click roll back. It refuses instead of overwriting anything you changed. A restart keeps a running Cloudflare Remote Control tunnel at the same address.
+
 **Security hardening**
 - **Tunnel IP allowlist.** Remote access through a tunnel is default-deny: only addresses you list can sign in. The check ignores proxy headers, so a tunnel client is never mistaken for "local".
 - **Locked Bypass mode.** The "Bypass permissions" mode needs its own password (separate from the login), expires automatically (configurable in *Settings > Security*), and is reset to the safest mode on every restart, new chat and project switch.

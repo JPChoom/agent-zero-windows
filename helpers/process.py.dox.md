@@ -25,6 +25,8 @@
 - Observed side-effect areas: subprocess/runtime control.
 - Imported dependency areas include: `helpers`, `helpers.print_style`, `os`, `sys`.
 
+- `reload()` on a native install first hands a running Cloudflare tunnel to the next process (`TunnelManager.write_handover`, adopted in `run_ui.adopt_tunnel_handover`), then re-executes itself with `os.execv`. The tunnel is a child process that outlives the restart, so the remote address keeps working. The Flask session key is random per process, so users sign in again.
+
 ## Key Concepts
 
 - Important called helpers/classes observed in the source: `stop_server`, `runtime.is_dockerized`, `PrintStyle.standard`, `os.execv`, `sys.exit`, `_server.shutdown`, `exit_process`, `restart_process`.

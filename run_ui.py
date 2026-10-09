@@ -18,8 +18,19 @@ def run():
     PrintStyle().print("Initializing Agent Zero components...")
     init_a0()
 
+    adopt_tunnel_handover(port)
+
     PrintStyle().print("Starting UI/API server...")
     start_web_server(server_runtime, host, port)
+
+
+def adopt_tunnel_handover(port: int) -> None:
+    try:
+        from helpers.tunnel_manager import TunnelManager
+
+        TunnelManager.get_instance().adopt_handover(port)
+    except Exception as e:
+        PrintStyle.warning(f"Could not take over the previous Remote Control tunnel: {e}")
 
 
 def run_migration_checks() -> None:

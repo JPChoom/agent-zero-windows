@@ -29,6 +29,8 @@
 - Observed side-effect areas: tunnel state.
 - Imported dependency areas include: `collections`, `flaredantic`, `helpers.cloudflare_tunnel`, `helpers.microsoft_tunnel`, `helpers.print_style`, `helpers.serveo_tunnel`, `helpers.tailscale_tunnel`, `helpers.tunnel_common`, `threading`, `time`.
 
+- Restart hand-over: `write_handover(port)` records a running cloudflared tunnel (pid, psutil create time, URL, port) in `usr/tunnel_handover.json`; `adopt_handover(port)` (called once at startup from `run_ui.py`) deletes the record and adopts the tunnel as `AdoptedTunnel` only if the process is alive, has the same create time (no pid reuse), is named cloudflared and forwards to `localhost:<port>`. `AdoptedTunnel.stop()` terminates only that same process. Only `HANDOVER_PROVIDERS` (cloudflared) are handed over: it was verified to keep serving after its parent exits.
+
 ## Key Concepts
 
 - Important called helpers/classes observed in the source: `strip.lower`, `threading.Lock`, `join`, `ValueError`, `deque`, `self.notifications.clear`, `ServeoTunnelHelper`, `self._ensure_subscribed`, `strip`, `notifier.subscribe`, `CloudflareTunnel`, `MicrosoftDevTunnel`, `TailscaleTunnel`, `normalize_provider`, `threading.Thread`, `tunnel_thread.start`, `cls`, `event_value`, `PrintStyle.error`, `self._append_notification`.

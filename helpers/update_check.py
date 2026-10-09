@@ -1,19 +1,21 @@
-from helpers import git, runtime
-import hashlib
+from helpers import windows_update
 
 
-async def check_version():
-    import httpx
-
-    current_version = git.get_version()
-    if not git.is_official_agent_zero_repo():
-        current_version = "fork"
-
-    anonymized_id = hashlib.sha256(runtime.get_persistent_id().encode()).hexdigest()[:20]
-
-    url = "https://api.agent-zero.ai/a0-update-check"
-    payload = {"current_version": current_version, "anonymized_id": anonymized_id}
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload)
-        version = response.json()
-    return version
+async def check_version() -> dict:
+    """Notification payload when a newer Agent Zero for Windows release is
+    published on GitHub. Nothing about this install is sent."""
+    result = await windows_update.check()
+    if not result.get("update_available"):
+        return {}
+    latest = result["latest"]
+    return {
+        "notification": {
+            "id": f"update_check_{latest['tag']}",
+            "group": "update_check",
+            "type": "info",
+            "title": f"Agent Zero for Windows {latest['tag']} is available",
+            "message": f"You have {result.get('current_version') or 'an older version'}. "
+                       "Open Settings > Check for updates to review and install it.",
+            "display_time": 10,
+        }
+    }

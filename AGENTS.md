@@ -144,8 +144,9 @@ Key Files:
 - Cleanup rule: Plugins should not permanently modify the system in ways that outlive the plugin. Deleting a plugin should not leave behind symlinks, unmanaged services, or stray files outside plugin-owned paths unless the user explicitly requested that behavior.
 
 ### Releases
-- Versions are annotated git tags `vX.Y` on `main` (first release: `v1.0`). The WebUI version label is built from `git describe` (`helpers/git.py`): branch initial + nearest tag (+ commits since it on non-`main` branches), e.g. `M v1.0`.
+- Versions are annotated git tags `vX.Y` or `vX.Y.Z` (patch releases) on `main` (first release: `v1.0`). The WebUI version label is built from `git describe` (`helpers/git.py`): branch initial + nearest tag (+ commits since it on non-`main` branches), e.g. `M v1.0`.
 - There is no publishing automation: upstream's Docker publish, release-note and stale-issue workflows were removed. Releases are tagged and published manually.
+- Native installs update themselves from the latest GitHub Release of `JPChoom/agent-zero-windows` (`helpers/windows_update.py`, Settings > Check for updates). Every release tag needs a published, non-draft, non-pre-release GitHub Release, or installs will not see it.
 
 ### Lifecycle Synchronization
 | Action | Backend Extension | Frontend Lifecycle |

@@ -24,7 +24,20 @@ def reload():
     if runtime.is_dockerized():
         exit_process()
     else:
+        _hand_over_tunnel()
         restart_process()
+
+
+def _hand_over_tunnel():
+    # The tunnel is a child of this process and outlives it; record it so the
+    # restarted server adopts it and the remote address keeps working.
+    try:
+        from helpers.tunnel_manager import TunnelManager
+
+        if TunnelManager.get_instance().write_handover(runtime.get_web_ui_port()):
+            PrintStyle.standard("Handing the Remote Control tunnel over to the restarted server...")
+    except Exception as e:
+        PrintStyle.warning(f"Could not hand over the tunnel: {e}")
 
 def restart_process():
     PrintStyle.standard("Restarting process...")

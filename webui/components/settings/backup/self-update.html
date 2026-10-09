@@ -3,6 +3,7 @@
     <title>Self Update</title>
     <script type="module">
       import { store } from "/components/settings/external/self-update-store.js";
+      import { store as windowsUpdate } from "/components/settings/external/windows-update-store.js";
     </script>
   </head>
 
@@ -18,6 +19,7 @@
           Update Agent Zero deliberately, with a backup path available before anything changes.
         </div>
 
+        <template x-if="$store.settings.additional?.is_dockerized">
         <div class="settings-update-card"
              :class="{'settings-update-card-attention': $store.settings.hasUpdateAttention}">
           <div class="settings-update-card-icon" aria-hidden="true">
@@ -27,31 +29,131 @@
           <div class="settings-update-card-copy">
             <div class="settings-update-card-title" x-text="$store.settings.updateAttentionTitle"></div>
             <div class="settings-update-card-message" x-text="$store.settings.updateAttentionMessage"></div>
-            <template x-if="!$store.settings.additional?.is_dockerized">
-              <div class="settings-update-card-message">
-                Self-update is currently available only in dockerized installs.
-              </div>
-            </template>
             <div class="settings-update-card-meta">
               <span class="settings-update-card-badge" x-text="$store.settings.updateAttentionLabel"></span>
             </div>
           </div>
           <div class="settings-update-card-actions">
-            <button
-              class="btn btn-field"
-              @click="$store.selfUpdateStore.openModal()"
-              :disabled="!$store.settings.additional?.is_dockerized"
-            >
-              Review Update
-            </button>
+            <button class="btn btn-field" @click="$store.selfUpdateStore.openModal()">Review Update</button>
           </div>
         </div>
+        </template>
+
+        <template x-if="!$store.settings.additional?.is_dockerized && $store.windowsUpdate">
+        <div x-init="$store.windowsUpdate.refresh()">
+          <div class="settings-update-card"
+               :class="{'settings-update-card-attention': $store.windowsUpdate.updateAvailable || $store.windowsUpdate.info?.restart_pending}">
+            <div class="settings-update-card-icon" aria-hidden="true">
+              <span class="material-symbols-outlined"
+                    x-text="$store.windowsUpdate.updateAvailable ? 'release_alert' : 'system_update_alt'"></span>
+            </div>
+            <div class="settings-update-card-copy">
+              <template x-if="!$store.windowsUpdate.info">
+                <div class="settings-update-card-message">Checking GitHub for releases...</div>
+              </template>
+              <template x-if="$store.windowsUpdate.info">
+                <div>
+                  <div class="settings-update-card-title"
+                       x-text="$store.windowsUpdate.info.restart_pending ? 'Restart to finish updating'
+                              : $store.windowsUpdate.updateAvailable ? $store.windowsUpdate.info.latest.name
+                              : 'Agent Zero for Windows is up to date'"></div>
+                  <div class="settings-update-card-message">
+                    Installed: <code x-text="$store.windowsUpdate.info.current_describe || $store.windowsUpdate.info.current_version || 'unknown'"></code>
+                    <template x-if="$store.windowsUpdate.info.latest">
+                      <span> &middot; Latest release: <code x-text="$store.windowsUpdate.info.latest.tag"></code></span>
+                    </template>
+                  </div>
+                  <div class="settings-update-card-message" x-show="$store.windowsUpdate.info.check_failed">
+                    Could not reach GitHub to check for releases.
+                  </div>
+                  <div class="settings-update-card-message" x-show="$store.windowsUpdate.info.note" x-text="$store.windowsUpdate.info.note"></div>
+                  <template x-if="$store.windowsUpdate.updateAvailable && $store.windowsUpdate.info.blockers.length">
+                    <div class="settings-update-card-message windows-update-error">
+                      <span>Can't update automatically: </span><span x-text="$store.windowsUpdate.info.blockers.join(' ')"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div class="settings-update-card-message windows-update-ok" x-show="$store.windowsUpdate.done" x-text="$store.windowsUpdate.done"></div>
+              <div class="settings-update-card-message windows-update-error" x-show="$store.windowsUpdate.error" x-text="$store.windowsUpdate.error"></div>
+            </div>
+            <div class="settings-update-card-actions windows-update-actions">
+              <button class="btn btn-field" :disabled="$store.windowsUpdate.busy" @click="$store.windowsUpdate.refresh(true)">Check now</button>
+              <button class="btn btn-ok" x-show="$store.windowsUpdate.info?.can_apply && !$store.windowsUpdate.info?.restart_pending"
+                      :disabled="$store.windowsUpdate.busy" @click="$store.windowsUpdate.confirming = 'apply'"
+                      x-text="'Update to ' + ($store.windowsUpdate.info?.latest?.tag || '')"></button>
+              <button class="btn btn-ok" x-show="$store.windowsUpdate.info?.restart_pending"
+                      :disabled="$store.windowsUpdate.busy" @click="$store.windowsUpdate.confirming = 'restart'">Restart now</button>
+            </div>
+          </div>
+
+          <template x-if="$store.windowsUpdate.confirming">
+            <div class="windows-update-confirm">
+              <div x-show="$store.windowsUpdate.confirming === 'apply'">
+                Update to <code x-text="$store.windowsUpdate.info?.latest?.tag"></code>? Your files in <code>usr/</code> are not touched,
+                and the previous version is kept so you can roll back. New packages are installed if the release needs them.
+              </div>
+              <div x-show="$store.windowsUpdate.confirming === 'rollback'">
+                Roll back to <code x-text="$store.windowsUpdate.info?.rollback?.to_version"></code>? A restart is needed afterwards.
+              </div>
+              <div x-show="$store.windowsUpdate.confirming === 'restart'">
+                Restart Agent Zero now? Running chats stop and everyone has to sign in again. A Cloudflare Remote Control tunnel
+                is kept, at the same address; other tunnel types end and must be started again from this PC.
+              </div>
+              <div class="windows-update-confirm-actions">
+                <button class="btn btn-cancel" @click="$store.windowsUpdate.confirming = ''">Cancel</button>
+                <button class="btn btn-ok" :disabled="$store.windowsUpdate.busy"
+                        @click="$store.windowsUpdate.confirming === 'apply' ? $store.windowsUpdate.apply()
+                                : $store.windowsUpdate.confirming === 'rollback' ? $store.windowsUpdate.rollback()
+                                : $store.windowsUpdate.restart()"
+                        x-text="$store.windowsUpdate.busy ? 'Working...' : 'Continue'"></button>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="$store.windowsUpdate.info?.latest?.notes">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Release notes</div>
+                <div class="field-description">
+                  <a :href="$store.windowsUpdate.info.latest.url" target="_blank" rel="noopener noreferrer"
+                     x-text="$store.windowsUpdate.info.latest.name"></a>
+                </div>
+              </div>
+              <div class="field-control">
+                <button class="btn btn-field" @click="$store.windowsUpdate.showNotes = !$store.windowsUpdate.showNotes"
+                        x-text="$store.windowsUpdate.showNotes ? 'Hide' : 'Show'"></button>
+              </div>
+            </div>
+          </template>
+          <pre class="windows-update-notes" x-show="$store.windowsUpdate.showNotes" x-text="$store.windowsUpdate.info?.latest?.notes"></pre>
+
+          <template x-if="$store.windowsUpdate.info?.rollback">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Roll back</div>
+                <div class="field-description">
+                  Return to the version this copy had before the last update
+                  (<code x-text="$store.windowsUpdate.info.rollback.to_version"></code>).
+                </div>
+              </div>
+              <div class="field-control">
+                <button class="btn btn-field" :disabled="$store.windowsUpdate.busy"
+                        @click="$store.windowsUpdate.confirming = 'rollback'">Roll back</button>
+              </div>
+            </div>
+          </template>
+        </div>
+        </template>
 
         <div class="field">
           <div class="field-label">
             <div class="field-title">Update notifications</div>
             <div class="field-description">
               Check for newer releases quietly. Toasts are intentionally rate-limited; the update status here stays visible.
+              <template x-if="!$store.settings.additional?.is_dockerized">
+                <span>Checks the latest release on GitHub (<code>JPChoom/agent-zero-windows</code>); nothing about this install is sent.</span>
+              </template>
             </div>
           </div>
           <div class="field-control">
@@ -64,5 +166,16 @@
         </div>
       </template>
     </div>
+    <style>
+      .windows-update-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+      .windows-update-ok { color: #22c55e; }
+      .windows-update-error { color: var(--color-error, #ef4444); }
+      .windows-update-confirm { margin: 10px 0; padding: 12px; border-radius: 8px; font-size: 0.88rem; line-height: 1.45;
+        border: 1px solid color-mix(in srgb, var(--color-primary, #3b82f6) 45%, transparent);
+        background: color-mix(in srgb, var(--color-primary, #3b82f6) 8%, transparent); }
+      .windows-update-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+      .windows-update-notes { font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto;
+        padding: 10px; border-radius: 8px; background: var(--color-input, rgba(127,127,127,0.1)); }
+    </style>
   </body>
 </html>

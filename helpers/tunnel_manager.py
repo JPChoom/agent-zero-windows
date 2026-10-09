@@ -1,9 +1,12 @@
+import json
+import os
 import threading
 import time
 from collections import deque
 
 from flaredantic import NotifyData, NotifyEvent, notifier
 
+from helpers import files
 from helpers.cloudflare_tunnel import CloudflareTunnel
 from helpers.microsoft_tunnel import MicrosoftDevTunnel
 from helpers.print_style import PrintStyle
@@ -25,6 +28,40 @@ TUNNEL_PROVIDER_ALIASES = {
     "tailscale_funnel": "tailscale",
     "tailscale-funnel": "tailscale",
 }
+
+
+HANDOVER_FILE = "usr/tunnel_handover.json"
+# Only cloudflared is known to keep serving after the process that started it
+# exits (a restart replaces the server process; the tunnel is its child).
+HANDOVER_PROVIDERS = {"cloudflared"}
+
+
+class AdoptedTunnel:
+    """A tunnel process started by the previous server process and taken over
+    after a restart, so the remote address stays the same."""
+
+    def __init__(self, pid: int, create_time: float, url: str):
+        self.pid = pid
+        self.create_time = create_time
+        self.tunnel_url = url
+
+    def stop(self):
+        import psutil
+
+        try:
+            proc = psutil.Process(self.pid)
+            if abs(proc.create_time() - self.create_time) < 1:
+                proc.terminate()
+        except psutil.Error:
+            pass
+        self.tunnel_url = None
+        return True
+
+
+def _tunnel_process(tunnel):
+    """The subprocess.Popen behind a running tunnel helper, if there is one."""
+    inner = getattr(tunnel, "tunnel", None)
+    return getattr(inner, "tunnel_process", None)
 
 
 def normalize_provider(provider):
@@ -164,3 +201,65 @@ class TunnelManager:
     def get_tunnel_url(self):
         """Get the current tunnel URL if available."""
         return self.tunnel_url if self.is_running else None
+
+    # ------------------------------------------------------------ restart hand-over
+
+    def write_handover(self, port) -> bool:
+        """Record the running tunnel just before this process restarts, so the
+        next process can take it over instead of leaving it untracked."""
+        if not (self.is_running and self.tunnel_url and self.provider in HANDOVER_PROVIDERS):
+            return False
+        if isinstance(self.tunnel, AdoptedTunnel):
+            pid, create_time = self.tunnel.pid, self.tunnel.create_time
+        else:
+            process = _tunnel_process(self.tunnel)
+            if process is None or process.poll() is not None:
+                return False
+            import psutil
+
+            pid = process.pid
+            create_time = psutil.Process(pid).create_time()
+        payload = {
+            "provider": self.provider, "url": self.tunnel_url, "pid": pid,
+            "create_time": create_time, "port": int(port),
+        }
+        path = files.get_abs_path(HANDOVER_FILE)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        return True
+
+    def adopt_handover(self, port) -> str | None:
+        """Take over the tunnel the previous process recorded, if it is still
+        the same cloudflared process forwarding to this port. One-shot: the
+        record is deleted whether or not it is adopted."""
+        path = files.get_abs_path(HANDOVER_FILE)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        if self.is_running or data.get("provider") not in HANDOVER_PROVIDERS:
+            return None
+        import psutil
+
+        try:
+            proc = psutil.Process(int(data["pid"]))
+            same_process = abs(proc.create_time() - float(data["create_time"])) < 1
+            is_cloudflared = proc.name().lower().startswith("cloudflared")
+            forwards_here = f"localhost:{int(port)}" in " ".join(proc.cmdline())
+        except (psutil.Error, KeyError, TypeError, ValueError):
+            return None
+        if not (same_process and is_cloudflared and forwards_here and int(data.get("port", -1)) == int(port)):
+            return None
+        self.tunnel = AdoptedTunnel(proc.pid, float(data["create_time"]), str(data["url"]))
+        self.tunnel_url = str(data["url"])
+        self.provider = data["provider"]
+        self.is_running = True
+        self._append_notification(NotifyEvent.TUNNEL_URL, "Remote Control kept running across the restart", {"url": self.tunnel_url})
+        PrintStyle.standard(f"Remote Control tunnel kept across restart: {self.tunnel_url}")
+        return self.tunnel_url

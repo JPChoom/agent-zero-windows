@@ -520,7 +520,10 @@ const model = {
 
   get hasUpdateAttention() {
     const selfUpdate = this.selfUpdate;
+    const windowsUpdate = globalThis.Alpine?.store?.("windowsUpdate")?.info;
     return Boolean(
+      windowsUpdate?.update_available ||
+      windowsUpdate?.restart_pending ||
       selfUpdate?.info?.pending ||
       selfUpdate?.quickUpdateAvailable ||
       selfUpdate?.hasMajorUpgrade ||
