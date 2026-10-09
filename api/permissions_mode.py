@@ -25,8 +25,8 @@ MODE_COLORS = {
     "bypass": "#ef4444",
 }
 
-# Shared with the login form's limiter class, separate counters.
-bypass_throttle = access_control.LoginThrottle()
+# Shared with every other Bypass-password check (bypass_lock.throttle).
+bypass_throttle = bypass_lock.throttle
 
 
 def _state_payload(state: dict) -> dict:

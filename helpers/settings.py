@@ -104,6 +104,13 @@ class Settings(TypedDict):
     tunnel_allowlist_enabled: bool
     tunnel_ip_allowlist: str
 
+    # File Browser access (helpers/file_access.py). Written only through
+    # api/security_settings.py, never by the main Save (SECURITY_OWNED_KEYS).
+    file_browser_scope: str
+    file_browser_remote_scope: str
+    file_browser_allow_other_drives: bool
+    file_browser_allow_removable_drives: bool
+
     # Permissions (plugins/_permissions): mode new chats start in and every
     # chat returns to on restart; hours before an unlocked Bypass turns
     # itself off (0 = only on restart/new chat).
@@ -327,10 +334,22 @@ def _get_api_key_field(settings: Settings, provider: str, title: str) -> Setting
     }
 
 
+# Saved only through their own endpoint (api/security_settings.py), which can
+# ask for the Bypass password; the generic Settings save leaves them as they are.
+SECURITY_OWNED_KEYS = frozenset({
+    "file_browser_scope",
+    "file_browser_remote_scope",
+    "file_browser_allow_other_drives",
+    "file_browser_allow_removable_drives",
+})
+
+
 def convert_in(settings: Settings) -> Settings:
     current = get_settings()
 
     for key, value in settings.items():
+        if key in SECURITY_OWNED_KEYS:
+            continue
         # Special handling for *_kwargs (stored as .env text)
         if (key.endswith("_kwargs")) and isinstance(value, str):
             current[key] = _env_to_dict(value)
@@ -547,6 +566,10 @@ def get_default_settings() -> Settings:
         chat_inherit_project=get_default_value("chat_inherit_project", True),
         tunnel_allowlist_enabled=get_default_value("tunnel_allowlist_enabled", True),
         tunnel_ip_allowlist=get_default_value("tunnel_ip_allowlist", ""),
+        file_browser_scope=get_default_value("file_browser_scope", "a0_root"),
+        file_browser_remote_scope=get_default_value("file_browser_remote_scope", "a0_root"),
+        file_browser_allow_other_drives=get_default_value("file_browser_allow_other_drives", False),
+        file_browser_allow_removable_drives=get_default_value("file_browser_allow_removable_drives", False),
         permissions_default_mode=get_default_value("permissions_default_mode", "manual"),
         bypass_auto_off_hours=get_default_value("bypass_auto_off_hours", 4.0),
     )

@@ -9,7 +9,7 @@
 - `helpers/rules.py` owns modes, rule parsing, and the decision engine (no Agent Zero imports).
 - `helpers/config.py` owns resolved rules/timeouts and reads the chat's mode from `mode_state`.
 - `helpers/mode_state.py` owns the in-memory per-chat mode, default mode, and Bypass expiry.
-- `helpers/bypass_lock.py` owns the Bypass password (PBKDF2 hash in `usr/permissions_bypass.json`).
+- `helpers/bypass_lock.py` owns the Bypass password (PBKDF2 hash in `usr/permissions_bypass.json`) and `throttle`, the single wrong-password limiter; every caller that accepts the password uses `check(password, client)` or that throttle, so attempts add up across the Bypass unlock and Settings > Security.
 - `helpers/ask.py` owns the Approve/Deny card (`request_approval`), shared by the gate and tools that need an extra specific confirmation (`computer_use`, `skill_learn`).
 - `extensions/python/tool_execute_before/_06_permissions.py` owns the gate; `extensions/webui/` and `webui/` own the selector and the unlock modal.
 - Endpoints live in core `api/`: `permissions_mode.py`, `permissions_respond.py`, `permissions_bypass_password.py`.

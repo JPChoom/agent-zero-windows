@@ -16,6 +16,7 @@ import secrets
 import threading
 
 from helpers import files
+from helpers.access_control import LoginThrottle
 
 HASH_FILE = "usr/permissions_bypass.json"
 ITERATIONS = 600_000
@@ -26,6 +27,21 @@ _lock = threading.Lock()
 
 class BypassPasswordError(ValueError):
     pass
+
+
+# One limiter for every place that accepts the Bypass password (unlocking
+# Bypass, confirming Security changes), so attempts add up per client.
+throttle = LoginThrottle()
+
+
+def check(password: str | None, client: str) -> str:
+    """'ok', 'wrong' or 'locked' (too many recent failures from `client`)."""
+    if throttle.is_locked(client):
+        return "locked"
+    if not verify(password):
+        return "locked" if throttle.record_failure(client) else "wrong"
+    throttle.record_success(client)
+    return "ok"
 
 
 def _path() -> str:

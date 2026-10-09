@@ -1,5 +1,6 @@
 from helpers.api import ApiHandler, Request, Response
 from helpers import access_control
+from helpers import file_access
 from helpers import settings as settings_helper
 from plugins._permissions.helpers import bypass_lock
 
@@ -12,7 +13,9 @@ AUDIT_FILTERS: dict[str, tuple[str, ...] | None] = {
     "settings": (
         "allowlist_saved", "allowlist_ip_added", "bypass_unlocked", "bypass_failure",
         "bypass_locked", "bypass_password_changed", "bypass_password_change_failed",
+        "file_access_saved",
     ),
+    "files": None,  # filled below: every file_* event
 }
 
 
@@ -26,6 +29,7 @@ class SecuritySettings(ApiHandler):
       save_allowlist {text, enabled, password?}
       allow_ip {ip}                        -> append one address
       audit_log {filter?, limit?}          -> newest-first usr/security_audit.jsonl records
+      save_file_access {config, password?} -> File Browser access mode (helpers/file_access.py)
 
     Lockout guard: a change made remotely (through the tunnel) that would
     stop the requester's own address from getting in again requires the
@@ -44,8 +48,15 @@ class SecuritySettings(ApiHandler):
             return self._state(is_local, my_ip)
 
         if action == "audit_log":
-            kinds = AUDIT_FILTERS.get(str(input.get("filter") or "all"))
+            kind = str(input.get("filter") or "all")
+            if kind == "files":
+                records = [r for r in access_control.read_audit_log(2000) if str(r.get("event", "")).startswith("file_")]
+                return {"ok": True, "records": records[: int(input.get("limit") or 200)]}
+            kinds = AUDIT_FILTERS.get(kind)
             return {"ok": True, "records": access_control.read_audit_log(input.get("limit") or 200, kinds)}
+
+        if action == "save_file_access":
+            return self._save_file_access(input.get("config") or {}, is_local, my_ip, input.get("password"))
 
         if action == "allow_ip":
             ip = str(input.get("ip") or "").strip()
@@ -70,21 +81,56 @@ class SecuritySettings(ApiHandler):
     def _save(self, text, enabled, is_local, my_ip, password, event) -> dict:
         if not is_local and enabled:
             would_allow_me = access_control.ip_in_allowlist(my_ip, access_control.parse_allowlist(text))
-            if not would_allow_me and not bypass_lock.verify(password):
-                return {
-                    "ok": False,
-                    "needs_password": True,
-                    "error": (
-                        f"This change would block your current address ({my_ip or 'unknown'}). "
-                        "Enter the Bypass password to confirm."
-                    ),
-                }
+            if not would_allow_me:
+                refused = self._password_refusal(
+                    password, my_ip,
+                    f"This change would block your current address ({my_ip or 'unknown'}). "
+                    "Enter the Bypass password to confirm.",
+                )
+                if refused:
+                    return refused
         settings_helper.set_settings_delta(
             {"tunnel_ip_allowlist": text.strip(), "tunnel_allowlist_enabled": enabled}
         )
         access_control.invalidate_policy_cache()
         access_control.audit(event, by=my_ip or "local", enabled=enabled)
         return {"ok": True, **self._state(is_local, my_ip)}
+
+    def _save_file_access(self, config: dict, is_local: bool, my_ip: str, password) -> dict:
+        old = file_access.read_settings()
+        new = {
+            "file_browser_scope": str(config.get("file_browser_scope", old["file_browser_scope"])),
+            "file_browser_remote_scope": str(config.get("file_browser_remote_scope", old["file_browser_remote_scope"])),
+            "file_browser_allow_other_drives": bool(config.get("file_browser_allow_other_drives", old["file_browser_allow_other_drives"])),
+            "file_browser_allow_removable_drives": bool(config.get("file_browser_allow_removable_drives", old["file_browser_allow_removable_drives"])),
+        }
+        if new["file_browser_scope"] not in file_access.SCOPES or new["file_browser_remote_scope"] not in file_access.REMOTE_SCOPES:
+            return {"ok": False, "error": "Unknown access mode."}
+        if not is_local and file_access.widens(new, old):
+            if not bypass_lock.is_set():
+                return {"ok": False, "error": "Widening file access remotely needs a Bypass password; set one at this PC first."}
+            refused = self._password_refusal(
+                password, my_ip, "This gives the File Browser more access. Enter the Bypass password to confirm."
+            )
+            if refused:
+                return refused
+        settings_helper.set_settings_delta(new)
+        access_control.audit("file_access_saved", by=my_ip or "local", **new)
+        return {"ok": True, **self._state(is_local, my_ip)}
+
+    @staticmethod
+    def _password_refusal(password, client: str, prompt: str) -> dict | None:
+        """None when the Bypass password is right; otherwise the refusal, after
+        counting the attempt against the shared limiter."""
+        if not password:
+            return {"ok": False, "needs_password": True, "error": prompt}
+        result = bypass_lock.check(password, client or "?")
+        if result == "ok":
+            return None
+        access_control.audit("bypass_failure", ip=client or "?", purpose="security_settings", locked=result == "locked")
+        if result == "locked":
+            return {"ok": False, "needs_password": True, "error": "Too many wrong attempts. Try again later."}
+        return {"ok": False, "needs_password": True, "error": "Wrong Bypass password."}
 
     def _state(self, is_local: bool, my_ip: str) -> dict:
         s = settings_helper.get_settings()
@@ -98,4 +144,5 @@ class SecuritySettings(ApiHandler):
             "is_local": is_local,
             "my_ip": my_ip,
             "bypass_password_set": bypass_lock.is_set(),
+            "file_access": file_access.read_settings(),
         }

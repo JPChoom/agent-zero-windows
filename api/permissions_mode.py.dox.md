@@ -9,7 +9,7 @@
 
 - `permissions_mode.py` owns the runtime implementation.
 - Classes: `PermissionsMode` (`ApiHandler`) - `async process(self, input: dict, request: Request) -> dict | Response`.
-- Module state: `bypass_throttle` (`access_control.LoginThrottle`) for wrong Bypass passwords.
+- Module state: `bypass_throttle` is `bypass_lock.throttle`, the one limiter shared by every Bypass-password check (also Settings > Security confirmations).
 
 ## Runtime Contracts
 

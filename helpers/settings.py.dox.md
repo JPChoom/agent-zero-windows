@@ -59,6 +59,7 @@
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, network calls, subprocess/runtime control, model calls, WebSocket state, plugin state, settings/state persistence, secret handling, scheduler state.
 - Imported dependency areas include: `base64`, `hashlib`, `helpers`, `helpers.notification`, `helpers.print_style`, `helpers.providers`, `helpers.secrets`, `json`, `models`, `os`, `pytz`, `re`, `subprocess`, `typing`.
 - Security settings: `tunnel_allowlist_enabled`, `tunnel_ip_allowlist` (remote-access IP allowlist, see `helpers/access_control.py`), `permissions_default_mode` (start/reset mode for every chat, never bypass) and `bypass_auto_off_hours` (`plugins/_permissions`). `set_settings` invalidates the access-control policy cache.
+- `SECURITY_OWNED_KEYS` (the `file_browser_*` access settings, `helpers/file_access.py`) are skipped by `convert_in`, so the generic Settings save can never change them; only `api/security_settings.py save_file_access` writes them, asking for the Bypass password when a remote session widens access.
 
 ## Key Concepts
 
