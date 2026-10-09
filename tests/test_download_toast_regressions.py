@@ -119,28 +119,6 @@ def test_backup_zip_downloads_emit_grouped_preparing_and_downloading_toasts():
     assert download_prepare < download_fetch
 
 
-def test_file_browser_zip_downloads_emit_grouped_preparing_and_downloading_toasts():
-    store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
-
-    assert 'window.toastFrontendInfo?.("Preparing download...", "Download", 0, group, undefined, true);' in store
-    assert 'window.toastFrontendInfo?.("Downloading...", "Download", 3, group, undefined, true);' in store
-    assert 'this.createDownloadToastGroup("file-browser-bulk-download")' in store
-    assert 'this.createDownloadToastGroup("file-browser-directory-download")' in store
-    assert "if (file.is_dir) {" in store
-    assert "return this.downloadDirectory(file);" in store
-    assert "link.download = file.name;" in store
-
-    bulk_start = store.index("async bulkDownloadFiles()")
-    bulk_prepare = store.index("this.showDownloadPreparingToast(downloadToastGroup);", bulk_start)
-    bulk_fetch = store.index('const resp = await fetchApi("/download_work_dir_files"', bulk_start)
-    assert bulk_prepare < bulk_fetch
-
-    directory_start = store.index("async downloadDirectory(file)")
-    directory_prepare = store.index("this.showDownloadPreparingToast(downloadToastGroup);", directory_start)
-    directory_fetch = store.index("const resp = await fetchApi(`/download_work_dir_file", directory_start)
-    assert directory_prepare < directory_fetch
-
-
 def test_message_path_links_keep_spaces_in_file_names():
     # This regression executes convertPathsToLinks with Node.js to catch browser-path parsing drift.
     if not shutil.which("node"):

@@ -23,131 +23,83 @@ def test_file_browser_remember_last_directory_defaults_enabled() -> None:
     assert '"file_browser_remember_last_directory",\n            True,' in settings_source
 
 
-def test_file_browser_editable_path_bar_and_remembered_directory_contract() -> None:
-    html = read("webui", "components", "modals", "file-browser", "file-browser.html")
+def test_file_browser_keeps_the_public_api_other_features_call() -> None:
+    store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
+
+    # Called by chat input, projects, plugins, skills, settings, welcome, Editor,
+    # Desktop, Office, Commands and Time Travel (see the file-browser AGENTS.md).
+    for signature in (
+        "async open(path = \"\", options = {})",
+        "async openSurface(path = \"\")",
+        "async openTextPicker(path = \"\", onConfirm = null)",
+        "async openSaveAsPicker(path = \"\", options = {})",
+        "async openRenameModal(file, options = {})",
+        "downloadFile(file)",
+        "handleClose()",
+        "onMount(element = null, options = {})",
+        "onUnmount()",
+        "beginSurfaceHandoff()",
+        "finishSurfaceHandoff()",
+        "cancelSurfaceHandoff()",
+    ):
+        assert signature in store, signature
+    assert 'createStore("fileBrowser", model)' in store
+    assert "window.openFileLink = async function (path)" in store
+
+
+def test_file_browser_uses_only_the_policy_checked_backend() -> None:
+    store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
+
+    assert 'callJsonApi("file_manager"' in store
+    assert '"/api/file_manager_upload"' in store
+    assert "/api/file_manager_download?" in store
+    for legacy in ("get_work_dir_files", "delete_work_dir_file", "rename_work_dir_file",
+                   "upload_work_dir_files", "download_work_dir_file", "edit_work_dir_file"):
+        assert legacy not in store, legacy
+    # Old-style paths from other features are translated server-side.
+    assert 'this.api("locate", { path: candidate })' in store
+
+
+def test_file_browser_remembers_the_last_folder_only_when_the_setting_allows() -> None:
     store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
     workdir_settings = read("webui", "components", "settings", "agent", "workdir.html")
 
-    assert 'class="path-navigator"' in html
-    assert 'class="nav-button back-button"' in html
-    assert 'class="text-button back-button"' not in html
-    assert ".nav-button:focus-visible" in html
-    assert ".nav-button .material-symbols-outlined" in html
-    assert 'class="nav-button-label">Up</span>' in html
-    assert "flex-direction: column;" in html
-    assert ".nav-button-label" in html
-    assert 'x-model="$store.fileBrowser.pathInput"' in html
-    assert '@submit.prevent="$store.fileBrowser.submitPath()"' in html
-    assert "Go to directory" in html
-    assert "$store.fileBrowser.pathError" in html
-
-    assert "FILE_BROWSER_LAST_DIRECTORY_STORAGE_KEY" in store
-    assert 'callJsonApi("settings_get", null)' in store
     assert "file_browser_remember_last_directory" in store
-    assert "getRememberedDirectory()" in store
-    assert "rememberCurrentDirectory(this.browser.currentPath)" in store
-    assert "clearRememberedDirectory()" in store
-    assert "scheduleMountedDefaultLoad()" in store
-    assert 'this.browser.currentPath = "";' in store
-    assert 'this.browser.parentPath = "";' in store
-    assert 'const requestedPath = this.normalizeOpeningPath(path) || "$WORK_DIR";' in store
-    assert "`/get_work_dir_files?path=${encodeURIComponent(requestedPath)}`" in store
-    assert 'result.current_path || (requestedPath === "$WORK_DIR" ? "/a0" : requestedPath)' in store
-
-    explicit_path_index = store.index("const explicitPath = this.normalizeOpeningPath")
-    remembered_path_index = store.index("const rememberedPath = !explicitPath")
-    assert explicit_path_index < remembered_path_index
-
+    assert "if (!this.rememberLastDirectory) return \"\";" in store
     assert "Remember last file browser location" in workdir_settings
-    assert "$store.settings.settings.file_browser_remember_last_directory" in workdir_settings
 
 
-def test_file_browser_compact_controls_and_narrow_layout_contract() -> None:
-    html = read("webui", "components", "modals", "file-browser", "file-browser.html")
-    dox = read("webui", "components", "modals", "file-browser", "AGENTS.md")
-
-    assert 'aria-label="New file"' in html
-    assert 'title="New file"' in html
-    assert 'aria-label="New folder"' in html
-    assert 'title="New folder"' in html
-    assert ">New File<" not in html
-    assert ">New Folder<" not in html
-    assert ".btn-new-item" in html
-    assert "width: 2.8rem;" in html
-    assert "height: 2.8rem;" in html
-    assert ".path-navigator {\n      align-items: center;\n      flex-direction: row;" in html
-    assert ".file-browser-toolbar {\n      align-items: center;\n      flex-direction: row;" in html
-    assert ".file-search-shell {\n      flex: 1 1 auto;\n      min-width: 0;\n      width: auto;" in html
-    assert ".path-navigator .nav-button-label {\n        display: none;" in html
-
-    assert "container: file-browser / inline-size;" in html
-    assert "@container file-browser (max-width: 620px)" in html
-    assert "grid-template-columns: 2.25rem minmax(0, 1fr) minmax(4.25rem, max-content) 8rem;" in html
-    assert ".file-cell-date,\n    .file-date {\n        display: none;" in html
-    assert ".file-cell-size,\n    .file-size" not in html
-
-    assert "hiding the Modified date column" in dox
-    assert "New file and New folder controls icon-only" in dox
-
-
-def test_file_browser_editor_picker_modes_have_primary_footer_actions() -> None:
+def test_file_browser_editor_picker_modes() -> None:
     html = read("webui", "components", "modals", "file-browser", "file-browser.html")
     store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
-    dox = read("webui", "components", "modals", "file-browser", "AGENTS.md")
 
-    assert "PICKER_MODE_TEXT_OPEN" in store
-    assert "PICKER_MODE_SAVE_AS" in store
-    assert "openTextPicker" in store
-    assert "openSaveAsPicker" in store
-    assert 'new Set(["md", "txt"])' in store
-    assert "pickerSelectedFiles()" in store
-    assert "validatePickerFilename" in store
-    assert "handleFileNameClick(file = {})" in store
-    assert "fileSurfaceTarget(file) === \"editor\"" in store
-    assert "isEditorSurface(file = {})" in store
-    assert "canOpenInActionMenu(file = {})" in store
-
-    assert "file-browser-picker-actions" in html
-    assert "file-editor-open-action" in html
-    assert 'aria-label="Open in Editor"' in html
-    assert "picker-filename-input" in html
-    assert "Open Selected" in store
-    assert "Save Here" in store
+    assert 'const EDITOR_TEXT_EXTENSIONS = new Set(["md", "txt"]);' in store
+    assert '"Open Selected"' in store and '"Save Here"' in store
+    # Open picker lists only folders and .md/.txt; Save As returns a Windows path.
+    assert "this.pickerMode === PICKER_TEXT_OPEN && !entry.is_dir && !this.isEditorText(entry)" in store
+    assert "path: joinPath(this.path, filename)" in store
     assert "$store.fileBrowser.confirmPicker()" in html
-    assert "$store.fileBrowser.pickerSelectionLabel()" in html
-    assert "$store.fileBrowser.isPickerMode()" in html
-    assert "$store.fileBrowser.isTextOpenPicker()" in html
-    assert "picker-confirm-button" in html
-
-    assert "picker modes for Editor Open and Save As" in dox
-    assert "Markdown or plain text files" in dox
-    assert "Open in Editor action visible outside the overflow menu" in dox
-
-    editor_button_index = html.index("file-editor-open-action")
-    dropdown_menu_index = html.index('class="dropdown-menu file-actions-menu"')
-    assert editor_button_index < dropdown_menu_index
-    assert 'x-show="$store.fileBrowser.canOpenInActionMenu(file)"' in html
+    assert "$store.fileBrowser.isSaveAsPicker()" in html
+    assert 'x-show="!fb.isPickerMode()"' in html  # no editing commands while picking
 
 
-def test_file_browser_dropdown_escapes_scroll_container_and_header_is_opaque() -> None:
-    html = read("webui", "components", "modals", "file-browser", "file-browser.html")
+def test_file_browser_downloads_natively_without_loading_files_into_the_page() -> None:
     store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
+    download = store[store.index("  download(entries = this.selectedEntries) {"):store.index("  // Used by window.openFileLink")]
 
-    assert '<div class="files-list" @scroll="$store.fileBrowser.closeDropdown()">' in html
-    assert 'overflow: auto;' in html
-    assert 'x-teleport="body"' in html
-    assert 'class="dropdown-menu file-actions-menu"' in html
-    assert ':style="$store.fileBrowser.dropdownStyle"' in html
-    assert '@click.stop="$store.fileBrowser.toggleDropdown(file.path, $event.currentTarget)"' in html
-    assert "getDropdownStyle(triggerElement)" in store
-    assert 'position: "fixed"' in store
-    assert 'zIndex: "6000"' in store
+    assert "link.href = this.downloadUrl(" in download
+    assert "blob" not in download.lower() and "fetch" not in download
+    assert "Preparing the ZIP" in download
 
-    assert "var(--secondary-bg)" not in html
-    assert "var(--border-color)" not in html
-    assert "var(--text-secondary)" not in html
-    assert "background: color-mix(in srgb, var(--color-panel) 88%, var(--color-background) 12%);" in html
-    assert "border-bottom: 1px solid var(--color-border);" in html
+
+def test_file_browser_layout_drops_columns_and_panes_as_it_narrows() -> None:
+    html = read("webui", "components", "modals", "file-browser", "file-browser.html")
+
+    assert "container: fb-list / inline-size;" in html
+    assert "@container fb-list (max-width: 620px)" in html  # Type column goes first
+    assert "@container fb-list (max-width: 440px)" in html  # then Date modified
+    assert "@container fb-root (max-width: 760px) { .fb-preview { display: none; } }" in html
+    assert "@container fb-root (max-width: 520px)" in html  # navigation pane overlays
 
 
 @pytest.mark.docker_layout

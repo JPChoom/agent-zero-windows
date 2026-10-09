@@ -53,6 +53,22 @@ def test_parent_is_empty_at_the_edge_of_the_allowed_area(env):
     assert fm.list_dir(str(env.base), env.policy)["parent"] == ""
 
 
+@pytest.mark.parametrize("raw, folder, select", [
+    ("", "work", ""), ("$WORK_DIR", "work", ""), ("/a0/usr/workdir", "work", ""),
+    ("/a0/usr", "usr", ""), ("docs", "docs", ""), ("/docs/b.md", "docs", "b.md"), ("a.txt", "work", "a.txt"),
+])
+def test_locate_translates_legacy_paths(env, raw, folder, select):
+    where = {"work": env.work, "usr": env.base / "usr", "docs": env.work / "docs"}
+    result = fm.locate(raw, env.policy)
+    assert result["folder"] == str(where[folder])
+    assert result["select"] == (str(where[folder] / select) if select else "")
+
+
+def test_locate_still_enforces_the_policy(env):
+    with pytest.raises(fa.AccessDenied):
+        fm.locate(str(env.out), env.policy)
+
+
 def test_create_rename_and_name_conflicts(env):
     folder = fm.mkdir(str(env.work), "New folder", env.policy)
     with pytest.raises(fm.FileOpError):
@@ -123,9 +139,13 @@ def test_text_round_trip_keeps_encoding_and_detects_changes(env):
     path = env.work / "bom.txt"
     path.write_bytes(b"\xef\xbb\xbfcaf\xc3\xa9\r\n")
     loaded = fm.read_text(str(path), env.policy)
-    assert loaded["content"] == "café\r\n" and loaded["encoding"] == "utf-8-sig"
-    fm.write_text(str(path), loaded["content"] + "more", env.policy, loaded["encoding"], loaded["modified"])
-    assert path.read_bytes() == b"\xef\xbb\xbfcaf\xc3\xa9\r\nmore"
+    assert loaded["content"] == "café\n" and loaded["encoding"] == "utf-8-sig" and loaded["newline"] == "\r\n"
+    # The browser sends "\n" line endings back; the file keeps CRLF.
+    fm.write_text(str(path), loaded["content"] + "more\n", env.policy, loaded["encoding"], loaded["modified"], loaded["newline"])
+    assert path.read_bytes() == b"\xef\xbb\xbfcaf\xc3\xa9\r\nmore\r\n"
+    unix = env.work / "unix.sh"
+    unix.write_bytes(b"echo 1\necho 2\n")
+    assert fm.read_text(str(unix), env.policy)["newline"] == "\n"
     os.utime(path, (1, 1))
     with pytest.raises(fm.FileOpError, match="changed on disk"):
         fm.write_text(str(path), "x", env.policy, "utf-8", loaded["modified"])

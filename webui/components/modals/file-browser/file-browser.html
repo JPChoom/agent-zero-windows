@@ -10,7 +10,7 @@
   data-canvas-dock-icon="dock_to_right"
 >
 <head>
-  <title>File Browser</title>
+  <title>Files</title>
   <script type="module">
     import { store } from "/components/modals/file-browser/file-browser-store.js";
   </script>
@@ -24,1144 +24,527 @@
     x-destroy="$store.fileBrowser.onUnmount(xAttrs($el) || {})"
   >
     <template x-if="$store.fileBrowser">
-      <div class="file-browser-root" :class="{ 'is-surface': xAttrs($el)?.mode === 'canvas' }">
-        
-        <!-- Loading State -->
-        <div x-show="$store.fileBrowser.isLoading" class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>Loading files...</p>
+      <div class="fb" tabindex="0" x-data="{ get fb() { return $store.fileBrowser } }"
+           @keydown="fb.onKeydown($event)" @keydown.window="fb.onWindowKeydown($event)" @click="fb.menu = null">
+
+        <!-- Navigation bar -->
+        <div class="fb-navbar">
+          <button type="button" class="fb-icon-btn" title="Back (Alt+Left)" :disabled="!fb.back.length" @click="fb.goBack()">
+            <span class="material-symbols-outlined">arrow_back</span></button>
+          <button type="button" class="fb-icon-btn" title="Forward (Alt+Right)" :disabled="!fb.forward.length" @click="fb.goForward()">
+            <span class="material-symbols-outlined">arrow_forward</span></button>
+          <button type="button" class="fb-icon-btn" title="Up (Alt+Up)" :disabled="!fb.parent" @click="fb.goUp()">
+            <span class="material-symbols-outlined">arrow_upward</span></button>
+          <button type="button" class="fb-icon-btn" title="Refresh (F5)" @click="fb.refresh()">
+            <span class="material-symbols-outlined" :class="{ 'fb-spin': fb.isLoading }">refresh</span></button>
+
+          <div class="fb-address" @click.self="fb.startAddressEdit()">
+            <template x-if="!fb.editingAddress">
+              <div class="fb-crumbs" @click.self="fb.startAddressEdit()">
+                <span class="material-symbols-outlined fb-crumb-icon">folder_open</span>
+                <template x-for="(crumb, i) in fb.breadcrumbs" :key="crumb.path">
+                  <span class="fb-crumb">
+                    <span class="material-symbols-outlined fb-crumb-sep" x-show="i > 0">chevron_right</span>
+                    <button type="button" :disabled="!fb.crumbAllowed(crumb.path)" :title="crumb.path"
+                            @click.stop="fb.navigate(crumb.path)" x-text="crumb.name"></button>
+                  </span>
+                </template>
+              </div>
+            </template>
+            <template x-if="fb.editingAddress">
+              <input type="text" class="fb-address-input" spellcheck="false" x-model="fb.addressInput"
+                     x-init="$nextTick(() => { $el.focus(); $el.select() })"
+                     @keydown.enter.prevent="fb.submitAddress()" @keydown.escape.prevent="fb.editingAddress = false"
+                     @blur="fb.editingAddress = false" aria-label="Folder path" />
+            </template>
+          </div>
+
+          <label class="fb-search">
+            <span class="material-symbols-outlined">search</span>
+            <input type="search" placeholder="Search" x-model="fb.searchQuery" aria-label="Search this folder" />
+          </label>
         </div>
-        
-        <!-- File Browser Content -->
-        <div x-show="!$store.fileBrowser.isLoading" class="file-browser-content">
-                <!-- Path navigator -->
-              <div class="path-navigator-wrap">
-                <nav class="path-breadcrumbs" aria-label="Breadcrumb">
-                  <template x-for="(segment, index) in $store.fileBrowser.breadcrumbSegments" :key="segment.path">
-                    <span class="path-breadcrumb-segment">
-                      <button
-                        type="button"
-                        class="path-breadcrumb-button"
-                        :class="{ 'is-current': segment.path === $store.fileBrowser.browser.currentPath }"
-                        :disabled="$store.fileBrowser.isLoading || segment.path === $store.fileBrowser.browser.currentPath"
-                        @click="$store.fileBrowser.navigateToBreadcrumb(segment.path)"
-                        :title="segment.path"
-                        x-text="segment.name"
-                      ></button>
-                      <span
-                        class="material-symbols-outlined path-breadcrumb-separator"
-                        aria-hidden="true"
-                        x-show="index < $store.fileBrowser.breadcrumbSegments.length - 1"
-                        style="display: none;"
-                      >chevron_right</span>
-                    </span>
-                  </template>
-                </nav>
-                <form class="path-navigator" @submit.prevent="$store.fileBrowser.submitPath()">
-                  <button
-                    type="button"
-                    class="nav-button back-button"
-                    @click="$store.fileBrowser.navigateUp()"
-                    :disabled="!$store.fileBrowser.browser.parentPath || $store.fileBrowser.isLoading"
-                    aria-label="Navigate up"
-                    title="Navigate up"
-                  >
-                    <span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span>
-                    <span class="nav-button-label">Up</span>
-                  </button>
-                  <div class="path-input-shell" :class="{ 'has-error': $store.fileBrowser.pathError }">
-                    <input
-                      id="current-path"
-                      class="path-input"
-                      type="text"
-                      x-model="$store.fileBrowser.pathInput"
-                      @focus="$event.target.select()"
-                      @keydown.escape.stop.prevent="$store.fileBrowser.resetPathInput()"
-                      :aria-invalid="$store.fileBrowser.pathError ? 'true' : 'false'"
-                      aria-label="Directory path"
-                      spellcheck="false"
-                      autocomplete="off"
-                    />
-                    <button
-                      type="submit"
-                      class="btn-icon-action path-submit"
-                      :disabled="$store.fileBrowser.isPathSubmitting || $store.fileBrowser.isLoading"
-                      aria-label="Go to directory"
-                    >
-                      <span class="material-symbols-outlined">arrow_forward</span>
+
+        <!-- Command bar -->
+        <div class="fb-commands" x-show="!fb.isPickerMode()">
+          <button type="button" class="fb-cmd" :disabled="!fb.writable" @click="fb.newFolder()" title="New folder (Ctrl+Shift+N)">
+            <span class="material-symbols-outlined">create_new_folder</span><span>New folder</span></button>
+          <button type="button" class="fb-cmd" :disabled="!fb.writable" @click="fb.newTextFile()" title="New text file">
+            <span class="material-symbols-outlined">note_add</span><span>New file</span></button>
+          <label class="fb-cmd" :class="{ 'is-disabled': !fb.writable }" title="Upload files">
+            <span class="material-symbols-outlined">upload</span><span>Upload</span>
+            <input type="file" multiple hidden :disabled="!fb.writable" @change="fb.pickUpload($event)" />
+          </label>
+          <span class="fb-cmd-sep"></span>
+          <button type="button" class="fb-cmd fb-cmd-icon" :disabled="!fb.selectedEntries.length" @click="fb.copySelection(true)" title="Cut (Ctrl+X)">
+            <span class="material-symbols-outlined">content_cut</span></button>
+          <button type="button" class="fb-cmd fb-cmd-icon" :disabled="!fb.selectedEntries.length" @click="fb.copySelection(false)" title="Copy (Ctrl+C)">
+            <span class="material-symbols-outlined">content_copy</span></button>
+          <button type="button" class="fb-cmd fb-cmd-icon" :disabled="!fb.clipboard || !fb.writable" @click="fb.paste()" title="Paste (Ctrl+V)">
+            <span class="material-symbols-outlined">content_paste</span></button>
+          <button type="button" class="fb-cmd fb-cmd-icon" :disabled="fb.selectedEntries.length !== 1" @click="fb.renameSelected()" title="Rename (F2)">
+            <span class="material-symbols-outlined">edit</span></button>
+          <button type="button" class="fb-cmd fb-cmd-icon" :disabled="!fb.selectedEntries.length" @click="fb.requestDelete(false)" title="Delete (Del; Shift+Del deletes permanently)">
+            <span class="material-symbols-outlined">delete</span></button>
+          <span class="fb-cmd-sep"></span>
+          <button type="button" class="fb-cmd" :disabled="!fb.selectedEntries.length" @click="fb.download()" title="Download (folders and multiple items as a ZIP)">
+            <span class="material-symbols-outlined">download</span><span>Download</span></button>
+          <span class="fb-grow"></span>
+          <button type="button" class="fb-cmd fb-cmd-icon" :class="{ 'is-on': fb.showNav }" @click="fb.toggleNav()" title="Navigation pane">
+            <span class="material-symbols-outlined">side_navigation</span></button>
+          <button type="button" class="fb-cmd fb-cmd-icon" :class="{ 'is-on': fb.showPreview }" @click="fb.togglePreview()" title="Preview pane">
+            <span class="material-symbols-outlined">vertical_split</span></button>
+          <button type="button" class="fb-cmd fb-cmd-icon" :class="{ 'is-on': fb.showHidden }" @click="fb.toggleHidden()" title="Show hidden items">
+            <span class="material-symbols-outlined" x-text="fb.showHidden ? 'visibility' : 'visibility_off'"></span></button>
+        </div>
+
+        <div class="fb-body">
+          <!-- Navigation pane -->
+          <nav class="fb-nav" x-show="fb.showNav" aria-label="Places">
+            <div class="fb-nav-title">Quick access</div>
+            <template x-for="place in fb.places.quick" :key="place.path">
+              <button type="button" class="fb-nav-item" :class="{ 'is-current': place.path.toLowerCase() === fb.path.toLowerCase() }"
+                      :title="place.path" @click="fb.navigateFromPane(place.path)">
+                <span class="material-symbols-outlined" x-text="({desktop:'desktop_windows', documents:'description', downloads:'download', pictures:'image', music:'music_note', videos:'movie'})[place.icon] || place.icon"></span>
+                <span x-text="place.name"></span>
+              </button>
+            </template>
+            <div class="fb-nav-title">This PC</div>
+            <template x-for="drive in fb.places.drives" :key="drive.root">
+              <button type="button" class="fb-nav-item fb-drive" :class="{ 'is-locked': !drive.allowed && !drive.partly }"
+                      :disabled="!drive.allowed && !drive.partly"
+                      :title="drive.allowed ? drive.root : drive.partly ? 'Only some folders on this drive are open to the File Browser' : 'Not allowed by Settings > Security > File Browser access'"
+                      @click="drive.allowed && fb.navigateFromPane(drive.root)">
+                <span class="material-symbols-outlined" x-text="fb.driveIcon(drive)"></span>
+                <span class="fb-drive-text">
+                  <span class="fb-drive-name" x-text="(drive.label || (drive.kind === 'removable' ? 'USB Drive' : 'Local Disk')) + ' (' + drive.root.slice(0, 2) + ')'"></span>
+                  <span class="fb-drive-bar"><span :style="`width: ${fb.driveUsage(drive)}%`" :class="{ 'is-full': fb.driveUsage(drive) > 90 }"></span></span>
+                  <span class="fb-drive-free" x-text="fb.formatSize(drive.free) + ' free of ' + fb.formatSize(drive.total)"></span>
+                </span>
+                <span class="material-symbols-outlined fb-lock" x-show="!drive.allowed" x-text="drive.partly ? 'lock_open_right' : 'lock'"></span>
+              </button>
+            </template>
+            <div class="fb-nav-note" x-show="fb.places.policy?.remote">
+              <span class="material-symbols-outlined">public</span> Remote session: access is limited by the remote setting.
+            </div>
+          </nav>
+
+          <!-- File list -->
+          <section class="fb-main" @contextmenu.prevent="fb.openMenu($event)" @pointerdown="fb.showNav && fb.isNarrow() && (fb.showNav = false)"
+                   @dragover.prevent="fb.dragOver = !fb.isPickerMode() && $event.dataTransfer?.types?.includes('Files')"
+                   @dragleave.self="fb.dragOver = false" @drop.prevent="fb.onDrop($event)">
+            <div class="fb-header">
+              <button type="button" @click="fb.sortBy('name')">Name <span class="material-symbols-outlined" x-text="fb.sortIndicator('name')"></span></button>
+              <button type="button" class="fb-col-modified" @click="fb.sortBy('modified')">Date modified <span class="material-symbols-outlined" x-text="fb.sortIndicator('modified')"></span></button>
+              <button type="button" class="fb-col-type" @click="fb.sortBy('type')">Type <span class="material-symbols-outlined" x-text="fb.sortIndicator('type')"></span></button>
+              <button type="button" class="fb-col-size" @click="fb.sortBy('size')">Size <span class="material-symbols-outlined" x-text="fb.sortIndicator('size')"></span></button>
+            </div>
+            <div class="fb-rows" @click.self="fb.clearSelection()" role="listbox" aria-multiselectable="true">
+              <template x-for="entry in fb.visibleEntries" :key="entry.path">
+                <div class="fb-row" role="option" :data-path="entry.path" :aria-selected="fb.isSelected(entry)"
+                     :class="{ 'is-selected': fb.isSelected(entry), 'is-focus': fb.focusPath === entry.path, 'is-hidden': entry.hidden || entry.system, 'is-cut': fb.isCut(entry) }"
+                     :title="entry.outside ? 'This link points outside what the File Browser may open' : ''"
+                     @click.stop="fb.clickEntry(entry, $event)" @dblclick="fb.activate(entry)"
+                     @contextmenu.prevent.stop="fb.openMenu($event, entry)">
+                  <span class="fb-name">
+                    <span class="material-symbols-outlined fb-file-icon" :class="{ 'is-folder': entry.is_dir }" x-text="fb.iconFor(entry)"></span>
+                    <span class="fb-name-text" x-text="entry.name"></span>
+                    <span class="material-symbols-outlined fb-badge" x-show="entry.is_link" title="Link">shortcut</span>
+                    <span class="material-symbols-outlined fb-badge" x-show="entry.readonly && !entry.is_dir" title="Read-only">lock</span>
+                    <button type="button" class="fb-surface-btn" x-show="fb.surfaceAction(entry) && !fb.isPickerMode()"
+                            :title="fb.surfaceAction(entry)?.label" @click.stop="fb.openInSurface(entry)">
+                      <span class="material-symbols-outlined" x-text="fb.surfaceAction(entry)?.icon"></span>
                     </button>
-                  </div>
-                </form>
-                <template x-if="$store.fileBrowser.pathError">
-                  <div class="path-error" x-text="$store.fileBrowser.pathError"></div>
-                </template>
-              </div>
-              <div class="file-browser-toolbar">
-                <div class="file-search-shell">
-                  <span class="material-symbols-outlined file-search-icon" aria-hidden="true">search</span>
-                  <input
-                    type="search"
-                    class="file-search-input"
-                    x-model="$store.fileBrowser.searchQuery"
-                    @keydown.escape="$store.fileBrowser.clearSearch()"
-                    placeholder="Search files..."
-                    aria-label="Search files"
-                  />
-                  <button
-                    type="button"
-                    class="btn-icon-action file-search-clear"
-                    x-show="$store.fileBrowser.searchQuery"
-                    @click="$store.fileBrowser.clearSearch()"
-                    aria-label="Clear search"
-                    title="Clear search"
-                  >
-                    <span class="material-symbols-outlined">close</span>
-                  </button>
-                </div>
-
-                <div class="new-item-buttons">
-                  <button
-                    type="button"
-                    class="btn btn-ok btn-new-item"
-                    x-show="!$store.fileBrowser.isPickerMode()"
-                    @click="$store.fileBrowser.openNewFile()"
-                    aria-label="New file"
-                    title="New file"
-                  >
-                    <span class="material-symbols-outlined" aria-hidden="true">note_add</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-ok btn-new-item"
-                    x-show="!$store.fileBrowser.isTextOpenPicker()"
-                    @click="$store.fileBrowser.openNewFolderModal()"
-                    aria-label="New folder"
-                    title="New folder"
-                  >
-                    <span class="material-symbols-outlined" aria-hidden="true">create_new_folder</span>
-                  </button>
-                </div>
-              </div>
-
-              <div class="data-status-bar data-status-bar-standalone file-status-bar">
-                <div class="status-info">
-                  <span class="status-item">
-                    <span class="material-symbols-outlined">folder</span>
-                    Total: <strong x-text="$store.fileBrowser.browser.entries.length"></strong>
                   </span>
-                  <span class="status-separator">•</span>
-                  <span class="status-item">
-                    Filtered: <strong x-text="$store.fileBrowser.filteredEntries.length"></strong>
-                  </span>
-                  <template x-if="$store.fileBrowser.selectedCount > 0">
-                    <span class="status-separator">•</span>
-                  </template>
-                  <template x-if="$store.fileBrowser.selectedCount > 0">
-                    <span class="status-item">
-                      Selected: <strong x-text="$store.fileBrowser.selectedCount"></strong>
-                    </span>
-                  </template>
+                  <span class="fb-col-modified" x-text="fb.formatDate(entry.modified)"></span>
+                  <span class="fb-col-type" x-text="fb.typeLabel(entry)"></span>
+                  <span class="fb-col-size" x-text="entry.is_dir ? '' : fb.formatSize(entry.size)"></span>
                 </div>
-              </div>
-
-              <div x-show="$store.fileBrowser.selectedCount > 0 && !$store.fileBrowser.isPickerMode()" class="mass-action-toolbar file-mass-toolbar">
-                <div class="selection-info" x-text="$store.fileBrowser.selectedCountLabel"></div>
-
-                <div class="mass-actions">
-                  <button
-                    type="button"
-                    class="btn btn-mass copy"
-                    @click="$store.fileBrowser.copySelectedPaths()"
-                    :disabled="$store.fileBrowser.isBulkBusy"
-                    title="Copy Selected Paths"
-                  >
-                    <span class="material-symbols-outlined">content_copy</span>
-                    Copy Paths
-                  </button>
-
-                  <button
-                    type="button"
-                    class="btn btn-mass export"
-                    @click="$store.fileBrowser.bulkDownloadFiles()"
-                    :disabled="$store.fileBrowser.isBulkBusy"
-                    title="Download Selected Items"
-                  >
-                    <span class="material-symbols-outlined">folder_zip</span>
-                    Download ZIP
-                  </button>
-
-                  <button
-                    type="button"
-                    class="btn btn-mass delete"
-                    @click="$confirmClick($event, () => $store.fileBrowser.bulkDeleteFiles())"
-                    :disabled="$store.fileBrowser.isBulkBusy"
-                    title="Delete Selected Items"
-                  >
-                    <span class="material-symbols-outlined">delete</span>
-                    Delete
-                  </button>
-
-                  <button
-                    type="button"
-                    class="btn btn-mass clear"
-                    @click="$store.fileBrowser.clearSelection()"
-                    :disabled="$store.fileBrowser.isBulkBusy"
-                    title="Clear Selection"
-                  >
-                    <span class="material-symbols-outlined">close</span>
-                    Clear
-                  </button>
-                </div>
-              </div>
-
-              <!-- Files list -->
-              <div class="files-list" @scroll="$store.fileBrowser.closeDropdown()">
-                <div class="file-header">
-                  <div class="file-cell-select">
-                    <input
-                      type="checkbox"
-                      :checked="$store.fileBrowser.allVisibleSelected"
-                      :indeterminate="$store.fileBrowser.someVisibleSelected && !$store.fileBrowser.allVisibleSelected"
-                      @change="$store.fileBrowser.toggleSelectAllVisible()"
-                      :disabled="$store.fileBrowser.selectableEntries.length === 0"
-                      title="Select visible items"
-                      aria-label="Select visible items"
-                    />
-                  </div>
-                  <div class="file-cell" @click="$store.fileBrowser.toggleSort('name')">Name <span x-show="$store.fileBrowser.browser.sortBy === 'name'" x-text="$store.fileBrowser.browser.sortDirection === 'asc' ? '↑' : '↓'"></span></div>
-                  <div class="file-cell-size" @click="$store.fileBrowser.toggleSort('size')">Size <span x-show="$store.fileBrowser.browser.sortBy === 'size'" x-text="$store.fileBrowser.browser.sortDirection === 'asc' ? '↑' : '↓'"></span></div>
-                  <div class="file-cell-date" @click="$store.fileBrowser.toggleSort('date')">Modified <span x-show="$store.fileBrowser.browser.sortBy === 'date'" x-text="$store.fileBrowser.browser.sortDirection === 'asc' ? '↑' : '↓'"></span></div>
-                  <div class="file-cell-actions"></div>
-                </div>
-
-                <!-- File list entries -->
-                <template x-if="$store.fileBrowser.visibleEntries.length">
-                  <template x-for="file in $store.fileBrowser.visibleEntries" :key="file.path">
-                    <div class="file-item" :data-is-dir="file.is_dir" :class="{ 'selected': file.selected }">
-                      <label class="file-select-cell" @click.stop>
-                        <input
-                          type="checkbox"
-                          x-model="file.selected"
-                          :disabled="!$store.fileBrowser.isSelectableEntry(file)"
-                          :aria-label="`Select ${file.name}`"
-                        />
-                      </label>
-                      <div class="file-name" @click="$store.fileBrowser.handleFileNameClick(file)">
-                        <img :src="'/public/' + (file.type === 'unknown' ? 'file' : ($store.fileBrowser.isArchive(file.name) ? 'archive' : file.type)) + '.svg'" class="file-icon" :alt="file.type" />
-                        <span x-text="file.name"></span>
-                      </div>
-                      <div class="file-size" x-text="$store.fileBrowser.formatFileSize(file.size)"></div>
-                      <div class="file-date" x-text="$store.fileBrowser.formatDate(file.modified)"></div>
-                      <div class="file-actions" x-show="!$store.fileBrowser.isPickerMode()">
-                        <button
-                          type="button"
-                          class="btn-icon-action file-editor-open-action"
-                          x-show="$store.fileBrowser.isEditorSurface(file)"
-                          @click.stop="$store.fileBrowser.openInSurface(file)"
-                          :title="$store.fileBrowser.surfaceActionTitle(file)"
-                          aria-label="Open in Editor"
-                        >
-                          <span class="material-symbols-outlined" aria-hidden="true" x-text="$store.fileBrowser.surfaceActionIcon(file)"></span>
-                        </button>
-
-                        <!-- Secondary single-item actions (Rename/...) are grouped under a dropdown -->
-                        <div
-                          class="dropdown file-actions-dropdown"
-                          @click.outside="$store.fileBrowser.closeDropdown()"
-                          @keydown.escape.window="$store.fileBrowser.closeDropdown()"
-                        >
-                          <button
-                            type="button"
-                            class="btn-icon-action dropdown-trigger"
-                            @click.stop="$store.fileBrowser.toggleDropdown(file.path, $event.currentTarget)"
-                            :aria-expanded="$store.fileBrowser.isDropdownOpen(file.path).toString()"
-                            aria-label="More actions"
-                            title="More actions"
-                          >
-                            <span class="material-symbols-outlined">more_vert</span>
-                          </button>
-
-                          <template x-teleport="body">
-                            <div
-                              class="dropdown-menu file-actions-menu"
-                              x-show="$store.fileBrowser.isDropdownOpen(file.path)"
-                              x-transition
-                              :style="$store.fileBrowser.dropdownStyle"
-                              style="display: none;"
-                              @click.stop="$store.fileBrowser.closeDropdown()"
-                            >
-                              <button
-                                type="button"
-                                class="dropdown-item"
-                                x-show="$store.fileBrowser.canOpenInActionMenu(file)"
-                                @click="$store.fileBrowser.openInSurface(file)"
-                                :title="$store.fileBrowser.surfaceActionTitle(file)"
-                              >
-                                <span class="material-symbols-outlined" x-text="$store.fileBrowser.surfaceActionIcon(file)"></span>
-                                <span x-text="$store.fileBrowser.surfaceActionLabel(file)"></span>
-                              </button>
-
-                              <button
-                                type="button"
-                                class="dropdown-item"
-                                x-show="!file.is_dir && file.size <= 1048576 && !$store.fileBrowser.canOpenInSurface(file)"
-                                @click="$store.fileBrowser.openFileEditor(file)"
-                              >
-                                <span class="material-symbols-outlined">file_open</span>
-                                <span>Edit</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                class="dropdown-item"
-                                x-show="file.is_dir"
-                                @click="$store.fileBrowser.downloadFile(file)"
-                              >
-                                <span class="material-symbols-outlined">folder_zip</span>
-                                <span>Download ZIP</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                class="dropdown-item"
-                                @click="$store.fileBrowser.openRenameModal(file)"
-                              >
-                                <span class="material-symbols-outlined">drive_file_rename_outline</span>
-                                <span>Rename</span>
-                              </button>
-                            </div>
-                          </template>
-                        </div>
-                        <button class="btn-icon-action" x-show="!file.is_dir" @click.stop="$store.fileBrowser.downloadFile(file)" title="Download file">
-                          <span class="material-symbols-outlined">download</span>
-                        </button>
-                        <button class="btn-icon-action danger" @click.stop="$confirmClick($event, () => $store.fileBrowser.deleteFile(file))" title="Delete item">
-                          <span class="material-symbols-outlined">delete</span>
-                        </button>
-                      </div>
-                    </div>
-                  </template>
-                </template>
-
-                <!-- Empty state -->
-                <template x-if="!$store.fileBrowser.browser.entries.length">
-                  <div class="no-files">No files found</div>
-                </template>
-                <template x-if="$store.fileBrowser.browser.entries.length && !$store.fileBrowser.visibleEntries.length">
-                  <div class="no-files">
-                    <div>No matching files found</div>
-                    <button class="btn btn-cancel btn-clear-search" @click="$store.fileBrowser.clearSearch()">
-                      <span class="material-symbols-outlined">close</span>
-                      Clear
-                    </button>
-                  </div>
-                </template>
+              </template>
+              <div class="fb-empty" x-show="!fb.isLoading && !fb.visibleEntries.length">
+                <template x-if="fb.error"><span x-text="fb.error"></span></template>
+                <template x-if="!fb.error"><span x-text="fb.searchQuery ? 'No items match your search.' : 'This folder is empty.'"></span></template>
               </div>
             </div>
+            <div class="fb-drop" x-show="fb.dragOver">
+              <span class="material-symbols-outlined">upload_file</span>
+              <span x-text="'Drop to upload to ' + (fb.breadcrumbs.at(-1)?.name || fb.path)"></span>
+            </div>
+          </section>
+
+          <!-- Preview pane -->
+          <aside class="fb-preview" x-show="fb.showPreview">
+            <template x-if="!fb.preview">
+              <div class="fb-preview-empty">Select a file to preview it.</div>
+            </template>
+            <template x-if="fb.preview?.kind === 'many'">
+              <div class="fb-preview-empty" x-text="fb.preview.count + ' items selected'"></div>
+            </template>
+            <template x-if="fb.preview?.entry">
+              <div class="fb-preview-content">
+                <template x-if="fb.preview.kind === 'image'">
+                  <img class="fb-preview-image" :src="fb.preview.url" :alt="fb.preview.entry.name" />
+                </template>
+                <template x-if="fb.preview.kind === 'pdf'">
+                  <iframe class="fb-preview-frame" :src="fb.preview.url" sandbox title="PDF preview"></iframe>
+                </template>
+                <template x-if="fb.preview.kind === 'text'">
+                  <pre class="fb-preview-text" x-text="fb.preview.text"></pre>
+                </template>
+                <template x-if="fb.preview.kind === 'info' || fb.preview.kind === 'loading'">
+                  <div class="fb-preview-icon"><span class="material-symbols-outlined" x-text="fb.iconFor(fb.preview.entry)"></span></div>
+                </template>
+                <dl class="fb-props">
+                  <dt>Name</dt><dd x-text="fb.preview.entry.name"></dd>
+                  <dt>Type</dt><dd x-text="fb.typeLabel(fb.preview.entry)"></dd>
+                  <template x-if="!fb.preview.entry.is_dir"><dt>Size</dt></template>
+                  <template x-if="!fb.preview.entry.is_dir"><dd x-text="fb.formatSize(fb.preview.entry.size)"></dd></template>
+                  <dt>Modified</dt><dd x-text="fb.formatDate(fb.preview.entry.modified)"></dd>
+                  <dt>Location</dt><dd class="fb-props-path" x-text="fb.path"></dd>
+                </dl>
+              </div>
+            </template>
+          </aside>
         </div>
-        
+
+        <!-- Status bar -->
+        <div class="fb-status">
+          <span x-text="fb.statusText"></span>
+          <span class="fb-grow"></span>
+          <template x-for="job in fb.uploads" :key="job.id">
+            <span class="fb-upload"><span x-text="'Uploading ' + job.name"></span>
+              <span class="fb-upload-bar"><span :style="`width: ${job.progress}%`"></span></span></span>
+          </template>
+          <span x-show="!fb.writable" class="fb-status-flag"><span class="material-symbols-outlined">lock</span> Read-only</span>
+          <span x-show="fb.driveKind === 'removable'" class="fb-status-flag"><span class="material-symbols-outlined">usb</span> Removable drive</span>
+        </div>
+
+        <!-- Context menu -->
+        <template x-if="fb.menu">
+          <div class="fb-menu" :style="`left:${fb.menu.x}px; top:${fb.menu.y}px`" @click.stop @contextmenu.prevent>
+            <template x-if="fb.menu.entry">
+              <div>
+                <button type="button" @click="fb.activate(fb.menu.entry); fb.menu = null">
+                  <span class="material-symbols-outlined" x-text="fb.menu.entry.is_dir ? 'folder_open' : 'open_in_new'"></span>Open</button>
+                <template x-if="fb.surfaceAction(fb.menu.entry)">
+                  <button type="button" @click="fb.openInSurface(fb.menu.entry)">
+                    <span class="material-symbols-outlined" x-text="fb.surfaceAction(fb.menu.entry).icon"></span><span x-text="fb.surfaceAction(fb.menu.entry).label"></span></button>
+                </template>
+                <template x-if="fb.isTextFile(fb.menu.entry)">
+                  <button type="button" @click="fb.editText(fb.menu.entry)"><span class="material-symbols-outlined">edit_note</span>Edit as text</button>
+                </template>
+                <button type="button" @click="fb.download()"><span class="material-symbols-outlined">download</span>
+                  <span x-text="fb.selectedEntries.length > 1 || fb.menu.entry.is_dir ? 'Download as ZIP' : 'Download'"></span></button>
+                <hr />
+                <button type="button" @click="fb.copySelection(true)"><span class="material-symbols-outlined">content_cut</span>Cut<kbd>Ctrl+X</kbd></button>
+                <button type="button" @click="fb.copySelection(false)"><span class="material-symbols-outlined">content_copy</span>Copy<kbd>Ctrl+C</kbd></button>
+                <button type="button" @click="fb.copyPaths()"><span class="material-symbols-outlined">link</span>Copy path</button>
+                <button type="button" x-show="fb.selectedEntries.length === 1" @click="fb.renameSelected()"><span class="material-symbols-outlined">edit</span>Rename<kbd>F2</kbd></button>
+                <button type="button" @click="fb.requestDelete(false)"><span class="material-symbols-outlined">delete</span>Delete<kbd>Del</kbd></button>
+                <template x-if="!fb.isRemote">
+                  <div><hr /><button type="button" @click="fb.reveal(fb.menu.entry)"><span class="material-symbols-outlined">folder_eye</span>Show in File Explorer</button></div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!fb.menu.entry">
+              <div>
+                <button type="button" :disabled="!fb.writable" @click="fb.newFolder()"><span class="material-symbols-outlined">create_new_folder</span>New folder</button>
+                <button type="button" :disabled="!fb.writable" @click="fb.newTextFile()"><span class="material-symbols-outlined">note_add</span>New text file</button>
+                <button type="button" :disabled="!fb.clipboard || !fb.writable" @click="fb.paste()"><span class="material-symbols-outlined">content_paste</span>Paste<kbd>Ctrl+V</kbd></button>
+                <hr />
+                <button type="button" @click="fb.refresh(); fb.menu = null"><span class="material-symbols-outlined">refresh</span>Refresh<kbd>F5</kbd></button>
+                <button type="button" @click="fb.selectAll(); fb.menu = null"><span class="material-symbols-outlined">select_all</span>Select all<kbd>Ctrl+A</kbd></button>
+                <button type="button" @click="fb.copyPaths()"><span class="material-symbols-outlined">link</span>Copy folder path</button>
+                <template x-if="!fb.isRemote">
+                  <button type="button" @click="fb.reveal({ path: fb.path }); fb.menu = null"><span class="material-symbols-outlined">folder_eye</span>Open in File Explorer</button>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Confirmation -->
+        <template x-if="fb.confirm">
+          <div class="fb-overlay" @click.self="fb.cancelConfirm()" @keydown.escape.stop="fb.cancelConfirm()">
+            <div class="fb-dialog" role="alertdialog" x-init="$nextTick(() => $el.querySelector('.btn-ok')?.focus())">
+              <div class="fb-dialog-title" x-text="fb.confirm.title"></div>
+              <p x-text="fb.confirm.message"></p>
+              <div class="fb-dialog-actions">
+                <button type="button" class="btn btn-cancel" @click="fb.cancelConfirm()">Cancel</button>
+                <button type="button" class="btn btn-ok" :class="{ 'fb-danger': fb.confirm.danger }" @click="fb.confirmOk()" x-text="fb.confirm.okLabel"></button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Built-in text editor -->
+        <template x-if="fb.textEditor">
+          <div class="fb-overlay fb-editor">
+            <div class="fb-editor-bar">
+              <span class="material-symbols-outlined">edit_note</span>
+              <span class="fb-editor-name" x-text="fb.textEditor.name + (fb.textEditorDirty ? ' •' : '')" :title="fb.textEditor.path"></span>
+              <span class="fb-editor-enc" x-text="fb.textEditor.encoding.toUpperCase()"></span>
+              <span class="fb-grow"></span>
+              <span class="fb-editor-error" x-show="fb.textEditor.error" x-text="fb.textEditor.error"></span>
+              <button type="button" class="btn btn-ok" :disabled="!fb.textEditorDirty || fb.textEditor.saving" @click="fb.saveText()"
+                      x-text="fb.textEditor.saving ? 'Saving...' : 'Save (Ctrl+S)'"></button>
+              <button type="button" class="btn btn-cancel" @click="fb.closeTextEditor()">Close</button>
+            </div>
+            <textarea class="fb-editor-text" spellcheck="false" x-model="fb.textEditor.content"
+                      x-init="$nextTick(() => $el.focus())" @keydown.tab.prevent="document.execCommand('insertText', false, '    ')"></textarea>
+          </div>
+        </template>
       </div>
     </template>
-    
-    <!-- Modal Footer (outside template x-if so it exists immediately) -->
+
+    <!-- Footer: picker actions (Editor Open / Save As) and Close -->
     <template x-if="$store.fileBrowser">
-      <div class="modal-footer file-browser-footer" data-modal-footer :class="{ 'is-surface': xAttrs($el)?.mode === 'canvas' }">
-        <div class="file-browser-picker-actions" x-show="$store.fileBrowser.isPickerMode()" style="display: none;">
-          <template x-if="$store.fileBrowser.isSaveAsPicker()">
-            <div class="picker-filename-field">
-              <span class="material-symbols-outlined" aria-hidden="true">article</span>
-              <input
-                type="text"
-                class="picker-filename-input"
-                x-model="$store.fileBrowser.pickerFilename"
-                @input="$store.fileBrowser.onPickerFilenameInput()"
-                @keydown.enter.prevent="$store.fileBrowser.confirmPicker()"
-                placeholder="File name"
-                aria-label="File name"
-                spellcheck="false"
-              />
-            </div>
-          </template>
-          <span
-            class="picker-selection-label"
-            x-show="$store.fileBrowser.isTextOpenPicker()"
-            x-text="$store.fileBrowser.pickerSelectionLabel()"
-          ></span>
-          <template x-if="$store.fileBrowser.pickerFilenameError">
-            <span class="picker-inline-error" x-text="$store.fileBrowser.pickerFilenameError"></span>
-          </template>
-          <button
-            type="button"
-            class="btn btn-ok picker-confirm-button"
-            :disabled="!$store.fileBrowser.canConfirmPicker() || $store.fileBrowser.isBulkBusy"
-            @click="$store.fileBrowser.confirmPicker()"
-            x-text="$store.fileBrowser.pickerConfirmLabel"
-          ></button>
-          <button type="button" class="btn btn-cancel" :disabled="$store.fileBrowser.isBulkBusy" @click="$store.fileBrowser.cancelPicker()">Cancel</button>
-        </div>
-        <label class="btn btn-upload" x-show="!$store.fileBrowser.isPickerMode()">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-          Upload Files
-          <input type="file" multiple accept="*" @change="$store.fileBrowser.handleFileUpload" style="display:none;" />
-        </label>
-        <button class="btn btn-cancel" x-show="xAttrs($el)?.mode !== 'canvas' && !$store.fileBrowser.isPickerMode()" @click="$store.fileBrowser.handleClose()">Close Browser</button>
+      <div class="modal-footer file-browser-footer" data-modal-footer :class="{ 'is-surface': xAttrs($el)?.mode === 'canvas' }"
+           x-show="$store.fileBrowser.isPickerMode() || xAttrs($el)?.mode !== 'canvas'">
+        <template x-if="$store.fileBrowser.isPickerMode()">
+          <div class="fb-picker">
+            <template x-if="$store.fileBrowser.isSaveAsPicker()">
+              <input type="text" class="fb-picker-name" x-model="$store.fileBrowser.pickerFilename" placeholder="File name" aria-label="File name"
+                     spellcheck="false" @input="$store.fileBrowser.pickerFilenameError = ''" @keydown.enter.prevent="$store.fileBrowser.confirmPicker()" />
+            </template>
+            <span class="fb-picker-label" x-show="$store.fileBrowser.isTextOpenPicker()" x-text="$store.fileBrowser.pickerSelectionLabel()"></span>
+            <span class="fb-picker-error" x-show="$store.fileBrowser.pickerFilenameError" x-text="$store.fileBrowser.pickerFilenameError"></span>
+            <button type="button" class="btn btn-ok" :disabled="!$store.fileBrowser.canConfirmPicker() || $store.fileBrowser.isBulkBusy"
+                    @click="$store.fileBrowser.confirmPicker()" x-text="$store.fileBrowser.pickerConfirmLabel"></button>
+            <button type="button" class="btn btn-cancel" @click="$store.fileBrowser.cancelPicker()">Cancel</button>
+          </div>
+        </template>
+        <template x-if="!$store.fileBrowser.isPickerMode()">
+          <button type="button" class="btn btn-cancel" @click="$store.fileBrowser.handleClose()">Close</button>
+        </template>
       </div>
     </template>
   </div>
 
   <style>
-    .file-browser-shell {
-      width: 100%;
-      min-width: 0;
-    }
-
+    .file-browser-shell { width: 100%; min-width: 0; }
     .modal-inner.file-browser-modal {
-      box-sizing: border-box;
-      width: min(78vw, 1040px);
-      height: min(82vh, 820px);
-      min-width: min(420px, calc(100vw - 16px));
-      min-height: min(360px, calc(100vh - 16px));
-      max-width: calc(100vw - 16px);
-      max-height: calc(100vh - 16px);
-      resize: both;
-      overflow: hidden;
+      box-sizing: border-box; width: min(86vw, 1180px); height: min(84vh, 860px);
+      min-width: min(420px, calc(100vw - 16px)); min-height: min(360px, calc(100vh - 16px));
+      max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); resize: both; overflow: hidden;
     }
-
-    .modal-inner.file-browser-modal.is-focus-mode {
-      resize: none;
-      border-radius: 6px;
-    }
-
+    .modal-inner.file-browser-modal.is-focus-mode { resize: none; border-radius: 6px; }
     .modal-inner.file-browser-modal .modal-header {
-      min-height: 34px;
-      padding: 0.35rem 0.75rem 0.35rem 1rem;
+      min-height: 34px; padding: 0.35rem 0.75rem 0.35rem 1rem;
       background: color-mix(in srgb, var(--color-background) 92%, #000 8%);
       border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
     }
-
     .modal-inner.file-browser-modal .modal-scroll,
     .modal-inner.file-browser-modal .modal-bd.file-browser-modal-body {
-      display: flex;
-      flex: 1 1 auto;
-      width: 100%;
-      height: 100%;
-      min-width: 0;
-      min-height: 0;
-      max-height: none;
-      overflow: hidden;
-      padding: 0;
+      display: flex; flex: 1 1 auto; width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: none; overflow: hidden; padding: 0;
     }
-
     .modal-inner.file-browser-modal .modal-bd.file-browser-modal-body > div[x-data],
-    .modal-inner.file-browser-modal .file-browser-shell {
-      display: flex;
-      flex: 1 1 auto;
-      flex-direction: column;
-      height: 100%;
-      min-width: 0;
-      min-height: 0;
+    .modal-inner.file-browser-modal .file-browser-shell,
+    .file-browser-shell.is-surface { display: flex; flex: 1 1 auto; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
+    .file-browser-footer { padding: 0.45rem 0.75rem; gap: 8px; }
+
+    .fb {
+      --fb-line: color-mix(in srgb, var(--color-border) 75%, transparent);
+      --fb-hover: var(--color-background-hover, color-mix(in srgb, var(--color-text) 7%, transparent));
+      --fb-sel: color-mix(in srgb, var(--color-primary) 22%, transparent);
+      --fb-sel-line: color-mix(in srgb, var(--color-primary) 55%, transparent);
+      position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%;
+      font-size: 0.86rem; color: var(--color-text); outline: none; user-select: none;
+    }
+    .fb .material-symbols-outlined { font-size: 19px; line-height: 1; }
+    .fb-grow { flex: 1 1 auto; }
+
+    .fb-navbar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--fb-line); }
+    .fb-icon-btn, .fb-cmd {
+      display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 1px solid transparent;
+      border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; white-space: nowrap;
+    }
+    .fb-icon-btn { width: 30px; padding: 0; justify-content: center; }
+    .fb-icon-btn:hover:not(:disabled), .fb-cmd:hover:not(:disabled):not(.is-disabled) { background: var(--fb-hover); }
+    .fb-icon-btn:disabled, .fb-cmd:disabled, .fb-cmd.is-disabled { opacity: 0.38; cursor: default; }
+    .fb-cmd.is-on { background: var(--fb-sel); border-color: var(--fb-sel-line); }
+    .fb-spin { animation: fb-spin 0.9s linear infinite; }
+    @keyframes fb-spin { to { transform: rotate(360deg); } }
+
+    .fb-address {
+      flex: 1 1 auto; min-width: 0; height: 30px; display: flex; align-items: center; padding: 0 6px; margin-left: 4px;
+      border: 1px solid var(--fb-line); border-radius: 6px; background: var(--color-input, transparent); cursor: text;
+    }
+    .fb-crumbs { display: flex; align-items: center; min-width: 0; overflow: hidden; width: 100%; height: 100%; }
+    .fb-crumb-icon { opacity: 0.7; margin-right: 2px; }
+    .fb-crumb { display: inline-flex; align-items: center; min-width: 0; flex-shrink: 1; overflow: hidden; }
+    .fb-crumb:last-child { flex-shrink: 0; }
+    .fb-crumb button {
+      border: 0; background: transparent; color: inherit; font: inherit; padding: 3px 5px; border-radius: 4px; cursor: pointer;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;
+    }
+    .fb-crumb button:hover:not(:disabled) { background: var(--fb-hover); }
+    .fb-crumb button:disabled { opacity: 0.55; cursor: default; }
+    .fb-crumb-sep { font-size: 16px !important; opacity: 0.5; }
+    .fb-address-input { width: 100%; height: 100%; border: 0; outline: none; background: transparent; color: inherit; font: inherit; }
+    .fb-search {
+      display: flex; align-items: center; gap: 4px; width: 210px; height: 30px; padding: 0 8px; border: 1px solid var(--fb-line);
+      border-radius: 6px; background: var(--color-input, transparent);
+    }
+    .fb-search .material-symbols-outlined { opacity: 0.6; font-size: 17px; }
+    .fb-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: inherit; font: inherit; }
+
+    .fb-commands { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--fb-line); overflow-x: auto; }
+    .fb-cmd-icon { width: 32px; padding: 0; justify-content: center; }
+    .fb-cmd-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--fb-line); }
+
+    .fb-body { display: flex; flex: 1 1 auto; min-height: 0; }
+    .fb-nav {
+      width: 220px; flex: 0 0 auto; overflow-y: auto; padding: 6px 4px; border-right: 1px solid var(--fb-line);
+      background: color-mix(in srgb, var(--color-panel, var(--color-background)) 60%, transparent);
+    }
+    .fb-nav-title { padding: 8px 8px 4px; font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.6; }
+    .fb-nav-item {
+      display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px;
+      background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    }
+    .fb-nav-item:hover:not(:disabled) { background: var(--fb-hover); }
+    .fb-nav-item.is-current { background: var(--fb-sel); }
+    .fb-nav-item > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fb-drive { align-items: flex-start; }
+    .fb-drive.is-locked { opacity: 0.45; cursor: not-allowed; }
+    .fb-drive-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+    .fb-drive-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fb-drive-bar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--color-text) 14%, transparent); overflow: hidden; }
+    .fb-drive-bar > span { display: block; height: 100%; background: var(--color-primary); }
+    .fb-drive-bar > span.is-full { background: var(--color-error, #ef4444); }
+    .fb-drive-free { font-size: 0.72rem; opacity: 0.6; }
+    .fb-lock { font-size: 15px !important; opacity: 0.7; margin-top: 2px; }
+    .fb-nav-note { display: flex; gap: 6px; align-items: flex-start; margin: 10px 6px; font-size: 0.74rem; opacity: 0.65; }
+
+    .fb-main { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; overflow: hidden; container: fb-list / inline-size; }
+    .fb-header, .fb-row { display: grid; grid-template-columns: minmax(180px, 1fr) 150px 120px 90px; align-items: center; }
+    .fb-header { border-bottom: 1px solid var(--fb-line); padding: 0 8px; }
+    .fb-header button {
+      display: flex; align-items: center; gap: 2px; height: 28px; padding: 0 6px; border: 0; border-radius: 4px;
+      background: transparent; color: inherit; font: inherit; font-size: 0.78rem; opacity: 0.75; cursor: pointer; text-align: left;
+    }
+    .fb-header button:hover { background: var(--fb-hover); opacity: 1; }
+    .fb-header .material-symbols-outlined { font-size: 14px !important; }
+    .fb-header .fb-col-size { justify-content: flex-end; }
+    .fb-rows { flex: 1 1 auto; overflow-y: auto; padding: 2px 8px 8px; }
+    .fb-row { height: 30px; border: 1px solid transparent; border-radius: 5px; cursor: default; }
+    .fb-row:hover { background: var(--fb-hover); }
+    .fb-row.is-selected { background: var(--fb-sel); border-color: var(--fb-sel-line); }
+    .fb-row.is-hidden, .fb-row.is-cut { opacity: 0.55; }
+    .fb-row > span { padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fb-row .fb-col-modified, .fb-row .fb-col-type, .fb-row .fb-col-size { font-size: 0.8rem; opacity: 0.72; }
+    .fb-row .fb-col-size { text-align: right; }
+    .fb-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .fb-file-icon { opacity: 0.78; }
+    .fb-file-icon.is-folder { color: #e8b84a; opacity: 1; font-variation-settings: "FILL" 1; }
+    .fb-name-text { overflow: hidden; text-overflow: ellipsis; }
+    .fb-badge { font-size: 14px !important; opacity: 0.55; }
+    .fb-surface-btn {
+      display: none; margin-left: auto; height: 22px; width: 26px; align-items: center; justify-content: center;
+      border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer;
+    }
+    .fb-row:hover .fb-surface-btn, .fb-row.is-selected .fb-surface-btn { display: inline-flex; }
+    .fb-surface-btn:hover { background: var(--fb-hover); }
+    .fb-empty { padding: 40px 12px; text-align: center; opacity: 0.6; }
+    .fb-drop {
+      position: absolute; inset: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+      border: 2px dashed var(--color-primary); border-radius: 10px; pointer-events: none;
+      background: color-mix(in srgb, var(--color-primary) 10%, var(--color-background));
+    }
+    .fb-drop .material-symbols-outlined { font-size: 40px !important; color: var(--color-primary); }
+
+    .fb-preview { width: 280px; flex: 0 0 auto; overflow-y: auto; padding: 12px; border-left: 1px solid var(--fb-line); }
+    .fb-preview-empty { padding: 30px 6px; text-align: center; opacity: 0.55; }
+    .fb-preview-content { display: flex; flex-direction: column; gap: 12px; user-select: text; }
+    .fb-preview-image { max-width: 100%; max-height: 260px; object-fit: contain; border-radius: 6px; background: repeating-conic-gradient(#8882 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
+    .fb-preview-frame { width: 100%; height: 340px; border: 1px solid var(--fb-line); border-radius: 6px; background: #fff; }
+    .fb-preview-text { max-height: 340px; overflow: auto; margin: 0; padding: 8px; font-size: 0.74rem; white-space: pre-wrap; word-break: break-word;
+      border-radius: 6px; background: var(--color-input, color-mix(in srgb, var(--color-text) 6%, transparent)); }
+    .fb-preview-icon { display: flex; justify-content: center; padding: 20px 0; }
+    .fb-preview-icon .material-symbols-outlined { font-size: 72px !important; opacity: 0.6; }
+    .fb-props { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: 0.8rem; }
+    .fb-props dt { opacity: 0.6; }
+    .fb-props dd { margin: 0; overflow-wrap: anywhere; }
+
+    .fb-status {
+      display: flex; align-items: center; gap: 12px; min-height: 26px; padding: 0 10px; font-size: 0.76rem; opacity: 0.85;
+      border-top: 1px solid var(--fb-line); white-space: pre;
+    }
+    .fb-status-flag { display: inline-flex; align-items: center; gap: 3px; }
+    .fb-status-flag .material-symbols-outlined { font-size: 14px !important; }
+    .fb-upload { display: inline-flex; align-items: center; gap: 6px; }
+    .fb-upload-bar { width: 90px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--color-text) 14%, transparent); overflow: hidden; }
+    .fb-upload-bar > span { display: block; height: 100%; background: var(--color-primary); transition: width 0.2s; }
+
+    .fb-menu {
+      position: absolute; z-index: 60; min-width: 230px; padding: 4px; border: 1px solid var(--fb-line); border-radius: 8px;
+      background: var(--color-panel, var(--color-background)); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    .fb-menu button {
+      display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 10px; border: 0; border-radius: 5px;
+      background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    }
+    .fb-menu button:hover:not(:disabled) { background: var(--fb-hover); }
+    .fb-menu button:disabled { opacity: 0.4; cursor: default; }
+    .fb-menu kbd { margin-left: auto; padding-left: 16px; font-family: inherit; font-size: 0.72rem; opacity: 0.55; background: none; border: 0; }
+    .fb-menu hr { margin: 4px 6px; border: 0; border-top: 1px solid var(--fb-line); }
+
+    .fb-overlay {
+      position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--color-background) 55%, transparent); backdrop-filter: blur(2px);
+    }
+    .fb-dialog {
+      width: min(420px, calc(100% - 32px)); padding: 18px; border: 1px solid var(--fb-line); border-radius: 10px;
+      background: var(--color-panel, var(--color-background)); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    }
+    .fb-dialog-title { font-weight: 600; font-size: 1rem; margin-bottom: 8px; }
+    .fb-dialog p { margin: 0 0 16px; line-height: 1.45; user-select: text; }
+    .fb-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .fb-danger { background: var(--color-error, #ef4444) !important; border-color: var(--color-error, #ef4444) !important; color: #fff !important; }
+
+    .fb-editor { flex-direction: column; align-items: stretch; justify-content: flex-start; background: var(--color-background); backdrop-filter: none; }
+    .fb-editor-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--fb-line); }
+    .fb-editor-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fb-editor-enc { font-size: 0.7rem; opacity: 0.55; }
+    .fb-editor-error { color: var(--color-error, #ef4444); font-size: 0.8rem; }
+    .fb-editor-text {
+      flex: 1 1 auto; width: 100%; resize: none; border: 0; outline: none; padding: 12px; margin: 0;
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.84rem; line-height: 1.5; tab-size: 4;
+      background: transparent; color: inherit; white-space: pre; overflow: auto;
     }
 
-    .file-browser-shell.is-surface {
-      display: flex;
-      flex: 1 1 auto;
-      flex-direction: column;
-      height: 100%;
-      min-height: 0;
+    .fb-picker { display: flex; align-items: center; gap: 8px; width: 100%; }
+    .fb-picker-name {
+      flex: 1 1 auto; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 6px;
+      background: var(--color-input, transparent); color: inherit; font: inherit;
     }
+    .fb-picker-label { flex: 1 1 auto; opacity: 0.75; font-size: 0.85rem; }
+    .fb-picker-error { color: var(--color-error, #ef4444); font-size: 0.8rem; }
 
-    /* File Browser Root */
-    .file-browser-root {
-      container: file-browser / inline-size;
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      height: 100%;
-      min-height: 400px;
-    }
-
-    .file-browser-root.is-surface {
-      flex: 1 1 auto;
-      min-height: 0;
-    }
-
-    .modal-inner.file-browser-modal .file-browser-root {
-      flex: 1 1 auto;
-      min-height: 0;
-    }
-
-    /* Loading State */
-    .loading-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: var(--spacing-lg);
-      min-height: 200px;
-    }
-
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid var(--color-border);
-      border-top: 3px solid var(--color-primary);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: var(--spacing-md);
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .loading-state p {
-      color: var(--color-text-secondary);
-      margin: 0;
-    }
-
-    /* File Browser Content */
-    .file-browser-content {
-      display: flex;
-      flex-direction: column;
-      padding: var(--spacing-sm) var(--spacing-sm);
-      gap: var(--spacing-sm);
-      min-height: 0;
-    }
-
-    .file-browser-shell.is-surface .file-browser-content {
-      flex: 1 1 auto;
-      overflow: hidden;
-    }
-
-    .modal-inner.file-browser-modal .file-browser-content {
-      flex: 1 1 auto;
-      overflow: hidden;
-    }
-
-    /* File Browser Styles */
-    .files-list {
-      width: 100%;
-      border-radius: 4px;
-    }
-
-    .file-browser-shell.is-surface .files-list {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow: auto;
-      border: 1px solid var(--color-border);
-      background: color-mix(in srgb, var(--color-panel) 82%, transparent);
-    }
-
-    .modal-inner.file-browser-modal .files-list {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow: auto;
-      border: 1px solid var(--color-border);
-      background: color-mix(in srgb, var(--color-panel) 82%, transparent);
-    }
-
-    .file-browser-shell.is-surface .file-header {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-    }
-
-    .modal-inner.file-browser-modal .file-header {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-    }
-
-    /* Header Styles */
-    .file-header {
-      width: 100%;
-      border-radius: 4px;
-      overflow: hidden;
-      display: grid;
-      grid-template-columns: 2.5rem minmax(0, 1.5fr) minmax(5.5rem, 0.7fr) minmax(9rem, 1fr) 8.75rem;
-      background: color-mix(in srgb, var(--color-panel) 88%, var(--color-background) 12%);
-      padding: 8px 0;
-      font-weight: bold;
-      border-bottom: 1px solid var(--color-border);
-      color: var(--color-primary);
-    }
-    .file-cell-select,
-    .file-cell-actions {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    }
-    .file-cell,
-    .file-cell-size,
-    .file-cell-date {
-    color: var(--color-primary);
-    padding: 4px;
-    cursor: pointer;
-    }
-
-    /* File Item Styles */
-    .file-item {
-    display: grid;
-    grid-template-columns: 2.5rem minmax(0, 1.5fr) minmax(5.5rem, 0.7fr) minmax(9rem, 1fr) 8.75rem;
-    align-items: center;
-    padding: 8px 0;
-    font-size: 0.875rem;
-    border-top: 1px solid var(--color-border);
-    transition: background-color 0.2s;
-    white-space: nowrap;
-    border-radius: 4px;
-    overflow: visible; /* allow action dropdown menus to overflow the row */
-    color: var(--color-text);
-    }
-    .file-item:hover {
-    background-color: var(--color-secondary);
-    }
-    .file-item.selected {
-    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-    }
-
-    .file-select-cell {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    min-height: 1.75rem;
-    }
-
-    .file-cell-select input,
-    .file-select-cell input {
-    width: 1rem;
-    height: 1rem;
-    accent-color: var(--color-primary);
-    cursor: pointer;
-    }
-
-    /* File Icon and Name */
-    .file-icon {
-    width: 1.8rem;
-    height: 1.8rem;
-    margin: 0 1rem 0 0.7rem;
-    vertical-align: middle;
-    font-size: var(--font-size-sm);
-    }
-    .file-name {
-    display: flex;
-    align-items: center;
-    font-weight: 500;
-    margin-right: var(--spacing-sm);
-    overflow: hidden;
-    }
-    .file-name > span {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    }
-    .file-size,
-    .file-date {
-    color: var(--color-text-secondary);
-    }
-    /* No Files Message */
-    .no-files {
-    padding: 32px;
-    text-align: center;
-    color: var(--color-text-secondary);
-    }
-    .no-files .btn-clear-search {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    margin-top: 0.75rem;
-    }
-    /* Light Mode Adjustments */
-    .light-mode .file-item:hover {
-    background-color: var(--color-secondary-light);
-    }
-
-    /* Path Navigator Styles */
-    .path-navigator-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    }
-
-    .path-breadcrumbs {
-    display: flex;
-    align-items: center;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: 0.1rem;
-    padding: 0 0.15rem;
-    scrollbar-width: thin;
-    }
-
-    .path-breadcrumb-segment {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.1rem;
-    flex: 0 0 auto;
-    }
-
-    .path-breadcrumb-button {
-    background: none;
-    border: none;
-    color: var(--color-text-secondary, var(--color-text));
-    opacity: 0.75;
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.1rem 0.35rem;
-    border-radius: 5px;
-    cursor: pointer;
-    white-space: nowrap;
-    max-width: 12rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    }
-
-    .path-breadcrumb-button:hover:not(:disabled) {
-    opacity: 1;
-    background-color: var(--color-background-hover);
-    }
-
-    .path-breadcrumb-button.is-current {
-    opacity: 1;
-    font-weight: 600;
-    cursor: default;
-    }
-
-    .path-breadcrumb-separator {
-    font-size: 14px;
-    width: 14px;
-    height: 14px;
-    opacity: 0.5;
-    flex: 0 0 auto;
-    }
-
-    .path-navigator {
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    background-color: var(--color-message-bg);
-    padding: 0.5rem var(--spacing-sm);
-    margin: 0;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    }
-
-    .path-navigator .back-button {
-    flex: 0 0 auto;
-    }
-
-    .path-input-shell {
-    position: relative;
-    display: flex;
-    align-items: center;
-    flex: 1;
-    min-width: 0;
-    }
-
-    .path-input {
-    width: 100%;
-    height: 2.25rem;
-    min-width: 0;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--color-input) 78%, transparent);
-    color: var(--color-text);
-    padding: 0 2.5rem 0 0.75rem;
-    font: inherit;
-    font-family: 'Roboto Mono', monospace;
-    -webkit-font-optical-sizing: auto;
-    font-optical-sizing: auto;
-    line-height: 1;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
-    }
-
-    .path-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    background: var(--color-input-focus);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 20%, transparent);
-    }
-
-    .path-input-shell.has-error .path-input {
-    border-color: var(--color-error);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-error) 18%, transparent);
-    }
-
-    .path-submit {
-    position: absolute;
-    right: 0.35rem;
-    width: 1.75rem;
-    height: 1.75rem;
-    color: var(--color-text);
-    }
-
-    .path-submit:disabled {
-    opacity: 0.5;
-    cursor: wait;
-    }
-
-    .path-error {
-    color: var(--color-error);
-    font-size: 0.8rem;
-    padding: 0 0.25rem;
-    }
-
-    .file-browser-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-    }
-
-    .file-search-shell {
-    position: relative;
-    display: flex;
-    align-items: center;
-    min-width: 16rem;
-    flex: 1;
-    }
-
-    .file-search-icon {
-    position: absolute;
-    left: 0.65rem;
-    font-size: 1.1rem;
-    color: var(--color-primary);
-    opacity: 0.72;
-    pointer-events: none;
-    }
-
-    .file-search-input {
-    width: 100%;
-    height: 2.4rem;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-input);
-    color: var(--color-text);
-    padding: 0 2.35rem 0 2.2rem;
-    font: inherit;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
-    }
-
-    .file-search-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    background: var(--color-input-focus);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 20%, transparent);
-    }
-
-    .file-search-clear {
-    position: absolute;
-    right: 0.35rem;
-    width: 1.65rem;
-    height: 1.65rem;
-    color: var(--color-text);
-    }
-
-    .new-item-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5em;
-    }
-    .new-item-buttons button {
-    margin-left: 0;
-    }
-
-    .file-status-bar {
-    border-radius: 8px 8px 0 0;
-    margin-bottom: calc(-1 * var(--spacing-sm));
-    }
-
-    .file-mass-toolbar {
-    border-left: 1px solid var(--color-border);
-    border-right: 1px solid var(--color-border);
-    border-bottom: 1px solid var(--color-border);
-    }
-
-    .file-mass-toolbar .btn-mass:disabled {
-    opacity: 0.55;
-    cursor: wait;
-    }
-    
-    .nav-button {
-    appearance: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.1rem;
-    min-height: 2.35rem;
-    padding: 0.22rem 0.62rem 0.24rem;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--color-input) 86%, var(--color-panel) 14%);
-    color: var(--color-text);
-    font: inherit;
-    line-height: 1;
-    box-shadow: none;
-    cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
-    }
-    .nav-button.back-button {
-    flex: 0 0 auto;
-    flex-direction: column;
-    min-width: 3.1rem;
-    }
-    .nav-button .material-symbols-outlined {
-    font-size: 1.05rem;
-    line-height: 1;
-    }
-    .nav-button-label {
-    font-size: 0.66rem;
-    font-weight: 600;
-    letter-spacing: 0;
-    line-height: 1;
-    }
-    .nav-button:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border));
-    background: color-mix(in srgb, var(--color-input-focus) 84%, var(--color-primary) 16%);
-    color: var(--color-text);
-    }
-    .nav-button:focus-visible {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 22%, transparent);
-    }
-    .nav-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-    }
-    /* Folder Specific Styles */
-    .file-item[data-is-dir="true"] {
-    cursor: pointer;
-    }
-    .file-item[data-is-dir="true"]:hover {
-    background-color: var(--color-secondary);
-    }
-
-    /* Upload Button Styles */
-    .btn-upload {
-    display: inline-flex;
-    align-items: center;
-    padding: 8px 16px;
-    background: #4248f1;
-    gap: 0.5rem;
-    color: white;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s ease-in-out;
-    }
-    .btn-upload > svg {
-    width: 20px;
-    }
-    .btn-upload:hover {
-    background-color: #353bc5;
-    }
-    .btn-upload:active {
-    background-color: #2b309c;
-    }
-
-    .file-browser-footer.is-surface {
-    display: flex;
-    flex: 0 0 auto;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-sm);
-    border-top: 1px solid var(--color-border);
-    background: color-mix(in srgb, var(--color-panel) 90%, var(--color-background) 10%);
-    }
-
-    .file-browser-picker-actions {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-    min-width: 0;
-    }
-
-    .picker-filename-field {
-    display: flex;
-    align-items: center;
-    flex: 1 1 16rem;
-    max-width: 24rem;
-    min-width: 10rem;
-    height: 2.35rem;
-    border: 1px solid var(--color-border);
-    border-radius: 7px;
-    background: var(--color-input);
-    color: var(--color-text);
-    }
-
-    .picker-filename-field .material-symbols-outlined {
-    flex: 0 0 auto;
-    padding-left: 0.65rem;
-    color: var(--color-primary);
-    font-size: 1.1rem;
-    opacity: 0.78;
-    }
-
-    .picker-filename-input {
-    flex: 1 1 auto;
-    width: 100%;
-    min-width: 0;
-    height: 100%;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--color-text);
-    padding: 0 0.7rem;
-    font: inherit;
-    }
-
-    .picker-selection-label,
-    .picker-inline-error {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.82rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    }
-
-    .picker-selection-label {
-    color: var(--color-text-secondary);
-    }
-
-    .picker-inline-error {
-    color: var(--color-error);
-    }
-
-    .picker-confirm-button {
-    min-width: 7.6rem;
-    }
-
-    /* File Actions */
-    .file-actions {
-    display: flex;
-    gap: var(--spacing-xs);
-    justify-content: flex-end;
-    padding-right: 0.5rem;
-    }
-    .file-editor-open-action {
-    border-color: color-mix(in srgb, var(--color-primary) 52%, var(--color-border));
-    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-    }
-    .file-actions-menu {
-    margin: 0;
-    }
-    .btn-new-item {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    width: 2.8rem;
-    height: 2.8rem;
-    min-width: 2.8rem;
-    padding: 0;
-    border-radius: 8px;
-    }
-    .btn-new-item .material-symbols-outlined {
-    font-size: 1.35rem;
-    line-height: 1;
-    }
-    .btn-secondary {
-    background: var(--color-secondary);
-    color: var(--color-text);
-    border: 1px solid var(--color-border);
-    }
-    .btn-secondary:hover {
-    filter: brightness(1.05);
-    }
-    .btn-secondary:active {
-    filter: brightness(0.95);
-    }
-    /* Responsive Design */
-    @media (max-width: 768px) {
-    .path-navigator {
-      align-items: center;
-      flex-direction: row;
-      gap: 0.5rem;
-    }
-    .path-navigator .back-button {
-      align-self: stretch;
-    }
-    .file-browser-toolbar {
-      align-items: center;
-      flex-direction: row;
-      gap: 0.5rem;
-    }
-    .file-search-shell {
-      flex: 1 1 auto;
-      min-width: 0;
-      width: auto;
-    }
-    .new-item-buttons {
-      flex: 0 0 auto;
-      gap: 0.4rem;
-    }
-    .btn-new-item {
-      width: 2.5rem;
-      min-width: 2.5rem;
-      height: 2.5rem;
-    }
-    .file-header {
-      grid-template-columns: 2.25rem minmax(0, 1fr) minmax(5rem, 0.52fr) 8.75rem;
-    }
-    .file-item {
-        grid-template-columns: 2.25rem minmax(0, 1fr) minmax(5rem, 0.5fr) 8.75rem;
-    }
-    .file-cell-date,
-    .file-date {
-        display: none;
-    }
-    .file-actions {
-        gap: 0.2rem;
-        padding-right: 0.2rem;
-    }
-    }
-    @media (max-width: 540px) {
-    .path-navigator .back-button {
-        min-width: 2.45rem;
-        padding-inline: 0.5rem;
-    }
-    .path-navigator .nav-button-label {
-        display: none;
-    }
-    .file-header,
-    .file-item {
-        grid-template-columns: 2.25rem minmax(0, 1fr) minmax(4.25rem, max-content) 8rem;
-    }
-    .file-cell-date,
-    .file-date {
-        display: none;
-    }
-    }
-    @container file-browser (max-width: 620px) {
-    .file-header,
-    .file-item {
-        grid-template-columns: 2.25rem minmax(0, 1fr) minmax(4.25rem, max-content) 8rem;
-    }
-    .file-cell-date,
-    .file-date {
-        display: none;
-    }
-    .file-actions {
-        gap: 0.2rem;
-        padding-right: 0.2rem;
-    }
-    .file-browser-picker-actions {
-        flex-wrap: wrap;
-        justify-content: stretch;
-    }
-    .picker-filename-field {
-        flex-basis: 100%;
-        max-width: none;
-    }
-    .picker-confirm-button {
-        flex: 1 1 auto;
-    }
+    /* The list drops columns as it narrows (Type, then Date); the window drops panes. */
+    @container fb-list (max-width: 620px) {
+      .fb-header, .fb-row { grid-template-columns: minmax(150px, 1fr) 140px 80px; }
+      .fb-header .fb-col-type, .fb-row .fb-col-type { display: none; }
+    }
+    @container fb-list (max-width: 440px) {
+      .fb-header, .fb-row { grid-template-columns: minmax(120px, 1fr) 76px; }
+      .fb-header .fb-col-modified, .fb-row .fb-col-modified { display: none; }
+    }
+    .fb { container: fb-root / inline-size; }
+    @container fb-root (max-width: 760px) { .fb-preview { display: none; } }
+    @container fb-root (max-width: 700px) {
+      .fb-nav { width: 180px; }
+      .fb-cmd > span:not(.material-symbols-outlined) { display: none; }
+      .fb-cmd { width: 32px; padding: 0; justify-content: center; }
+    }
+    @container fb-root (max-width: 520px) {
+      .fb-nav { position: absolute; z-index: 20; top: 0; bottom: 0; left: 0; box-shadow: 4px 0 18px rgba(0, 0, 0, 0.3); background: var(--color-panel, var(--color-background)); }
+      .fb-search { width: 120px; }
+      .fb-crumb:not(:nth-last-child(-n + 2)) { display: none; }
+      .fb-crumb:nth-last-child(2) .fb-crumb-sep { display: none; }
+      .fb-crumb-icon { display: none; }
+      .fb-navbar .fb-icon-btn:nth-child(2) { display: none; }
     }
   </style>
 </body>

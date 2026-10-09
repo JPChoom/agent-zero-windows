@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -143,6 +144,26 @@ def places(policy: fa.Policy) -> dict:
         if allowed or partly or not policy.remote:
             drives.append({**drive, "allowed": allowed, "partly": partly and not allowed})
     return {"quick": quick, "drives": drives, "policy": policy.describe()}
+
+
+def locate(raw: str, policy: fa.Policy) -> dict:
+    """Translate the path forms other features pass in ("", "$WORK_DIR",
+    Docker-style "/a0/...", workdir-relative "x" or "/x", or a Windows path)
+    into {folder, select}: the folder to show and, when `raw` named a file,
+    that file to highlight."""
+    text = str(raw or "").strip()
+    if text in ("", "$WORK_DIR", "/a0/usr/workdir"):
+        target = fa.workdir()
+    elif text == "/a0" or text.startswith("/a0/"):
+        target = fa.a0_base() / text[4:].lstrip("/")
+    elif re.match(r"^[A-Za-z]:[\\/]?", text):
+        target = Path(text)
+    else:
+        target = fa.workdir() / text.lstrip("/\\")
+    path = fa.resolve(str(target), policy)
+    if path.is_dir():
+        return {"folder": str(path), "select": ""}
+    return {"folder": str(path.parent), "select": str(path)}
 
 
 # ------------------------------------------------------------------ changes
@@ -295,10 +316,19 @@ def read_text(raw: str, policy: fa.Policy) -> dict:
             continue
     if encoding == "utf-8-sig" and not data.startswith(b"\xef\xbb\xbf"):
         encoding = "utf-8"
-    return {"path": str(path), "content": text, "encoding": encoding, "modified": int(path.stat().st_mtime * 1000)}
+    # Browsers turn every line ending in a text box into "\n"; report the
+    # file's style so write_text can restore it.
+    newline = "\r\n" if text.count("\r\n") * 2 > text.count("\n") else "\n"
+    return {
+        "path": str(path), "content": text.replace("\r\n", "\n"), "encoding": encoding, "newline": newline,
+        "modified": int(path.stat().st_mtime * 1000),
+    }
 
 
-def write_text(raw: str, content: str, policy: fa.Policy, encoding: str = "utf-8", expected_modified: int | None = None) -> dict:
+def write_text(
+    raw: str, content: str, policy: fa.Policy, encoding: str = "utf-8",
+    expected_modified: int | None = None, newline: str = "\n",
+) -> dict:
     path = fa.resolve(raw, policy, must_exist=False)
     if not path.exists():
         path = fa.resolve_new(path.parent, path.name, policy)
@@ -306,7 +336,10 @@ def write_text(raw: str, content: str, policy: fa.Policy, encoding: str = "utf-8
         raise FileOpError("That is a folder.")
     if path.exists() and expected_modified and int(path.stat().st_mtime * 1000) != int(expected_modified):
         raise FileOpError("The file changed on disk since it was opened. Reload it before saving.")
-    data = str(content).encode(encoding if encoding in ("utf-8", "utf-8-sig", "cp1252", "latin-1") else "utf-8")
+    text = str(content).replace("\r\n", "\n")
+    if newline == "\r\n":
+        text = text.replace("\n", "\r\n")
+    data = text.encode(encoding if encoding in ("utf-8", "utf-8-sig", "cp1252", "latin-1") else "utf-8")
     if len(data) > MAX_TEXT_BYTES:
         raise FileOpError("The text is larger than 2 MB.")
     with open(path, "wb") as fh:

@@ -1,84 +1,140 @@
 import { createStore } from "/js/AlpineStore.js";
-import { callJsonApi, fetchApi } from "/js/api.js";
-import { formatDateTime } from "/js/time-utils.js";
-import { store as fileEditorStore } from "/components/modals/file-editor/file-editor-store.js";
+import { callJsonApi, getCsrfToken } from "/js/api.js";
+import { getModalStack } from "/js/modals.js";
 import {
   openLatest as openLatestSurface,
   setupFloatingSurfaceModalChrome,
 } from "/js/surfaces.js";
 
-const FILE_BROWSER_MODAL_PATH = "modals/file-browser/file-browser.html";
-const FILE_BROWSER_LAST_DIRECTORY_STORAGE_KEY = "fileBrowser.lastDirectory";
-const DEFAULT_REMEMBER_LAST_DIRECTORY = true;
-const PICKER_MODE_NONE = "";
-const PICKER_MODE_TEXT_OPEN = "text-open";
-const PICKER_MODE_SAVE_AS = "save-as";
+// Windows File Browser (Explorer-style). Backend: api/file_manager*.py, every
+// path checked by helpers/file_access.py. Paths are absolute Windows paths.
+
+const MODAL_PATH = "modals/file-browser/file-browser.html";
+const RENAME_MODAL_PATH = "modals/file-browser/rename-modal.html";
+const PREFS_KEY = "fileBrowser.prefs";
+const LAST_DIR_KEY = "fileBrowser.lastDirectory";
+const PICKER_NONE = "";
+const PICKER_TEXT_OPEN = "text-open";
+const PICKER_SAVE_AS = "save-as";
 const EDITOR_TEXT_EXTENSIONS = new Set(["md", "txt"]);
 const DESKTOP_EXTENSIONS = new Set(["odt", "ods", "odp", "docx", "xlsx", "pptx"]);
-const BROWSER_EXTENSIONS = new Set([
-  "html",
-  "htm",
-  "xhtml",
-  "svg",
-  "xml",
-  "pdf",
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "bmp",
-  "ico",
+const BROWSER_EXTENSIONS = new Set(["html", "htm", "xhtml", "svg", "xml", "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"]);
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"]);
+const TEXT_EXTENSIONS = new Set([
+  "txt", "md", "log", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "ini", "cfg", "conf", "env", "xml",
+  "html", "htm", "css", "scss", "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "pyw", "ps1", "psm1", "bat", "cmd",
+  "sh", "c", "h", "cpp", "hpp", "cs", "java", "go", "rs", "rb", "php", "sql", "lua", "r", "gitignore", "editorconfig",
 ]);
-
+const ICONS = [
+  [["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "tif", "tiff", "heic"], "image"],
+  [["mp4", "mkv", "avi", "mov", "webm", "wmv"], "movie"],
+  [["mp3", "wav", "flac", "ogg", "m4a", "aac"], "music_note"],
+  [["pdf"], "picture_as_pdf"],
+  [["zip", "7z", "rar", "tar", "gz", "bz2", "xz"], "folder_zip"],
+  [["csv", "tsv", "xlsx", "xls", "ods"], "table_chart"],
+  [["pptx", "ppt", "odp"], "slideshow"],
+  [["docx", "doc", "odt", "rtf"], "article"],
+  [["md", "txt", "log"], "description"],
+  [["ps1", "psm1", "bat", "cmd", "sh"], "terminal"],
+  [["ini", "cfg", "conf", "yaml", "yml", "toml", "env", "json", "jsonl", "xml"], "settings"],
+  [["exe", "msi", "dll", "sys"], "apps"],
+  [["py", "js", "mjs", "ts", "tsx", "jsx", "html", "htm", "css", "c", "cpp", "h", "cs", "java", "go", "rs", "rb", "php", "sql", "lua"], "code"],
+];
+const ICON_BY_EXT = new Map(ICONS.flatMap(([exts, icon]) => exts.map((ext) => [ext, icon])));
 const SURFACE_ACTIONS = {
-  editor: {
-    label: "Open in Editor",
-    icon: "article",
-    title: "Open text in Editor",
-  },
-  desktop: {
-    label: "Open in Desktop",
-    icon: "desktop_windows",
-    title: "Open document in Desktop",
-  },
-  browser: {
-    label: "Open in Browser",
-    icon: "language",
-    title: "Open web-viewable file in Browser",
-  },
+  editor: { label: "Open in Editor", icon: "article" },
+  desktop: { label: "Open in Desktop", icon: "desktop_windows" },
+  browser: { label: "Open in Browser", icon: "language" },
 };
 
-function delay(ms) {
-  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+function loadPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
 }
 
-// Model migrated from legacy file_browser.js (lift-and-shift)
+function joinPath(folder, name) {
+  const base = String(folder || "");
+  return /[\\/]$/.test(base) ? base + name : `${base}\\${name}`;
+}
+
+function lastSeparator(path) {
+  return Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+}
+
+function parentOf(path) {
+  const text = String(path || "").replace(/[\\/]+$/, "");
+  const index = lastSeparator(text);
+  if (index < 0) return "";
+  if (/^[A-Za-z]:$/.test(text.slice(0, index))) return text.slice(0, index + 1);
+  return text.slice(0, index) || "/";
+}
+
+function siblingOf(path, name) {
+  const text = String(path || "");
+  const index = lastSeparator(text);
+  return index < 0 ? name : text.slice(0, index + 1) + name;
+}
+
+function extensionOf(name) {
+  const text = String(name || "").toLowerCase();
+  const index = text.lastIndexOf(".");
+  return index > 0 ? text.slice(index + 1) : text.startsWith(".") ? text.slice(1) : "";
+}
+
 const model = {
-  // Reactive state
+  // --- state ---------------------------------------------------------------
   isLoading: false,
-  browser: {
-    title: "File Browser",
-    currentPath: "",
-    entries: [],
-    parentPath: "",
-    sortBy: "name",
-    sortDirection: "asc",
-  },
-  history: [], // navigation stack
-  initialPath: "", // Store path for open() call
+  error: "",
+  rememberLastDirectory: true,
+  path: "",
+  parent: "",
+  entries: [],
+  hiddenCount: 0,
+  truncated: false,
+  writable: true,
+  driveKind: "",
+  places: { quick: [], drives: [], policy: null },
+  selected: {},
+  anchorPath: "",
+  focusPath: "",
+  back: [],
+  forward: [],
+  sortKey: "name",
+  sortDir: 1,
+  searchQuery: "",
+  editingAddress: false,
+  addressInput: "",
+  showHidden: false,
+  showPreview: false,
+  showNav: true,
+  clipboard: null,
+  menu: null,
+  confirm: null,
+  uploads: [],
+  dragOver: false,
+  preview: null,
+  textEditor: null,
   closePromise: null,
   isSurfaceHandoff: false,
   surfaceHandoffPath: "",
-  error: null,
-  pathInput: "",
-  pathError: "",
-  isPathSubmitting: false,
-  rememberLastDirectory: DEFAULT_REMEMBER_LAST_DIRECTORY,
-  settingsLoadPromise: null,
-  settingsUpdatedHandler: null,
   _floatingCleanup: null,
-  _mountedDefaultLoadTimer: null,
+  _mountedLoadTimer: null,
+  _typeAhead: "",
+  _typeAheadTimer: null,
+
+  // Picker modes used by the Editor plugin (Open..., Save As...).
+  pickerMode: PICKER_NONE,
+  pickerConfirmLabel: "",
+  pickerFilename: "",
+  pickerDefaultExtension: "md",
+  pickerFilenameError: "",
+  pickerOnConfirm: null,
+  isBulkBusy: false,
+
+  // Rename / new-folder dialog (rename-modal.html); also used by Editor and Desktop.
   renameTarget: null,
   renameName: "",
   renameMode: "rename",
@@ -87,104 +143,96 @@ const model = {
   renameAfterConfirm: null,
   renamePerformAction: null,
   renameValidateName: null,
-  openDropdownPath: null, // Track which dropdown is currently open
-  dropdownStyle: {},
-  searchQuery: "",
-  isBulkBusy: false,
-  pickerMode: PICKER_MODE_NONE,
-  pickerConfirmLabel: "",
-  pickerFilename: "",
-  pickerDefaultExtension: "md",
-  pickerFilenameError: "",
-  pickerOnConfirm: null,
+  _renameEntries: null,
+  _renameFolder: "",
 
-  // --- Lifecycle -----------------------------------------------------------
   init() {
-    if (this.settingsUpdatedHandler) return;
-    this.settingsUpdatedHandler = (event) => {
+    document.addEventListener("settings-updated", (event) => {
       const value = event?.detail?.file_browser_remember_last_directory;
       if (typeof value !== "boolean") return;
       this.rememberLastDirectory = value;
-      if (!value) this.clearRememberedDirectory();
-    };
-    document.addEventListener("settings-updated", this.settingsUpdatedHandler);
+      if (!value) this.rememberDirectory("");
+    });
+    const prefs = loadPrefs();
+    this.showHidden = Boolean(prefs.showHidden);
+    this.showPreview = Boolean(prefs.showPreview);
+    this.showNav = prefs.showNav !== false;
+    if (["name", "modified", "size", "type"].includes(prefs.sortKey)) this.sortKey = prefs.sortKey;
+    this.sortDir = prefs.sortDir === -1 ? -1 : 1;
   },
 
+  savePrefs() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        showHidden: this.showHidden, showPreview: this.showPreview, showNav: this.showNav,
+        sortKey: this.sortKey, sortDir: this.sortDir,
+      }));
+    } catch {}
+  },
+
+  // --- mounting --------------------------------------------------------------
   onMount(element = null, options = {}) {
     this._floatingCleanup?.();
     this._floatingCleanup = null;
-    const mode = options?.mode === "canvas" ? "canvas" : "modal";
-    if (mode === "modal") {
-      this.setupFloatingModal(element);
+    if (options?.mode === "canvas") {
+      this.scheduleMountedLoad();
     } else {
-      this.scheduleMountedDefaultLoad();
+      this._floatingCleanup = setupFloatingSurfaceModalChrome({
+        root: element,
+        modalClass: "file-browser-modal",
+        focusButtonClass: "file-browser-modal-focus-button",
+        minWidth: 420,
+        minHeight: 360,
+      });
     }
   },
 
   onUnmount() {
     this._floatingCleanup?.();
     this._floatingCleanup = null;
-    this.cancelMountedDefaultLoad();
+    this.cancelMountedLoad();
   },
 
-  // --- Public API (called from button/link) --------------------------------
+  scheduleMountedLoad() {
+    this.cancelMountedLoad();
+    this._mountedLoadTimer = setTimeout(async () => {
+      this._mountedLoadTimer = null;
+      if (this.isLoading || (this.path && this.entries.length)) return;
+      await this.openPath(this.path || "");
+    }, 120);
+  },
+
+  cancelMountedLoad() {
+    if (this._mountedLoadTimer) clearTimeout(this._mountedLoadTimer);
+    this._mountedLoadTimer = null;
+  },
+
+  // --- public API (other features call these) --------------------------------
   async open(path = "", options = {}) {
-    if (this.isLoading) return; // Prevent double-open
-    this.resetOpenState(options);
-
+    if (this.closePromise) return;
+    this.configurePicker(options);
+    this.closePromise = window.openModal(MODAL_PATH);
     try {
-      // Open modal FIRST (immediate UI feedback)
-      this.closePromise = window.openModal(FILE_BROWSER_MODAL_PATH);
-      await this.loadOpeningPath(path);
-
-      // await modal close
+      await this.openPath(path);
       await this.closePromise;
+    } finally {
+      this.closePromise = null;
       if (!this.isSurfaceHandoff) this.destroy();
-
-    } catch (error) {
-      console.error("File browser error:", error);
-      this.error = error?.message || "Failed to load files";
-      this.isLoading = false;
     }
   },
 
   async openSurface(path = "") {
-    if (this.isLoading) return false;
-    this.resetOpenState();
-
-    try {
-      const retainedPath = this.normalizeOpeningPath(
-        path
-          || this.surfaceHandoffPath
-          || this.browser.currentPath
-          || this.initialPath
-      );
-      return await this.loadOpeningPath(retainedPath);
-    } catch (error) {
-      console.error("File browser surface error:", error);
-      this.error = error?.message || "Failed to load files";
-      this.isLoading = false;
-      return false;
-    }
-  },
-
-  handleClose() {
-    // Close the modal manually
-    this.disposeScopedTooltips();
-    window.closeModal(FILE_BROWSER_MODAL_PATH);
+    this.configurePicker({});
+    return await this.openPath(path || this.surfaceHandoffPath || this.path);
   },
 
   async openTextPicker(path = "", onConfirm = null) {
-    return await this.open(path, {
-      pickerMode: PICKER_MODE_TEXT_OPEN,
-      confirmLabel: "Open Selected",
-      onConfirm,
-    });
+    return await this.open(path, { pickerMode: PICKER_TEXT_OPEN, confirmLabel: "Open Selected", onConfirm });
   },
 
   async openSaveAsPicker(path = "", options = {}) {
     return await this.open(path, {
-      pickerMode: PICKER_MODE_SAVE_AS,
+      pickerMode: PICKER_SAVE_AS,
       confirmLabel: "Save Here",
       filename: options.filename || "Untitled.md",
       defaultExtension: options.defaultExtension || "",
@@ -192,125 +240,27 @@ const model = {
     });
   },
 
+  handleClose() {
+    window.closeModal(MODAL_PATH);
+  },
+
   destroy() {
-    this._floatingCleanup?.();
-    this._floatingCleanup = null;
-    this.cancelMountedDefaultLoad();
-    // Reset state when modal closes
-    this.isLoading = false;
-    this.history = [];
-    this.initialPath = "";
-    this.closePromise = null;
+    this.cancelMountedLoad();
+    this.menu = null;
+    this.confirm = null;
+    this.preview = null;
+    this.textEditor = null;
+    this.searchQuery = "";
+    this.editingAddress = false;
+    this.selected = {};
     this.isSurfaceHandoff = false;
     this.surfaceHandoffPath = "";
-    this.browser.currentPath = "";
-    this.browser.parentPath = "";
-    this.browser.entries = [];
-    this.openDropdownPath = null;
-    this.searchQuery = "";
-    this.isBulkBusy = false;
-    this.pathInput = "";
-    this.pathError = "";
-    this.isPathSubmitting = false;
-    this.resetPickerState();
-    this.resetRenameState();
-  },
-
-  setupFloatingModal(element = null) {
-    this._floatingCleanup?.();
-    this._floatingCleanup = setupFloatingSurfaceModalChrome({
-      root: element,
-      modalClass: "file-browser-modal",
-      focusButtonClass: "file-browser-modal-focus-button",
-      minWidth: 420,
-      minHeight: 360,
-    });
-  },
-
-  cancelMountedDefaultLoad() {
-    if (!this._mountedDefaultLoadTimer) return;
-    globalThis.clearTimeout(this._mountedDefaultLoadTimer);
-    this._mountedDefaultLoadTimer = null;
-  },
-
-  scheduleMountedDefaultLoad() {
-    this.cancelMountedDefaultLoad();
-    this._mountedDefaultLoadTimer = globalThis.setTimeout(async () => {
-      this._mountedDefaultLoadTimer = null;
-      if (this.isLoading) return;
-      const targetPath = this.browser.currentPath || "";
-      if (targetPath && this.browser.entries.length) {
-        this.syncPathInput();
-        return;
-      }
-      try {
-        await this.loadOpeningPath(targetPath);
-      } catch (error) {
-        console.error("File browser default path load failed:", error);
-      }
-    }, 120);
-  },
-
-  // --- Helpers -------------------------------------------------------------
-  resetOpenState(options = {}) {
-    this.cancelMountedDefaultLoad();
-    this.isLoading = true;
-    this.error = null;
-    this.history = [];
-    this.searchQuery = "";
-    this.isBulkBusy = false;
-    this.pathError = "";
-    this.isPathSubmitting = false;
-    this.configurePicker(options);
-  },
-
-  configurePicker(options = {}) {
-    const mode = String(options?.pickerMode || PICKER_MODE_NONE).trim();
-    this.pickerMode = [PICKER_MODE_TEXT_OPEN, PICKER_MODE_SAVE_AS].includes(mode)
-      ? mode
-      : PICKER_MODE_NONE;
-    this.pickerConfirmLabel = String(options?.confirmLabel || "").trim()
-      || (this.pickerMode === PICKER_MODE_SAVE_AS ? "Save Here" : "Open Selected");
-    this.pickerFilename = String(options?.filename || "").trim();
-    this.pickerDefaultExtension = this.normalizedEditorTextExtension(
-      options?.defaultExtension || this.fileExtension({ name: this.pickerFilename }) || "md",
-    );
-    this.pickerFilenameError = "";
-    this.pickerOnConfirm = typeof options?.onConfirm === "function" ? options.onConfirm : null;
-    if (this.pickerMode) this.clearSelection();
-  },
-
-  resetPickerState() {
-    this.pickerMode = PICKER_MODE_NONE;
-    this.pickerConfirmLabel = "";
-    this.pickerFilename = "";
-    this.pickerDefaultExtension = "md";
-    this.pickerFilenameError = "";
-    this.pickerOnConfirm = null;
-  },
-
-  async loadOpeningPath(path = "") {
-    await this.loadDirectoryPreference();
-    const explicitPath = this.normalizeOpeningPath(path || this.initialPath);
-    const rememberedPath = !explicitPath ? this.getRememberedDirectory() : "";
-    const targetPath = explicitPath || rememberedPath || "$WORK_DIR";
-    this.browser.currentPath = targetPath;
-    this.syncPathInput();
-
-    const loaded = await this.fetchFiles(this.browser.currentPath, {
-      preserveOnError: Boolean(rememberedPath && targetPath === rememberedPath),
-      suppressErrorToast: Boolean(rememberedPath && targetPath === rememberedPath),
-    });
-    if (!loaded && rememberedPath && targetPath === rememberedPath) {
-      this.clearRememberedDirectory();
-      return await this.fetchFiles("$WORK_DIR");
-    }
-    return loaded;
+    this.resetPicker();
   },
 
   beginSurfaceHandoff() {
     this.isSurfaceHandoff = true;
-    this.surfaceHandoffPath = this.browser.currentPath || this.pathInput || "";
+    this.surfaceHandoffPath = this.path;
   },
 
   finishSurfaceHandoff() {
@@ -319,449 +269,589 @@ const model = {
   },
 
   cancelSurfaceHandoff() {
-    this.isSurfaceHandoff = false;
-    this.surfaceHandoffPath = "";
+    this.finishSurfaceHandoff();
   },
 
-  isArchive(filename) {
-    const archiveExts = ["zip", "tar", "gz", "rar", "7z"];
-    const ext = filename.split(".").pop().toLowerCase();
-    return archiveExts.includes(ext);
+  // --- loading ------------------------------------------------------------------
+  async api(action, payload = {}) {
+    const result = await callJsonApi("file_manager", { action, ...payload });
+    if (!result?.ok) throw new Error(result?.error || "The File Browser request failed.");
+    return result;
   },
 
-  saveScrollPosition() {
-    // Find the file browser modal's scrollable container
-    // We look for the modal containing .file-browser-root to target the correct modal
-    const fileBrowserRoot = document.querySelector('.file-browser-root');
-    if (fileBrowserRoot) {
-      const modalScroll = fileBrowserRoot.closest('.modal-scroll');
-      if (modalScroll) {
-        return {
-          scrollTop: modalScroll.scrollTop,
-          scrollLeft: modalScroll.scrollLeft
-        };
-      }
+  async loadPlaces() {
+    try {
+      this.places = await this.api("places");
+    } catch (error) {
+      console.warn("File Browser places:", error);
     }
-    return null;
   },
 
-  restoreScrollPosition(scrollPos) {
-    if (!scrollPos) return;
-
-    const restore = () => {
-      const fileBrowserRoot = document.querySelector('.file-browser-root');
-      if (fileBrowserRoot) {
-        const modalScroll = fileBrowserRoot.closest('.modal-scroll');
-        if (modalScroll) {
-          modalScroll.scrollTop = scrollPos.scrollTop;
-          modalScroll.scrollLeft = scrollPos.scrollLeft;
-        }
-      }
-    };
-
-    requestAnimationFrame(() => requestAnimationFrame(restore));
+  // Settings > Workdir "Remember last file browser location" (default on).
+  async loadRememberSetting() {
+    const loaded = globalThis.Alpine?.store?.("settings")?.settings?.file_browser_remember_last_directory;
+    if (typeof loaded === "boolean") return (this.rememberLastDirectory = loaded);
+    try {
+      const response = await callJsonApi("settings_get", null);
+      const value = response?.settings?.file_browser_remember_last_directory;
+      this.rememberLastDirectory = typeof value === "boolean" ? value : true;
+    } catch {
+      this.rememberLastDirectory = true;
+    }
+    return this.rememberLastDirectory;
   },
 
-  formatFileSize(size) {
-    if (size === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(size) / Math.log(k));
-    return parseFloat((size / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  },
-
-  formatDate(dateString) {
-    return formatDateTime(dateString, "short");
-  },
-
-  decorateEntries(entries = [], selectedPaths = new Set()) {
-    return entries.map((entry) => ({
-      ...entry,
-      selected: selectedPaths.has(entry.path),
-    }));
-  },
-
-  get filteredEntries() {
-    const query = this.searchQuery.trim().toLowerCase();
-    return this.browser.entries.filter((file) => {
-      if (!this.pickerAllowsEntry(file)) return false;
-      if (!query) return true;
-      const searchable = [
-        file.name,
-        file.path,
-        file.type,
-        file.symlink_target,
-        file.is_dir ? "folder directory" : "file",
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return searchable.includes(query);
-    });
-  },
-
-  get visibleEntries() {
-    return this.sortFiles(this.filteredEntries);
-  },
-
-  clearSearch() {
-    this.searchQuery = "";
-  },
-
-  get selectedFiles() {
-    return this.browser.entries.filter((file) => file.selected && this.isSelectableEntry(file));
-  },
-
-  get selectableEntries() {
-    return this.filteredEntries.filter((file) => this.isSelectableEntry(file));
-  },
-
-  get selectedCount() {
-    return this.selectedFiles.length;
-  },
-
-  get selectedCountLabel() {
-    return `${this.selectedCount} ${this.selectedCount === 1 ? "item" : "items"} selected`;
-  },
-
-  get allVisibleSelected() {
-    return (
-      this.selectableEntries.length > 0 &&
-      this.selectableEntries.every((file) => file.selected)
-    );
-  },
-
-  get someVisibleSelected() {
-    return this.selectableEntries.some((file) => file.selected);
-  },
-
-  toggleSelectAllVisible() {
-    const shouldSelect = !this.allVisibleSelected;
-    this.selectableEntries.forEach((file) => {
-      file.selected = shouldSelect;
-    });
-  },
-
-  clearSelection() {
-    this.browser.entries.forEach((file) => {
-      file.selected = false;
-    });
-  },
-
-  isPickerMode() {
-    return this.pickerMode !== PICKER_MODE_NONE;
-  },
-
-  isTextOpenPicker() {
-    return this.pickerMode === PICKER_MODE_TEXT_OPEN;
-  },
-
-  isSaveAsPicker() {
-    return this.pickerMode === PICKER_MODE_SAVE_AS;
-  },
-
-  isSelectableEntry(file = {}) {
-    if (this.isSaveAsPicker()) return false;
-    if (this.isTextOpenPicker()) return !file?.is_dir && this.fileSurfaceTarget(file) === "editor";
-    return true;
-  },
-
-  normalizeOpeningPath(path) {
-    return String(path || "").trim();
-  },
-
-  normalizeSubmittedPath(path) {
-    const trimmed = String(path || "").trim();
-    if (!trimmed || trimmed === "$WORK_DIR") return trimmed;
-    return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  },
-
-  syncPathInput() {
-    this.pathInput = this.browser.currentPath || "";
-  },
-
-  resetPathInput() {
-    this.syncPathInput();
-    this.pathError = "";
-  },
-
-  async loadDirectoryPreference() {
-    if (this.settingsLoadPromise) return await this.settingsLoadPromise;
-
-    this.settingsLoadPromise = (async () => {
-      try {
-        const response = await callJsonApi("settings_get", null);
-        const remember = response?.settings?.file_browser_remember_last_directory;
-        this.rememberLastDirectory =
-          typeof remember === "boolean" ? remember : DEFAULT_REMEMBER_LAST_DIRECTORY;
-      } catch (error) {
-        console.warn("Failed to load file browser directory preference:", error);
-        this.rememberLastDirectory = DEFAULT_REMEMBER_LAST_DIRECTORY;
-      } finally {
-        if (!this.rememberLastDirectory) this.clearRememberedDirectory();
-        this.settingsLoadPromise = null;
-      }
-      return this.rememberLastDirectory;
-    })();
-
-    return await this.settingsLoadPromise;
-  },
-
-  getRememberedDirectory() {
+  rememberedDirectory() {
     if (!this.rememberLastDirectory) return "";
     try {
-      return localStorage.getItem(FILE_BROWSER_LAST_DIRECTORY_STORAGE_KEY) || "";
+      return localStorage.getItem(LAST_DIR_KEY) || "";
     } catch {
       return "";
     }
   },
 
-  rememberCurrentDirectory(path = this.browser.currentPath) {
-    if (!this.rememberLastDirectory) return;
-    const directory = this.normalizeOpeningPath(path);
-    if (!directory || directory === "$WORK_DIR") return;
+  rememberDirectory(path) {
     try {
-      localStorage.setItem(FILE_BROWSER_LAST_DIRECTORY_STORAGE_KEY, directory);
+      if (this.rememberLastDirectory) localStorage.setItem(LAST_DIR_KEY, path);
+      else localStorage.removeItem(LAST_DIR_KEY);
     } catch {}
   },
 
-  clearRememberedDirectory() {
-    try {
-      localStorage.removeItem(FILE_BROWSER_LAST_DIRECTORY_STORAGE_KEY);
-    } catch {}
-  },
-
-  disposeScopedTooltips() {
-    const root = document.querySelector(".file-browser-root");
-    const tooltipApi = globalThis.bootstrap?.Tooltip;
-    if (!root || !tooltipApi) return;
-
-    root.querySelectorAll("[data-bs-tooltip-initialized]").forEach((element) => {
-      const instance = tooltipApi.getInstance(element);
+  // Open whatever path form a caller passes ("", "$WORK_DIR", "/a0/...", a
+  // workdir-relative name, a Windows folder or file path).
+  async openPath(path = "") {
+    if (window.innerWidth <= 600) this.showNav = false; // overlays the list on phones; not saved
+    this.isLoading = true;
+    this.error = "";
+    const placesPromise = this.loadPlaces();
+    await this.loadRememberSetting();
+    const candidates = [path || this.rememberedDirectory(), ""].filter((value, index, list) => list.indexOf(value) === index);
+    for (const candidate of candidates) {
       try {
-        instance?.dispose();
-      } catch {}
-    });
-    document.querySelectorAll(".tooltip").forEach((tooltip) => tooltip.remove());
-  },
-
-  // --- Modal helpers -------------------------------------------------------
-  normalizePath(path) {
-    if (!path) return "";
-    return path.startsWith("/") ? path : `/${path}`;
-  },
-
-  get breadcrumbSegments() {
-    // No synthetic leading "/" crumb: the agent-facing browser is
-    // hard-restricted to the configured workdir, so the bare OS root is
-    // not a navigable target here - the first real path segment is the
-    // effective root for this view.
-    const normalized = this.normalizePath(this.browser.currentPath || "").replace(/\/+$/, "");
-    const parts = normalized.split("/").filter(Boolean);
-    const segments = [];
-    let accumulated = "";
-    for (const part of parts) {
-      accumulated += `/${part}`;
-      segments.push({ name: part, path: accumulated });
+        const where = await this.api("locate", { path: candidate });
+        await this.navigate(where.folder, { history: false, select: where.select });
+        await placesPromise;
+        return true;
+      } catch (error) {
+        if (candidate === candidates[candidates.length - 1]) {
+          this.error = error.message;
+          this.isLoading = false;
+          await placesPromise;
+          return false;
+        }
+      }
     }
-    return segments;
-  },
-
-  async navigateToBreadcrumb(path) {
-    if (path === this.browser.currentPath) return;
-    await this.navigateToFolder(path);
-  },
-
-  fileExtension(file = {}) {
-    const name = String(file?.name || file?.path || "").split(/[?#]/, 1)[0].toLowerCase();
-    const index = name.lastIndexOf(".");
-    return index >= 0 ? name.slice(index + 1) : "";
-  },
-
-  fileSurfaceTarget(file = {}) {
-    if (!file || file.is_dir) return "";
-    const ext = this.fileExtension(file);
-    if (EDITOR_TEXT_EXTENSIONS.has(ext)) return "editor";
-    if (BROWSER_EXTENSIONS.has(ext)) return "browser";
-    if (DESKTOP_EXTENSIONS.has(ext)) return "desktop";
-    return "";
-  },
-
-  pickerAllowsEntry(file = {}) {
-    if (!this.isTextOpenPicker()) return true;
-    return Boolean(file?.is_dir || this.fileSurfaceTarget(file) === "editor");
-  },
-
-  pickerSelectedFiles() {
-    if (!this.isTextOpenPicker()) return [];
-    return this.selectedFiles.filter((file) => !file.is_dir && this.fileSurfaceTarget(file) === "editor");
-  },
-
-  pickerSelectionLabel() {
-    if (!this.isTextOpenPicker()) return "";
-    const count = this.pickerSelectedFiles().length;
-    if (!count) return "No text files selected";
-    return `${count} text ${count === 1 ? "file" : "files"} selected`;
-  },
-
-  normalizedEditorTextExtension(value = "") {
-    const ext = String(value || "").toLowerCase().trim().replace(/^\./, "");
-    return EDITOR_TEXT_EXTENSIONS.has(ext) ? ext : "md";
-  },
-
-  pickerFilenameValue() {
-    const raw = String(this.pickerFilename || "").trim();
-    if (!raw) return "";
-    const ext = this.fileExtension({ name: raw });
-    return ext ? raw : `${raw}.${this.pickerDefaultExtension || "md"}`;
-  },
-
-  validatePickerFilename(updateError = true) {
-    if (!this.isSaveAsPicker()) return true;
-    const raw = String(this.pickerFilename || "").trim();
-    const filename = this.pickerFilenameValue();
-    let error = "";
-    if (!raw) {
-      error = "File name is required.";
-    } else if (raw === "." || raw === "..") {
-      error = "File name cannot be '.' or '..'.";
-    } else if (raw.includes("/") || raw.includes("\\")) {
-      error = "File name cannot include path separators.";
-    } else if (!EDITOR_TEXT_EXTENSIONS.has(this.fileExtension({ name: filename }))) {
-      error = "Use a .md or .txt file name.";
-    } else if ((this.browser.entries || []).some((entry) => entry?.name === filename)) {
-      error = `An item named "${filename}" already exists.`;
-    }
-    if (updateError) this.pickerFilenameError = error;
-    return !error;
-  },
-
-  onPickerFilenameInput() {
-    if (this.pickerFilenameError) this.validatePickerFilename(true);
-  },
-
-  canConfirmPicker() {
-    if (this.isTextOpenPicker()) return this.pickerSelectedFiles().length > 0;
-    if (this.isSaveAsPicker()) return Boolean(this.pickerFilenameValue()) && !this.pickerFilenameError;
     return false;
   },
 
-  pickerTargetPath() {
-    if (!this.isSaveAsPicker()) return "";
-    return this.buildChildPath(this.pickerFilenameValue());
-  },
-
-  togglePickerFile(file = {}) {
-    if (!this.isTextOpenPicker() || file?.is_dir || this.fileSurfaceTarget(file) !== "editor") return;
-    file.selected = !file.selected;
-  },
-
-  async confirmPicker() {
-    if (!this.isPickerMode() || this.isBulkBusy) return;
-    if (this.isSaveAsPicker() && !this.validatePickerFilename(true)) return;
-    const payload = this.isSaveAsPicker()
-      ? {
-        mode: this.pickerMode,
-        directory: this.browser.currentPath,
-        filename: this.pickerFilenameValue(),
-        path: this.pickerTargetPath(),
-      }
-      : {
-        mode: this.pickerMode,
-        directory: this.browser.currentPath,
-        selectedFiles: this.pickerSelectedFiles(),
-      };
+  async navigate(path, options = {}) {
+    if (!path) return false;
+    const previous = this.path;
+    this.isLoading = true;
     try {
-      this.isBulkBusy = true;
-      const result = await this.pickerOnConfirm?.(payload);
-      if (result === false) return;
-      this.disposeScopedTooltips();
-      window.closeModal(FILE_BROWSER_MODAL_PATH);
+      const listing = await this.api("list", { path, show_hidden: this.showHidden });
+      if (options.history !== false && previous && previous !== listing.path) {
+        this.back.push(previous);
+        this.forward = [];
+      }
+      const keep = previous === listing.path ? this.selected : {};
+      this.path = listing.path;
+      this.parent = listing.parent;
+      this.entries = listing.entries;
+      this.hiddenCount = listing.hidden_count;
+      this.truncated = listing.truncated;
+      this.writable = listing.writable;
+      this.driveKind = listing.drive_kind;
+      this.error = "";
+      this.selected = {};
+      for (const entry of this.entries) if (keep[entry.path]) this.selected[entry.path] = true;
+      if (previous !== listing.path) this.searchQuery = "";
+      if (options.select) this.selectOnly(options.select);
+      this.addressInput = this.path;
+      this.editingAddress = false;
+      this.rememberDirectory(this.path);
+      this.updatePreview();
+      this.focusList();
+      return true;
     } catch (error) {
-      const message = error?.message || "File selection failed";
-      if (this.isSaveAsPicker()) this.pickerFilenameError = message;
-      window.toastFrontendError?.(message, "File Browser");
+      if (options.quiet) return false;
+      this.error = error.message;
+      window.toastFrontendError?.(error.message, "File Browser");
+      return false;
     } finally {
-      this.isBulkBusy = false;
+      this.isLoading = false;
     }
   },
 
-  cancelPicker() {
-    this.disposeScopedTooltips();
-    window.closeModal(FILE_BROWSER_MODAL_PATH);
+  refresh() {
+    return this.navigate(this.path, { history: false });
   },
 
-  handleFileNameClick(file = {}) {
-    if (file?.is_dir) {
-      return this.navigateToFolder(file.path);
+  goBack() {
+    if (!this.back.length) return;
+    this.forward.push(this.path);
+    this.navigate(this.back.pop(), { history: false });
+  },
+
+  goForward() {
+    if (!this.forward.length) return;
+    this.back.push(this.path);
+    this.navigate(this.forward.pop(), { history: false });
+  },
+
+  goUp() {
+    if (this.parent) this.navigate(this.parent, { select: this.path });
+  },
+
+  startAddressEdit() {
+    this.addressInput = this.path;
+    this.editingAddress = true;
+  },
+
+  async submitAddress() {
+    const value = this.addressInput.trim();
+    if (!value || value === this.path) {
+      this.editingAddress = false;
+      return;
     }
-    if (this.isTextOpenPicker()) {
-      this.togglePickerFile(file);
+    try {
+      const where = await this.api("locate", { path: value });
+      await this.navigate(where.folder, { select: where.select });
+    } catch (error) {
+      window.toastFrontendError?.(error.message, "File Browser");
     }
   },
 
-  canOpenInSurface(file = {}) {
-    return Boolean(this.fileSurfaceTarget(file));
+  get breadcrumbs() {
+    const path = this.path || "";
+    const match = path.match(/^[A-Za-z]:\\?/);
+    if (!match) return [];
+    const root = match[0].endsWith("\\") ? match[0] : match[0] + "\\";
+    const crumbs = [{ name: this.driveLabel(root), path: root }];
+    let current = root;
+    for (const part of path.slice(match[0].length).split("\\").filter(Boolean)) {
+      current = joinPath(current, part);
+      crumbs.push({ name: part, path: current });
+    }
+    return crumbs;
   },
 
-  isEditorSurface(file = {}) {
-    return this.fileSurfaceTarget(file) === "editor";
+  driveLabel(root) {
+    const drive = (this.places.drives || []).find((d) => d.root.toLowerCase() === root.toLowerCase());
+    const letter = root.slice(0, 2).toUpperCase();
+    return drive?.label ? `${drive.label} (${letter})` : `Local Disk (${letter})`;
   },
 
-  canOpenInActionMenu(file = {}) {
-    const target = this.fileSurfaceTarget(file);
-    return Boolean(target && target !== "editor");
+  crumbAllowed(path) {
+    const roots = this.places.policy?.roots || [];
+    const p = path.toLowerCase().replace(/\\+$/, "");
+    return roots.some((root) => {
+      const r = root.toLowerCase().replace(/\\+$/, "");
+      return p === r || p.startsWith(r + "\\");
+    });
   },
 
-  surfaceAction(file = {}) {
-    const target = this.fileSurfaceTarget(file);
-    return target ? SURFACE_ACTIONS[target] : null;
+  // --- view -------------------------------------------------------------------
+  get visibleEntries() {
+    const query = this.searchQuery.trim().toLowerCase();
+    const list = this.entries.filter((entry) => {
+      if (this.pickerMode === PICKER_TEXT_OPEN && !entry.is_dir && !this.isEditorText(entry)) return false;
+      return !query || entry.name.toLowerCase().includes(query);
+    });
+    const key = this.sortKey;
+    const dir = this.sortDir;
+    return list.sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      let diff = 0;
+      if (key === "size") diff = a.size - b.size;
+      else if (key === "modified") diff = a.modified - b.modified;
+      else if (key === "type") diff = this.typeLabel(a).localeCompare(this.typeLabel(b));
+      return dir * (diff || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+    });
   },
 
-  surfaceActionLabel(file = {}) {
-    return this.surfaceAction(file)?.label || "Open";
+  sortBy(key) {
+    if (this.sortKey === key) this.sortDir = -this.sortDir;
+    else {
+      this.sortKey = key;
+      this.sortDir = key === "modified" ? -1 : 1;
+    }
+    this.savePrefs();
   },
 
-  surfaceActionIcon(file = {}) {
-    return this.surfaceAction(file)?.icon || "open_in_new";
+  sortIndicator(key) {
+    return this.sortKey === key ? (this.sortDir === 1 ? "arrow_upward" : "arrow_downward") : "";
   },
 
-  surfaceActionTitle(file = {}) {
-    return this.surfaceAction(file)?.title || "Open file";
+  toggleHidden() {
+    this.showHidden = !this.showHidden;
+    this.savePrefs();
+    this.refresh();
   },
 
-  fileUrl(file = {}) {
-    const path = this.normalizePath(String(file?.path || ""));
-    const encodedPath = path
-      .split("/")
-      .map((part) => encodeURIComponent(part))
-      .join("/");
-    return `file://${encodedPath}`;
+  togglePreview() {
+    this.showPreview = !this.showPreview;
+    this.savePrefs();
+    this.updatePreview();
   },
 
-  storeHasPath(surfaceStore = {}, path = "") {
-    const normalizedPath = this.normalizePath(path);
-    const activePath = surfaceStore?.session?.path || surfaceStore?.session?.document?.path || "";
-    return this.normalizePath(activePath) === normalizedPath;
+  toggleNav() {
+    this.showNav = !this.showNav;
+    this.savePrefs();
   },
 
-  buildChildPath(name) {
-    const base = this.normalizePath(this.browser.currentPath || "");
-    const trimmedBase = base.replace(/\/$/, "");
-    if (!trimmedBase) return `/${name}`;
-    return `${trimmedBase}/${name}`;
+  isNarrow() {
+    return (document.querySelector(".fb")?.clientWidth || 1000) <= 520;
   },
 
-  parentPath(path) {
-    const normalized = this.normalizePath(String(path || "")).replace(/\/+$/, "");
-    const index = normalized.lastIndexOf("/");
-    if (index <= 0) return "/";
-    return normalized.slice(0, index);
+  // On narrow screens the navigation pane overlays the list; close it after a pick.
+  navigateFromPane(path) {
+    if (this.isNarrow()) this.showNav = false;
+    return this.navigate(path);
   },
 
-  siblingPath(path, name) {
-    const parent = this.parentPath(path);
-    return parent === "/" ? `/${name}` : `${parent}/${name}`;
+  iconFor(entry) {
+    if (entry.is_dir) return entry.is_link ? "folder_special" : "folder";
+    return ICON_BY_EXT.get(entry.ext) || "draft";
+  },
+
+  driveIcon(drive) {
+    return drive.kind === "removable" ? "usb" : "hard_drive";
+  },
+
+  typeLabel(entry) {
+    if (entry.is_dir) return "File folder";
+    return entry.ext ? `${entry.ext.toUpperCase()} file` : "File";
+  },
+
+  formatSize(bytes) {
+    if (bytes == null) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let value = bytes / 1024;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    return `${value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+  },
+
+  formatDate(ms) {
+    if (!ms) return "";
+    return new Date(ms).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  },
+
+  driveUsage(drive) {
+    return drive.total ? Math.round(((drive.total - drive.free) / drive.total) * 100) : 0;
+  },
+
+  get statusText() {
+    const count = this.visibleEntries.length;
+    let text = `${count} ${count === 1 ? "item" : "items"}`;
+    const selected = this.selectedEntries;
+    if (selected.length) {
+      const size = selected.filter((e) => !e.is_dir).reduce((sum, e) => sum + e.size, 0);
+      text += `   ${selected.length} selected` + (size ? `  ${this.formatSize(size)}` : "");
+    }
+    if (this.hiddenCount && !this.showHidden) text += `   ${this.hiddenCount} hidden`;
+    if (this.truncated) text += "   (showing the first 10,000)";
+    return text;
+  },
+
+  // --- selection -----------------------------------------------------------
+  get selectedEntries() {
+    return this.entries.filter((entry) => this.selected[entry.path]);
+  },
+
+  isSelected(entry) {
+    return Boolean(this.selected[entry.path]);
+  },
+
+  selectOnly(path) {
+    this.selected = path ? { [path]: true } : {};
+    this.anchorPath = path;
+    this.focusPath = path;
+    if (path) this.scrollIntoView(path);
+  },
+
+  clickEntry(entry, event) {
+    this.menu = null;
+    if (this.pickerMode === PICKER_SAVE_AS && !entry.is_dir) this.pickerFilename = entry.name;
+    const list = this.visibleEntries;
+    if (event?.shiftKey && this.anchorPath) {
+      const a = list.findIndex((e) => e.path === this.anchorPath);
+      const b = list.findIndex((e) => e.path === entry.path);
+      const [from, to] = a < b ? [a, b] : [b, a];
+      const next = event.ctrlKey ? { ...this.selected } : {};
+      for (const item of list.slice(from, to + 1)) next[item.path] = true;
+      this.selected = next;
+    } else if (event?.ctrlKey || event?.metaKey) {
+      const next = { ...this.selected };
+      if (next[entry.path]) delete next[entry.path];
+      else next[entry.path] = true;
+      this.selected = next;
+      this.anchorPath = entry.path;
+    } else {
+      this.selectOnly(entry.path);
+    }
+    this.focusPath = entry.path;
+    this.updatePreview();
+  },
+
+  selectAll() {
+    const next = {};
+    for (const entry of this.visibleEntries) next[entry.path] = true;
+    this.selected = next;
+  },
+
+  clearSelection() {
+    this.selected = {};
+    this.updatePreview();
+  },
+
+  // --- opening --------------------------------------------------------------
+  isEditorText(entry) {
+    return !entry.is_dir && EDITOR_TEXT_EXTENSIONS.has(entry.ext);
+  },
+
+  isTextFile(entry) {
+    return !entry.is_dir && (TEXT_EXTENSIONS.has(entry.ext) || entry.size === 0);
+  },
+
+  surfaceTarget(entry) {
+    if (!entry || entry.is_dir) return "";
+    if (EDITOR_TEXT_EXTENSIONS.has(entry.ext)) return "editor";
+    if (BROWSER_EXTENSIONS.has(entry.ext)) return "browser";
+    if (DESKTOP_EXTENSIONS.has(entry.ext)) return "desktop";
+    return "";
+  },
+
+  surfaceAction(entry) {
+    return SURFACE_ACTIONS[this.surfaceTarget(entry)] || null;
+  },
+
+  // Double-click / Enter: folders open, text files edit, others preview or download.
+  activate(entry) {
+    if (!entry) return;
+    if (entry.is_dir) return this.navigate(entry.path);
+    if (this.pickerMode === PICKER_TEXT_OPEN) {
+      this.selectOnly(entry.path);
+      return this.confirmPicker();
+    }
+    if (this.pickerMode === PICKER_SAVE_AS) {
+      this.pickerFilename = entry.name;
+      return;
+    }
+    if (this.isTextFile(entry)) return this.editText(entry);
+    if (IMAGE_EXTENSIONS.has(entry.ext) || entry.ext === "pdf") {
+      this.showPreview = true;
+      this.selectOnly(entry.path);
+      return this.updatePreview();
+    }
+    return this.download([entry]);
+  },
+
+  async openInSurface(entry) {
+    const target = this.surfaceTarget(entry);
+    if (!target) return;
+    this.menu = null;
+    try {
+      if (target === "browser") {
+        const url = "file:///" + entry.path.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/").replace(/^([A-Za-z])%3A/, "$1:");
+        const { store: browserStore } = await import("/plugins/_browser/webui/browser-store.js");
+        await openLatestSurface("browser", { url, source: "file-browser" });
+        let opened = false;
+        for (let attempt = 0; attempt < 40 && !opened; attempt += 1) {
+          opened = await browserStore.openUrlIntent(url, { source: "file-browser" });
+          if (!opened) await new Promise((resolve) => setTimeout(resolve, 75));
+        }
+        if (!opened) throw new Error("The Browser surface is unavailable.");
+      } else {
+        await openLatestSurface(target, { path: entry.path, source: "file-browser" });
+        const module = target === "editor" ? "/plugins/_editor/webui/editor-store.js" : "/plugins/_desktop/webui/desktop-store.js";
+        const { store: surfaceStore } = await import(module);
+        const session = await surfaceStore.openPath(entry.path, { source: "file-browser" });
+        if (!session || session.ok === false) {
+          throw new Error(surfaceStore.error || "This file can't be opened there (only files in the workdir or a project).");
+        }
+      }
+      if (this.closePromise) window.closeModal(MODAL_PATH);
+    } catch (error) {
+      window.toastFrontendError?.(error?.message || "Could not open the file", "File Browser");
+    }
+  },
+
+  // --- preview pane ----------------------------------------------------------
+  downloadUrl(paths, inline = false) {
+    const query = paths.map((path) => "path=" + encodeURIComponent(path)).join("&");
+    return `/api/file_manager_download?${query}${inline ? "&inline=1" : ""}`;
+  },
+
+  async updatePreview() {
+    if (!this.showPreview) return;
+    const selected = this.selectedEntries;
+    const entry = selected.length === 1 ? selected[0] : null;
+    if (!entry) {
+      this.preview = selected.length ? { kind: "many", count: selected.length } : null;
+      return;
+    }
+    const base = { kind: "info", entry };
+    if (IMAGE_EXTENSIONS.has(entry.ext)) {
+      this.preview = { ...base, kind: "image", url: this.downloadUrl([entry.path], true) };
+    } else if (entry.ext === "pdf") {
+      this.preview = { ...base, kind: "pdf", url: this.downloadUrl([entry.path], true) };
+    } else if (this.isTextFile(entry) && entry.size <= 512 * 1024) {
+      this.preview = { ...base, kind: "loading" };
+      try {
+        const text = await this.api("read_text", { path: entry.path });
+        if (this.selectedEntries.length === 1 && this.selectedEntries[0].path === entry.path) {
+          this.preview = { ...base, kind: "text", text: text.content.slice(0, 20000) };
+        }
+      } catch {
+        this.preview = base;
+      }
+    } else {
+      this.preview = base;
+    }
+  },
+
+  // --- built-in text editor ----------------------------------------------------
+  async editText(entry) {
+    this.menu = null;
+    try {
+      const file = await this.api("read_text", { path: entry.path });
+      this.textEditor = { ...file, name: entry.name, original: file.content, saving: false, error: "" };
+    } catch (error) {
+      window.toastFrontendError?.(error.message, "File Browser");
+    }
+  },
+
+  get textEditorDirty() {
+    return Boolean(this.textEditor && this.textEditor.content !== this.textEditor.original);
+  },
+
+  async saveText() {
+    const editor = this.textEditor;
+    if (!editor || editor.saving) return;
+    editor.saving = true;
+    editor.error = "";
+    try {
+      const result = await this.api("write_text", {
+        path: editor.path, content: editor.content, encoding: editor.encoding,
+        expected_modified: editor.modified, newline: editor.newline,
+      });
+      editor.modified = result.modified;
+      editor.original = editor.content;
+      window.toastFrontendSuccess?.(`Saved ${editor.name}`, "File Browser");
+      this.refresh();
+    } catch (error) {
+      editor.error = error.message;
+    } finally {
+      editor.saving = false;
+    }
+  },
+
+  closeTextEditor(force = false) {
+    if (!force && this.textEditorDirty) {
+      this.confirm = {
+        title: "Discard changes?",
+        message: `${this.textEditor.name} has unsaved changes.`,
+        okLabel: "Discard",
+        danger: true,
+        run: () => { this.textEditor = null; this.focusList(); },
+      };
+      return;
+    }
+    this.textEditor = null;
+    this.focusList();
+  },
+
+  // --- context menu ------------------------------------------------------------
+  openMenu(event, entry = null) {
+    if (entry && !this.isSelected(entry)) this.selectOnly(entry.path);
+    if (!entry) this.clearSelection();
+    // Positioned inside .fb (the draggable modal is transformed, so fixed
+    // coordinates would be offset); kept within its bounds.
+    const box = (event.currentTarget?.closest?.(".fb") || document.querySelector(".fb"))?.getBoundingClientRect();
+    const width = 240;
+    const height = entry ? 400 : 290;
+    const left = box ? event.clientX - box.left : event.clientX;
+    const top = box ? event.clientY - box.top : event.clientY;
+    const maxX = (box?.width || window.innerWidth) - width - 6;
+    const maxY = (box?.height || window.innerHeight) - height - 6;
+    this.menu = { x: Math.max(6, Math.min(left, maxX)), y: Math.max(6, Math.min(top, maxY)), entry };
+  },
+
+  closeMenu() {
+    this.menu = null;
+  },
+
+  // --- file operations ------------------------------------------------------
+  async run(label, action, payload, after = null) {
+    this.menu = null;
+    try {
+      const result = await this.api(action, payload);
+      await this.refresh();
+      after?.(result);
+      return result;
+    } catch (error) {
+      window.toastFrontendError?.(error.message, label);
+      return null;
+    }
+  },
+
+  newFolder() {
+    this.openNameDialog("create-folder", "New folder");
+  },
+
+  newTextFile() {
+    this.openNameDialog("create-file", "New Text Document.txt");
+  },
+
+  openNameDialog(mode, suggested) {
+    this.menu = null;
+    this.resetRenameState();
+    this.renameMode = mode;
+    this.renameName = this.uniqueName(suggested);
+    this._renameFolder = this.path;
+    window.openModal(RENAME_MODAL_PATH);
+  },
+
+  uniqueName(name) {
+    const names = new Set(this.entries.map((e) => e.name.toLowerCase()));
+    if (!names.has(name.toLowerCase())) return name;
+    const dot = name.lastIndexOf(".");
+    const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+    for (let n = 2; ; n += 1) {
+      const candidate = `${stem} (${n})${ext}`;
+      if (!names.has(candidate.toLowerCase())) return candidate;
+    }
+  },
+
+  renameSelected() {
+    const [entry] = this.selectedEntries;
+    if (entry) this.openRenameModal(entry);
+  },
+
+  // Also called by the Editor and Desktop plugins with their own performRename.
+  async openRenameModal(file, options = {}) {
+    this.menu = null;
+    this.resetRenameState();
+    this.renameTarget = file;
+    this.renameName = file?.name || "";
+    this.renameMode = "rename";
+    this.renameAfterConfirm = typeof options.onRenamed === "function" ? options.onRenamed : null;
+    this.renamePerformAction = typeof options.performRename === "function" ? options.performRename : null;
+    this.renameValidateName = typeof options.validateName === "function" ? options.validateName : null;
+    this._renameEntries = Array.isArray(options.entries) ? options.entries : null;
+    this._renameFolder = options.currentPath || parentOf(file?.path || "") || this.path;
+    window.openModal(RENAME_MODAL_PATH);
+  },
+
+  closeRenameModal() {
+    window.closeModal(RENAME_MODAL_PATH);
+    this.focusList();
   },
 
   resetRenameState() {
@@ -773,738 +863,405 @@ const model = {
     this.renameAfterConfirm = null;
     this.renamePerformAction = null;
     this.renameValidateName = null;
+    this._renameEntries = null;
   },
 
-  // --- Sorting -------------------------------------------------------------
-  toggleSort(column) {
-    if (this.browser.sortBy === column) {
-      this.browser.sortDirection =
-        this.browser.sortDirection === "asc" ? "desc" : "asc";
-    } else {
-      this.browser.sortBy = column;
-      this.browser.sortDirection = "asc";
-    }
-  },
-
-  sortFiles(entries) {
-    return [...entries].sort((a, b) => {
-      // Folders first
-      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
-      const dir = this.browser.sortDirection === "asc" ? 1 : -1;
-      switch (this.browser.sortBy) {
-        case "name":
-          return dir * a.name.localeCompare(b.name);
-        case "size":
-          return dir * (a.size - b.size);
-        case "date":
-          return dir * (new Date(a.modified) - new Date(b.modified));
-        default:
-          return 0;
-      }
-    });
-  },
-
-  // --- Dropdown Management -------------------------------------------------
-  toggleDropdown(filePath, triggerElement = null) {
-    // Toggle: if already open, close it; otherwise open this one (closing any other)
-    if (this.openDropdownPath === filePath) {
-      this.closeDropdown();
-      return;
-    }
-    this.openDropdownPath = filePath;
-    this.dropdownStyle = this.getDropdownStyle(triggerElement);
-  },
-
-  isDropdownOpen(filePath) {
-    return this.openDropdownPath === filePath;
-  },
-
-  closeDropdown() {
-    this.openDropdownPath = null;
-    this.dropdownStyle = {};
-  },
-
-  getDropdownStyle(triggerElement) {
-    if (!triggerElement) return {};
-
-    const rect = triggerElement.getBoundingClientRect();
-    const gap = 6;
-    const padding = 8;
-    const minWidth = 180;
-    const spaceBelow = window.innerHeight - rect.bottom - gap - padding;
-    const spaceAbove = rect.top - gap - padding;
-    const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
-    const maxHeight = Math.max(96, openUp ? spaceAbove : spaceBelow);
-    const maxLeft = Math.max(padding, window.innerWidth - minWidth - padding);
-    const left = Math.min(Math.max(rect.right - minWidth, padding), maxLeft);
-
-    return {
-      position: "fixed",
-      left: `${Math.round(left)}px`,
-      right: "auto",
-      top: openUp ? "auto" : `${Math.round(rect.bottom + gap)}px`,
-      bottom: openUp ? `${Math.round(window.innerHeight - rect.top + gap)}px` : "auto",
-      minWidth: `${minWidth}px`,
-      maxHeight: `${Math.round(maxHeight)}px`,
-      zIndex: "6000",
-    };
-  },
-
-  // --- Navigation ----------------------------------------------------------
-  async fetchFiles(path = "", options = {}) {
-    const preserveOnError = options?.preserveOnError === true;
-    const suppressErrorToast = options?.suppressErrorToast === true;
-    const requestedPath = this.normalizeOpeningPath(path) || "$WORK_DIR";
-    this.isLoading = true;
-    
-    // Preserve scroll position if refreshing the same path
-    const isSamePath =
-      this.browser.currentPath === requestedPath ||
-      (requestedPath === "$WORK_DIR" && ["/a0", "$WORK_DIR", ""].includes(this.browser.currentPath));
-    const scrollPos = isSamePath ? this.saveScrollPosition() : null;
-    const selectedPaths = isSamePath
-      ? new Set(this.selectedFiles.map((file) => file.path))
-      : new Set();
-    
-    try {
-      const response = await fetchApi(
-        `/get_work_dir_files?path=${encodeURIComponent(requestedPath)}`
-      );
-      const data = await response.json().catch(() => ({}));
-
-      const result = data.data || {};
-      const entries = result.entries || [];
-      const resolvedCurrentPath =
-        result.current_path || (requestedPath === "$WORK_DIR" ? "/a0" : requestedPath);
-      const resultError =
-        data.error ||
-        result.error ||
-        (
-          requestedPath &&
-          requestedPath !== "$WORK_DIR" &&
-          !result.current_path &&
-          !entries.length
-            ? "Directory not found or not accessible"
-            : ""
-        );
-
-      if (response.ok && !resultError) {
-        if (!isSamePath) this.searchQuery = "";
-        this.browser.entries = this.decorateEntries(
-          entries,
-          selectedPaths
-        );
-        this.browser.currentPath = resolvedCurrentPath;
-        this.browser.parentPath = result.parent_path;
-        this.syncPathInput();
-        this.pathError = "";
-        this.rememberCurrentDirectory(this.browser.currentPath);
-        
-        // Set isLoading to false BEFORE restoring scroll to avoid reactivity issues
-        this.isLoading = false;
-        
-        // Restore scroll position if on same path
-        if (scrollPos) {
-          this.restoreScrollPosition(scrollPos);
-        }
-        return true;
-      } else {
-        const msg = resultError || "Error fetching files";
-        console.error("Error fetching files:", msg);
-        if (!preserveOnError) this.browser.entries = [];
-        this.isLoading = false;
-        if (!suppressErrorToast) window.toastFrontendError(msg, "File Browser Error");
-        return false;
-      }
-    } catch (e) {
-      const message = "Error fetching files: " + e.message;
-      if (!suppressErrorToast) {
-        window.toastFrontendError(message, "File Browser Error");
-      }
-      if (!preserveOnError) this.browser.entries = [];
-      this.isLoading = false;
-      return false;
-    }
-  },
-
-  async navigateToFolder(path) {
-    if(!path.startsWith("/")) path = "/" + path;
-    if (this.browser.currentPath !== path)
-      this.history.push(this.browser.currentPath);
-    await this.fetchFiles(path);
-  },
-
-  async submitPath() {
-    if (this.isPathSubmitting || this.isLoading) return;
-
-    const path = this.normalizeSubmittedPath(this.pathInput);
-    if (!path) {
-      this.pathError = "Enter a directory path.";
-      return;
-    }
-
-    this.isPathSubmitting = true;
-    this.pathError = "";
-
-    try {
-      const previousPath = this.browser.currentPath;
-      const loaded = await this.fetchFiles(path, {
-        preserveOnError: true,
-        suppressErrorToast: true,
-      });
-
-      if (loaded) {
-        if (previousPath && previousPath !== this.browser.currentPath) {
-          this.history.push(previousPath);
-        }
-        return;
-      }
-
-      this.pathError = "Directory not found or not accessible.";
-    } finally {
-      this.isPathSubmitting = false;
-    }
-  },
-
-  async navigateUp() {
-    if (this.browser.parentPath) {
-      this.history.push(this.browser.currentPath);
-      await this.fetchFiles(this.browser.parentPath);
-    }
-  },
-
-  // --- Rename / Create -----------------------------------------------------
-  async openRenameModal(file, options = {}) {
-    this.resetRenameState();
-    this.renameTarget = file;
-    this.renameName = file?.name || "";
-    this.renameMode = "rename";
-    this.renameError = null;
-    this.renameAfterConfirm = typeof options.onRenamed === "function" ? options.onRenamed : null;
-    this.renamePerformAction = typeof options.performRename === "function" ? options.performRename : null;
-    this.renameValidateName = typeof options.validateName === "function" ? options.validateName : null;
-    if (typeof options.currentPath === "string" && options.currentPath) {
-      this.browser.currentPath = options.currentPath;
-    }
-    if (Array.isArray(options.entries)) {
-      this.browser.entries = options.entries;
-    }
-    window.openModal("modals/file-browser/rename-modal.html");
-  },
-
-  async openNewFolderModal() {
-    this.resetRenameState();
-    this.renameMode = "create-folder";
-    this.renameName = "";
-    this.renameError = null;
-    window.openModal("modals/file-browser/rename-modal.html");
-  },
-
-  closeRenameModal() {
-    window.closeModal("modals/file-browser/rename-modal.html");
+  get renameTitle() {
+    return { "create-folder": "New folder name", "create-file": "New file name" }[this.renameMode] || "New name";
   },
 
   async confirmRename() {
     if (this.isRenaming) return;
-
-    const newName = this.renameName.trim();
-    if (!newName) {
-      this.renameError = "Name is required.";
-      return;
-    }
-    if (newName === "." || newName === "..") {
-      this.renameError = "Name cannot be '.' or '..'.";
-      return;
-    }
-    if (newName.includes("/") || newName.includes("\\")) {
-      this.renameError = "Name cannot include path separators.";
-      return;
-    }
-    if (this.renameMode !== "create-folder" && !this.renameTarget?.path) {
-      this.renameError = "No item selected for rename.";
+    const name = this.renameName.trim();
+    const invalid = !name || name === "." || name === ".." || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name);
+    if (invalid) {
+      this.renameError = 'Use a name without < > : " / \\ | ? * that does not end in a dot or space.';
       return;
     }
     if (this.renameValidateName) {
-      const validation = this.renameValidateName(newName, this.renameTarget);
-      if (validation !== true) {
-        this.renameError = typeof validation === "string" ? validation : "Name is not valid.";
+      const verdict = this.renameValidateName(name, this.renameTarget);
+      if (verdict !== true) {
+        this.renameError = typeof verdict === "string" ? verdict : "That name can't be used.";
         return;
       }
     }
-
-    // UX: pre-validate duplicates so we can show a clean inline error (no toast spam)
-    const duplicate = (this.browser.entries || []).some((entry) => {
-      if (!entry?.name) return false;
-      if (entry.name !== newName) return false;
-      // When renaming, allow keeping the same entry name
-      if (this.renameTarget?.path && entry.path === this.renameTarget.path) return false;
-      return true;
-    });
-    if (duplicate) {
-      this.renameError = `An item named "${newName}" already exists.`;
+    const siblings = this._renameEntries || (this._renameFolder === this.path ? this.entries : []);
+    const clash = siblings.some((e) => e?.name?.toLowerCase() === name.toLowerCase() && e.path !== this.renameTarget?.path);
+    if (clash) {
+      this.renameError = `An item named "${name}" already exists.`;
       return;
     }
-
     this.isRenaming = true;
     this.renameError = null;
-
+    const previousPath = this.renameTarget?.path || "";
+    const newPath = this.renameMode === "rename" ? siblingOf(previousPath, name) : joinPath(this._renameFolder, name);
     try {
-      const previousPath = this.renameTarget?.path || "";
-      const renamedPath =
-        this.renameMode === "create-folder"
-          ? this.buildChildPath(newName)
-          : this.siblingPath(previousPath, newName);
-      const payload =
-        this.renameMode === "create-folder"
-          ? {
-              action: "create-folder",
-              parentPath: this.browser.currentPath,
-              currentPath: this.browser.currentPath,
-              newName: newName,
-            }
-          : {
-              action: "rename",
-              path: this.renameTarget?.path,
-              currentPath: this.browser.currentPath,
-              newName: newName,
-            };
-
-      let data = {};
+      let response = {};
       if (this.renamePerformAction) {
-        data = await this.renamePerformAction({
-          action: this.renameMode,
-          previousPath,
-          path: renamedPath,
-          name: newName,
-          target: this.renameTarget,
-          payload,
-        }) || {};
-        if (data.error || data.ok === false) {
-          throw new Error(data.error || "Rename failed");
-        }
+        response = (await this.renamePerformAction({
+          action: this.renameMode, previousPath, path: newPath, name, target: this.renameTarget,
+        })) || {};
+        if (response.error || response.ok === false) throw new Error(response.error || "Rename failed");
+      } else if (this.renameMode === "rename") {
+        response = await this.api("rename", { path: previousPath, name });
       } else {
-        const resp = await fetchApi("/rename_work_dir_file", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        data = await resp.json().catch(() => ({}));
-        if (!resp.ok || data.error) {
-          throw new Error(data.error || "Rename failed");
-        }
-      }
-
-      if (!this.renamePerformAction || data.refreshFiles !== false) {
-        await this.fetchFiles(this.browser.currentPath);
-      }
-      if (this.renameAfterConfirm) {
-        await this.renameAfterConfirm({
-          action: this.renameMode,
-          previousPath,
-          path: renamedPath,
-          name: newName,
-          target: this.renameTarget,
-          response: data,
-        });
+        response = await this.api(this.renameMode === "create-folder" ? "mkdir" : "new_file", { path: this._renameFolder, name });
       }
       this.closeRenameModal();
+      if (this._renameFolder === this.path || this.renameMode !== "rename" || !this.renamePerformAction) {
+        await this.refresh();
+        this.selectOnly(response.renamed || response.created || newPath);
+      }
+      await this.renameAfterConfirm?.({ action: this.renameMode, previousPath, path: newPath, name, target: this.renameTarget, response });
     } catch (error) {
-      const message = error?.message || "Rename failed";
-      this.renameError = message;
-      const title =
-        this.renameMode === "create-folder" ? "Folder Error" : "Rename Error";
-      window.toastFrontendError(message, title);
+      this.renameError = error.message || "Rename failed";
     } finally {
       this.isRenaming = false;
     }
   },
 
-  // --- File Editor (Delegated to FileEditorStore) --------------------------
-  async openFileEditor(file) {
-    await fileEditorStore.openFile(file, async () => {
-      // Callback on successful save to refresh file list
-      await this.fetchFiles(this.browser.currentPath);
-    });
-  },
-
-  async openNewFile() {
-    const existingNames = (this.browser.entries || [])
-      .map((e) => e?.name)
-      .filter(Boolean);
-    await fileEditorStore.openNewFile(this.browser.currentPath, existingNames, async () => {
-      // Callback on successful save to refresh file list
-      await this.fetchFiles(this.browser.currentPath);
-    });
-  },
-
-  // --- File actions --------------------------------------------------------
-  async deleteFile(file) {
-    try {
-      const resp = await fetchApi("/delete_work_dir_file", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          path: file.path,
-          currentPath: this.browser.currentPath,
-        }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (resp.ok && !data.error) {
-        this.browser.entries = this.browser.entries.filter(
-          (e) => e.path !== file.path
+  requestDelete(permanent = false) {
+    const items = this.selectedEntries;
+    if (!items.length) return;
+    const removable = ["removable", "network"].includes(this.driveKind);
+    const what = items.length === 1 ? `"${items[0].name}"` : `these ${items.length} items`;
+    const forever = permanent || removable;
+    this.menu = null;
+    this.confirm = {
+      title: forever ? "Delete permanently?" : "Move to Recycle Bin?",
+      message: forever
+        ? `Permanently delete ${what}?${removable && !permanent ? " This drive has no Recycle Bin." : ""} This can't be undone.`
+        : `Move ${what} to the Recycle Bin? You can restore it from there.`,
+      okLabel: forever ? "Delete" : "Move to Recycle Bin",
+      danger: forever,
+      run: () => this.run("Delete", "delete", { paths: items.map((e) => e.path), permanent }, (result) => {
+        const count = result.deleted.length;
+        window.toastFrontendSuccess?.(
+          `${result.recycled ? "Moved to the Recycle Bin" : "Deleted"}: ${count} ${count === 1 ? "item" : "items"}`,
+          "File Browser",
         );
-        window.toastFrontendSuccess("File deleted successfully", "File Deleted");
-      } else {
-        window.toastFrontendError(data.error || "Error deleting file", "Delete Error");
-      }
-    } catch (e) {
-      window.toastFrontendError(
-        "Error deleting file: " + e.message,
-        "File Delete Error"
-      );
+      }),
+    };
+  },
+
+  async confirmOk() {
+    const action = this.confirm?.run;
+    this.confirm = null;
+    this.focusList();
+    await action?.();
+  },
+
+  cancelConfirm() {
+    this.confirm = null;
+    this.focusList();
+  },
+
+  copySelection(cut = false) {
+    const paths = this.selectedEntries.map((e) => e.path);
+    if (!paths.length) return;
+    this.clipboard = { mode: cut ? "move" : "copy", paths, from: this.path };
+    this.menu = null;
+    window.toastFrontendInfo?.(`${paths.length} ${paths.length === 1 ? "item" : "items"} ${cut ? "cut" : "copied"}. Paste in another folder.`, "File Browser", 3);
+  },
+
+  isCut(entry) {
+    return this.clipboard?.mode === "move" && this.clipboard.paths.includes(entry.path);
+  },
+
+  async paste() {
+    const clip = this.clipboard;
+    if (!clip) return;
+    const result = await this.run(clip.mode === "move" ? "Move" : "Copy", clip.mode, { paths: clip.paths, dest: this.path });
+    if (result) {
+      if (clip.mode === "move") this.clipboard = null;
+      const next = {};
+      for (const path of result.created) next[path] = true;
+      this.selected = next;
     }
   },
 
-  copySelectedPaths() {
-    const selectedFiles = this.selectedFiles;
-    if (!selectedFiles.length) return;
-
-    const paths = selectedFiles.map((file) => file.path).join("\n");
-    this.copyToClipboard(paths, () => {
-      window.toastFrontendSuccess(
-        `Copied ${selectedFiles.length} ${selectedFiles.length === 1 ? "path" : "paths"}`,
-        "File Browser"
-      );
-    });
+  copyPaths() {
+    const text = this.selectedEntries.map((e) => e.path).join("\n") || this.path;
+    navigator.clipboard?.writeText(text).then(
+      () => window.toastFrontendSuccess?.("Path copied", "File Browser", 2),
+      () => window.toastFrontendError?.("Could not copy the path", "File Browser"),
+    );
+    this.menu = null;
   },
 
-  copyToClipboard(text, onSuccess) {
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard
-        .writeText(text)
-        .then(() => onSuccess?.())
-        .catch(() => this.fallbackCopyToClipboard(text, onSuccess));
-    } else {
-      this.fallbackCopyToClipboard(text, onSuccess);
-    }
+  reveal(entry = null) {
+    this.run("Show in Explorer", "reveal", { path: (entry || this.selectedEntries[0])?.path || this.path });
   },
 
-  fallbackCopyToClipboard(text, onSuccess) {
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    textArea.style.position = "fixed";
-    textArea.style.left = "-999999px";
-    textArea.style.top = "-999999px";
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    try {
-      document.execCommand("copy");
-      onSuccess?.();
-    } catch (error) {
-      console.error("Clipboard copy failed:", error);
-      window.toastFrontendError("Failed to copy selected paths", "File Browser");
-    } finally {
-      document.body.removeChild(textArea);
-    }
+  get isRemote() {
+    return Boolean(this.places.policy?.remote);
   },
 
-  getDownloadFilename(response, fallback) {
-    const disposition = response.headers.get("Content-Disposition") || "";
-    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-    if (utf8Match?.[1]) {
-      try {
-        return decodeURIComponent(utf8Match[1].replace(/^"|"$/g, ""));
-      } catch {
-        return utf8Match[1].replace(/^"|"$/g, "");
-      }
-    }
-
-    const asciiMatch = disposition.match(/filename="([^"]+)"/i);
-    return asciiMatch?.[1] || fallback;
-  },
-
-  createDownloadToastGroup(prefix) {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  },
-
-  showDownloadPreparingToast(group) {
-    window.toastFrontendInfo?.("Preparing download...", "Download", 0, group, undefined, true);
-  },
-
-  showDownloadStartedToast(group) {
-    window.toastFrontendInfo?.("Downloading...", "Download", 3, group, undefined, true);
-  },
-
-  showDownloadErrorToast(group, message) {
-    window.toastFrontendError?.(message || "Download failed", "Download Error", 8, group, undefined, true);
-  },
-
-  async bulkDownloadFiles() {
-    const selectedFiles = this.selectedFiles;
-    if (!selectedFiles.length || this.isBulkBusy) return;
-
-    this.isBulkBusy = true;
-    this.closeDropdown();
-    const downloadToastGroup = this.createDownloadToastGroup("file-browser-bulk-download");
-
-    try {
-      this.showDownloadPreparingToast(downloadToastGroup);
-      const resp = await fetchApi("/download_work_dir_files", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paths: selectedFiles.map((file) => file.path),
-          currentPath: this.browser.currentPath,
-        }),
-      });
-
-      if (!resp.ok) {
-        const message = await resp.text();
-        throw new Error(message || "Download failed");
-      }
-
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const fallback = `agent-zero-files-${selectedFiles.length}.zip`;
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = this.getDownloadFilename(resp, fallback);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-
-      this.showDownloadStartedToast(downloadToastGroup);
-    } catch (error) {
-      this.showDownloadErrorToast(
-        downloadToastGroup,
-        error?.message || "Failed to download selected files"
-      );
-    } finally {
-      this.isBulkBusy = false;
-    }
-  },
-
-  async bulkDeleteFiles() {
-    const selectedFiles = this.selectedFiles;
-    if (!selectedFiles.length || this.isBulkBusy) return;
-
-    this.isBulkBusy = true;
-    this.closeDropdown();
-
-    try {
-      const resp = await fetchApi("/delete_work_dir_files", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paths: selectedFiles.map((file) => file.path),
-          currentPath: this.browser.currentPath,
-        }),
-      });
-      const data = await resp.json().catch(() => ({}));
-
-      if (resp.ok && !data.error) {
-        this.browser.entries = this.decorateEntries(data.data?.entries || []);
-        this.browser.currentPath = data.data?.current_path || this.browser.currentPath;
-        this.browser.parentPath = data.data?.parent_path || this.browser.parentPath;
-        const deletedCount = data.deleted?.length || selectedFiles.length;
-        window.toastFrontendSuccess(
-          `Deleted ${deletedCount} ${deletedCount === 1 ? "item" : "items"}`,
-          "File Browser"
-        );
-
-        if (data.failed?.length) {
-          window.toastFrontendError(
-            `${data.failed.length} selected ${data.failed.length === 1 ? "item" : "items"} could not be deleted`,
-            "File Browser"
-          );
-        }
-      } else {
-        window.toastFrontendError(
-          data.error || "Error deleting selected files",
-          "File Browser"
-        );
-      }
-    } catch (error) {
-      window.toastFrontendError(
-        "Error deleting selected files: " + error.message,
-        "File Browser"
-      );
-    } finally {
-      this.isBulkBusy = false;
-    }
-  },
-
-  async handleFileUpload(event) {
-    return store._handleFileUpload(event); // bind to model to ensure correct context
-  },
-
-  async openInSurface(file = {}) {
-    const target = this.fileSurfaceTarget(file);
-    const path = this.normalizePath(String(file?.path || ""));
-    if (!target || !path) return;
-
-    this.closeDropdown();
-
-    try {
-      if (target === "browser") {
-        const url = this.fileUrl(file);
-        const { store: browserStore } = await import("/plugins/_browser/webui/browser-store.js");
-        await openLatestSurface("browser", { url, source: "file-browser" });
-
-        let opened = false;
-        for (let attempt = 0; attempt < 40 && !opened; attempt += 1) {
-          opened = await browserStore.openUrlIntent(url, { source: "file-browser" });
-          if (!opened) await delay(75);
-        }
-        if (!opened) {
-          throw new Error("Browser surface is unavailable.");
-        }
-      } else {
-        await openLatestSurface(target, { path, source: "file-browser" });
-        if (target === "editor") {
-          const { store: editorStore } = await import("/plugins/_editor/webui/editor-store.js");
-          if (!this.storeHasPath(editorStore, path)) {
-            const session = await editorStore.openPath(path, { source: "file-browser" });
-            if (!session || session.ok === false) {
-              throw new Error(editorStore.error || "Text document could not be opened.");
-            }
-          }
-        }
-        if (target === "desktop") {
-          const { store: desktopStore } = await import("/plugins/_desktop/webui/desktop-store.js");
-          if (!this.storeHasPath(desktopStore, path)) {
-            const session = await desktopStore.openPath(path);
-            if (!session || session.ok === false) {
-              throw new Error(desktopStore.error || "Document could not be opened.");
-            }
-          }
-        }
-      }
-
-      this.disposeScopedTooltips();
-      await window.closeModal?.(FILE_BROWSER_MODAL_PATH);
-    } catch (error) {
-      window.toastFrontendError?.(
-        error?.message || "Could not open file",
-        "File Browser"
-      );
-    }
-  },
-
-  async _handleFileUpload(event) {
-    try {
-      const files = event.target.files;
-      if (!files.length) return;
-      const formData = new FormData();
-      formData.append("path", this.browser.currentPath);
-      for (let f of files) {
-        const ext = f.name.split(".").pop().toLowerCase();
-        if (
-          !["zip", "tar", "gz", "rar", "7z"].includes(ext) &&
-          f.size > 100 * 1024 * 1024
-        ) {
-          alert(`File ${f.name} exceeds 100MB limit.`);
-          continue;
-        }
-        formData.append("files[]", f);
-      }
-      const resp = await fetchApi("/upload_work_dir_files", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (resp.ok && !data.error) {
-        this.browser.entries = this.decorateEntries(data.data.entries || []);
-        this.browser.currentPath = data.data.current_path;
-        this.browser.parentPath = data.data.parent_path;
-        if (data.failed && data.failed.length) {
-          const msg = data.failed
-            .map((f) => `${f.name}: ${f.error}`)
-            .join("\n");
-          alert(`Some files failed to upload:\n${msg}`);
-        }
-      } else {
-        alert(data.error || "Error uploading files");
-      }
-    } catch (e) {
-      window.toastFrontendError(
-        "Error uploading files: " + e.message,
-        "File Upload Error"
-      );
-    } finally {
-      event.target.value = ""; // reset input so same file can be reselected
-    }
-  },
-
-  async downloadDirectory(file) {
-    const downloadToastGroup = this.createDownloadToastGroup("file-browser-directory-download");
-
-    try {
-      this.showDownloadPreparingToast(downloadToastGroup);
-      const resp = await fetchApi(`/download_work_dir_file?path=${encodeURIComponent(file.path)}`, {
-        method: "GET",
-      });
-
-      if (!resp.ok) {
-        const message = await resp.text();
-        throw new Error(message || "Download failed");
-      }
-
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const fallback = `${file.name}.zip`;
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = this.getDownloadFilename(resp, fallback);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-      this.showDownloadStartedToast(downloadToastGroup);
-    } catch (error) {
-      this.showDownloadErrorToast(
-        downloadToastGroup,
-        error?.message || "Failed to download directory"
-      );
-    }
-  },
-
-  downloadFile(file) {
-    if (file.is_dir) {
-      return this.downloadDirectory(file);
-    }
-
+  // --- download / upload ------------------------------------------------------
+  download(entries = this.selectedEntries) {
+    if (!entries.length) return;
+    this.menu = null;
     const link = document.createElement("a");
-    link.href = `/api/download_work_dir_file?path=${encodeURIComponent(file.path)}`;
-    link.download = file.name;
+    link.href = this.downloadUrl(entries.map((e) => e.path));
+    link.rel = "noopener";
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
+    const zipped = entries.length > 1 || entries[0].is_dir;
+    if (zipped) window.toastFrontendInfo?.("Preparing the ZIP... large folders take a moment before the download starts.", "Download", 5);
+  },
+
+  // Used by window.openFileLink (chat path links).
+  downloadFile(file) {
+    if (!file?.path) return;
+    this.download([{ path: file.path, name: file.name, is_dir: false }]);
+  },
+
+  pickUpload(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    this.upload(files);
+  },
+
+  onDrop(event) {
+    this.dragOver = false;
+    const items = Array.from(event.dataTransfer?.items || []);
+    const hasFolder = items.some((item) => item.webkitGetAsEntry?.()?.isDirectory);
+    const files = Array.from(event.dataTransfer?.files || []).filter((file, index) => !items[index]?.webkitGetAsEntry?.()?.isDirectory);
+    if (hasFolder) window.toastFrontendInfo?.("Folders can't be dropped here yet; drop the files inside them, or upload a ZIP.", "Upload", 6);
+    this.upload(files);
+  },
+
+  async upload(files) {
+    if (!files.length) return;
+    if (!this.writable) {
+      window.toastFrontendError?.("This folder is read-only.", "Upload");
+      return;
+    }
+    const job = { id: Date.now() + Math.random(), name: files.length === 1 ? files[0].name : `${files.length} files`, progress: 0, error: "" };
+    this.uploads.push(job);
+    const form = new FormData();
+    form.append("path", this.path);
+    for (const file of files) form.append("files[]", file, file.name);
+    try {
+      const token = await getCsrfToken();
+      const result = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/file_manager_upload");
+        xhr.setRequestHeader("X-CSRF-Token", token);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) job.progress = Math.round((e.loaded / e.total) * 100);
+        };
+        xhr.onload = () => {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new Error(xhr.status === 413 ? "The upload is too large." : `Upload failed (${xhr.status}).`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("The connection dropped during the upload."));
+        xhr.send(form);
+      });
+      for (const failure of result.failed || []) window.toastFrontendError?.(`${failure.name}: ${failure.error}`, "Upload");
+      await this.refresh();
+      const next = {};
+      for (const path of result.saved || []) next[path] = true;
+      this.selected = next;
+    } catch (error) {
+      window.toastFrontendError?.(error.message, "Upload");
+    } finally {
+      this.uploads = this.uploads.filter((item) => item.id !== job.id);
+    }
+  },
+
+  // --- keyboard -----------------------------------------------------------------
+  onKeydown(event) {
+    if (this.textEditor) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        this.saveText();
+      } else if (event.key === "Escape") {
+        this.closeTextEditor();
+      }
+      return;
+    }
+    const tag = event.target?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || this.confirm) return;
+    const key = event.key;
+    const ctrl = event.ctrlKey || event.metaKey;
+    const handled = () => event.preventDefault();
+    if (key === "Escape") {
+      if (this.menu) this.menu = null;
+      else this.clearSelection();
+    } else if (event.altKey && key === "ArrowLeft") { handled(); this.goBack(); }
+    else if (event.altKey && key === "ArrowRight") { handled(); this.goForward(); }
+    else if ((event.altKey && key === "ArrowUp") || key === "Backspace") { handled(); this.goUp(); }
+    else if (key === "F5") { handled(); this.refresh(); }
+    else if (key === "F2") { handled(); this.renameSelected(); }
+    else if (key === "Delete") { handled(); this.requestDelete(event.shiftKey); }
+    else if (key === "Enter") {
+      handled();
+      if (this.selectedEntries.length === 1) this.activate(this.selectedEntries[0]);
+    } else if (ctrl && key.toLowerCase() === "a") { handled(); this.selectAll(); }
+    else if (ctrl && key.toLowerCase() === "c") { handled(); this.copySelection(false); }
+    else if (ctrl && key.toLowerCase() === "x") { handled(); this.copySelection(true); }
+    else if (ctrl && key.toLowerCase() === "v") { handled(); this.paste(); }
+    else if (ctrl && event.shiftKey && key.toLowerCase() === "n") { handled(); this.newFolder(); }
+    else if ((ctrl && key.toLowerCase() === "l") || (event.altKey && key.toLowerCase() === "d")) { handled(); this.startAddressEdit(); }
+    else if (key === "ArrowDown" || key === "ArrowUp" || key === "Home" || key === "End") {
+      handled();
+      this.moveFocus(key, event.shiftKey);
+    } else if (key.length === 1 && !ctrl && !event.altKey) {
+      this.typeAhead(key);
+    }
+  },
+
+  // Closing a dialog hands focus to <body>. While the Files window is the top
+  // modal, keys pressed with nothing focused still reach it (but never steal
+  // a text selection's Ctrl+C or keys typed elsewhere).
+  onWindowKeydown(event) {
+    const root = document.querySelector(".fb");
+    if (!root || event.defaultPrevented || root.contains(event.target)) return;
+    if (event.target !== document.body && event.target !== document.documentElement) return;
+    if (String(window.getSelection?.() || "")) return;
+    const top = getModalStack().at(-1);
+    if (!top || !String(top.path || "").includes("file-browser/file-browser.html")) return;
+    this.onKeydown(event);
+  },
+
+  moveFocus(key, extend) {
+    const list = this.visibleEntries;
+    if (!list.length) return;
+    let index = list.findIndex((e) => e.path === this.focusPath);
+    if (key === "Home") index = 0;
+    else if (key === "End") index = list.length - 1;
+    else index = Math.max(0, Math.min(list.length - 1, index + (key === "ArrowDown" ? 1 : -1)));
+    const entry = list[index];
+    if (extend) this.clickEntry(entry, { shiftKey: true });
+    else this.clickEntry(entry, {});
+    this.scrollIntoView(entry.path);
+  },
+
+  typeAhead(char) {
+    clearTimeout(this._typeAheadTimer);
+    this._typeAhead += char.toLowerCase();
+    this._typeAheadTimer = setTimeout(() => { this._typeAhead = ""; }, 800);
+    const match = this.visibleEntries.find((e) => e.name.toLowerCase().startsWith(this._typeAhead));
+    if (match) {
+      this.clickEntry(match, {});
+      this.scrollIntoView(match.path);
+    }
+  },
+
+  // Keyboard shortcuts listen on .fb; give it focus back after dialogs close.
+  focusList() {
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) && active.closest(".fb")) return;
+      document.querySelector(".fb")?.focus({ preventScroll: true });
+    });
+  },
+
+  scrollIntoView(path) {
+    requestAnimationFrame(() => {
+      const row = document.querySelector(`.fb-row[data-path="${CSS.escape(path)}"]`);
+      row?.scrollIntoView({ block: "nearest" });
+    });
+  },
+
+  // --- pickers -------------------------------------------------------------------
+  configurePicker(options = {}) {
+    const mode = [PICKER_TEXT_OPEN, PICKER_SAVE_AS].includes(options?.pickerMode) ? options.pickerMode : PICKER_NONE;
+    this.pickerMode = mode;
+    this.pickerConfirmLabel = options?.confirmLabel || (mode === PICKER_SAVE_AS ? "Save Here" : "Open Selected");
+    this.pickerFilename = String(options?.filename || "").trim();
+    const ext = String(options?.defaultExtension || extensionOf(this.pickerFilename) || "md").replace(/^\./, "").toLowerCase();
+    this.pickerDefaultExtension = EDITOR_TEXT_EXTENSIONS.has(ext) ? ext : "md";
+    this.pickerFilenameError = "";
+    this.pickerOnConfirm = typeof options?.onConfirm === "function" ? options.onConfirm : null;
+    if (mode) this.selected = {};
+  },
+
+  resetPicker() {
+    this.configurePicker({});
+  },
+
+  isPickerMode() {
+    return this.pickerMode !== PICKER_NONE;
+  },
+
+  isTextOpenPicker() {
+    return this.pickerMode === PICKER_TEXT_OPEN;
+  },
+
+  isSaveAsPicker() {
+    return this.pickerMode === PICKER_SAVE_AS;
+  },
+
+  pickerFilenameValue() {
+    const raw = this.pickerFilename.trim();
+    if (!raw) return "";
+    return extensionOf(raw) ? raw : `${raw}.${this.pickerDefaultExtension}`;
+  },
+
+  pickerSelectedFiles() {
+    return this.selectedEntries.filter((e) => this.isEditorText(e));
+  },
+
+  pickerSelectionLabel() {
+    const count = this.pickerSelectedFiles().length;
+    return count ? `${count} text ${count === 1 ? "file" : "files"} selected` : "Select .md or .txt files";
+  },
+
+  canConfirmPicker() {
+    if (this.isTextOpenPicker()) return this.pickerSelectedFiles().length > 0;
+    if (this.isSaveAsPicker()) return Boolean(this.pickerFilenameValue());
+    return false;
+  },
+
+  async confirmPicker() {
+    if (!this.isPickerMode() || this.isBulkBusy) return;
+    let payload;
+    if (this.isSaveAsPicker()) {
+      const filename = this.pickerFilenameValue();
+      if (!EDITOR_TEXT_EXTENSIONS.has(extensionOf(filename)) || /[<>:"/\\|?*]/.test(filename)) {
+        this.pickerFilenameError = "Use a .md or .txt file name without < > : \" / \\ | ? *";
+        return;
+      }
+      if (this.entries.some((e) => e.name.toLowerCase() === filename.toLowerCase())) {
+        this.pickerFilenameError = `"${filename}" already exists here.`;
+        return;
+      }
+      payload = { mode: this.pickerMode, directory: this.path, filename, path: joinPath(this.path, filename) };
+    } else {
+      payload = { mode: this.pickerMode, directory: this.path, selectedFiles: this.pickerSelectedFiles() };
+    }
+    this.isBulkBusy = true;
+    try {
+      const result = await this.pickerOnConfirm?.(payload);
+      if (result !== false) window.closeModal(MODAL_PATH);
+    } catch (error) {
+      this.pickerFilenameError = error?.message || "That didn't work.";
+    } finally {
+      this.isBulkBusy = false;
+    }
+  },
+
+  cancelPicker() {
+    window.closeModal(MODAL_PATH);
   },
 };
 
 export const store = createStore("fileBrowser", model);
 
+// Chat messages link file paths; folders open here, files download.
 window.openFileLink = async function (path) {
   try {
-    const resp = await window.sendJsonData("/file_info", { path });
-    if (!resp.exists) {
-      window.toastFrontendError("File does not exist.", "File Error");
-      return;
-    }
-    if (resp.is_dir) {
-      // Set initial path and open via store
-      await store.open(resp.abs_path);
-    } else {
-      store.downloadFile({ path: resp.abs_path, name: resp.file_name });
-    }
-  } catch (e) {
-    window.toastFrontendError(
-      "Error opening file: " + e.message,
-      "File Open Error"
-    );
+    const result = await callJsonApi("file_manager", { action: "locate", path });
+    if (!result?.ok) throw new Error(result?.error || "Not available");
+    if (result.select) store.downloadFile({ path: result.select, name: result.select.split("\\").pop() });
+    else await store.open(result.folder);
+  } catch (error) {
+    window.toastFrontendError?.(error.message || "Could not open the file", "File Browser");
   }
 };

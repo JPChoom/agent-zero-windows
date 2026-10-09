@@ -31,4 +31,4 @@ Direct child DOX files:
 
 | Child | Scope |
 | --- | --- |
-| [file-browser/AGENTS.md](file-browser/AGENTS.md) | File browser modal and right-canvas Files surface workflow. |
+| [file-browser/AGENTS.md](file-browser/AGENTS.md) | Windows File Browser (Explorer-style) for the Files modal and right-canvas surface, the Editor's Open/Save As pickers and the rename dialog. |

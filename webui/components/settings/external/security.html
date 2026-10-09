@@ -104,6 +104,68 @@
             </template>
           </div>
 
+          <!-- File Browser access -->
+          <div class="security-subtitle">File Browser access</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">What the File Browser can open</div>
+              <div class="field-description">
+                At this PC. The workdir is always available. Agent Zero's own passwords, keys and tokens are never shown in any mode.
+              </div>
+            </div>
+            <div class="field-control">
+              <select x-model="$store.securitySettings.fileAccess.file_browser_scope">
+                <option value="usr">Agent Zero user folder (usr) only</option>
+                <option value="a0_root">Agent Zero folder only</option>
+                <option value="full">Full access to the Windows drive</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Other internal drives</div>
+              <div class="field-description">Also open the other drives built into this PC (D:, E:, ...).</div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="$store.securitySettings.fileAccess.file_browser_allow_other_drives" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">External and flash drives</div>
+              <div class="field-description">Also open plugged-in USB drives, flash drives and SD cards. Deleting on these drives is permanent (they have no Recycle Bin).</div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="$store.securitySettings.fileAccess.file_browser_allow_removable_drives" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">When connected remotely</div>
+              <div class="field-description">
+                Limit for sessions through Remote Control. Never wider than the setting above; drive toggles apply remotely only with "Same as at this PC".
+                Widening access from a remote session needs the Bypass password.
+              </div>
+            </div>
+            <div class="field-control">
+              <select x-model="$store.securitySettings.fileAccess.file_browser_remote_scope">
+                <option value="usr">Agent Zero user folder (usr) only</option>
+                <option value="a0_root">Agent Zero folder only</option>
+                <option value="same">Same as at this PC</option>
+              </select>
+            </div>
+          </div>
+          <div class="security-row">
+            <button type="button" class="btn btn-ok" :disabled="$store.securitySettings.busy"
+                    @click="$store.securitySettings.saveFileAccess()">Save File Browser access</button>
+          </div>
+
           <!-- Access log -->
           <div class="security-subtitle">Access log</div>
           <div class="field">
@@ -122,6 +184,7 @@
                 <option value="remote">Remote visits</option>
                 <option value="blocked">Blocked</option>
                 <option value="settings">Security changes</option>
+                <option value="files">File Browser activity</option>
                 <option value="all">Everything</option>
               </select>
               <button type="button" class="btn btn-ok" :disabled="$store.securitySettings.logLoading"

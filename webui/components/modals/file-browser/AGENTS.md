@@ -2,39 +2,36 @@
 
 ## Purpose
 
-- Own the WebUI file browser workflow for modal and right-canvas Files surface entry points.
+- Own the Windows File Browser (Explorer-style) for the modal and right-canvas Files surface, plus the Editor's Open / Save As pickers and the shared rename / new-item dialog.
 
 ## Ownership
 
-- `file-browser.html` owns file list markup, path/search controls, scoped styles, and modal/canvas footer behavior.
-- `file-browser-store.js` owns directory loading, remembered-location state, selection, upload/download/delete actions, and surface handoff state.
-- `rename-modal.html` owns rename and create-folder prompts that reuse the file-browser store.
+- `file-browser.html` owns the layout (navigation bar with back/forward/up/refresh, editable address bar with breadcrumbs, search; command bar; navigation pane with Quick access and This PC drives; details list; preview pane; status bar; context menu; confirm dialog; built-in text editor), scoped styles and the picker footer.
+- `file-browser-store.js` (`$store.fileBrowser`) owns loading, selection, history, clipboard, file operations, uploads, downloads, preview, text editing, keyboard handling and picker state.
+- `rename-modal.html` owns the name dialog for rename, new folder and new file; it reuses the store.
 
 ## Local Contracts
 
-- Keep `open(path)` as the modal entry point for workflows that await browser close.
-- Keep `openSurface(path)` as the right-canvas entry point; it must load files without opening or awaiting a modal.
-- The floating file-browser modal must use the shared surface modal chrome so it remains draggable/resizable and exposes Focus mode.
-- Preserve remembered-directory behavior: explicit paths win, then remembered path, then `$WORK_DIR`.
-- Empty mounted startup states must self-heal to the `$WORK_DIR` default instead of rendering a blank path and empty list.
-- Preserve picker modes for Editor Open and Save As: Editor Open selects one or more Markdown or plain text files with a pinned primary action, and Save As selects the current folder plus a `.md` or `.txt` file name.
-- Keep the row-level Open in Editor action visible outside the overflow menu for Editor-owned `.md` and `.txt` files.
-- Keep row action menus visible without disabling file-list scrolling; menus may float outside the scroll container but must still close on outside click, Escape, action click, and list scroll.
-- Keep the file list readable in narrow canvas/modal containers by hiding the Modified date column before sacrificing the Name or Size columns.
-- Keep New file and New folder controls icon-only across canvas and modal modes while preserving accessible labels.
-- Keep narrow mobile controls compact: Up shares the path row, and New file/New folder share the search row.
-- Preserve surface actions that route supported files to Browser, Desktop, or Editor.
-- Keep the clickable breadcrumb trail (`breadcrumbSegments`/`navigateToBreadcrumb`) in sync with `currentPath`: it renders real path segments only (no synthetic root crumb pointing at bare `/`, since the agent-facing browser is hard-restricted to the configured workdir and a raw OS root is not a valid target there).
+- Backend is only `api/file_manager.py`, `api/file_manager_upload.py` and `api/file_manager_download.py`; every path is checked by `helpers/file_access.py`. Never call the legacy `*_work_dir_*` endpoints from here.
+- Paths are absolute Windows paths. Callers may pass `""`, `$WORK_DIR`, Docker-style `/a0/...`, workdir-relative names or a Windows file/folder path; `openPath` resolves them with the `locate` action (a file opens its folder with the file selected), falling back to the remembered folder and then the workdir.
+- Public API used by other features (keep signatures): `open(path, options)` (awaits close), `openSurface(path)` (canvas, no modal), `openTextPicker(path, onConfirm)`, `openSaveAsPicker(path, {filename, defaultExtension, onConfirm})`, `openRenameModal(file, {currentPath, entries, validateName, performRename, onRenamed})`, `downloadFile(file)`, `handleClose()`, `onMount` / `onUnmount`, `begin/finish/cancelSurfaceHandoff`, and `window.openFileLink(path)`.
+- Picker payloads: Open -> `{mode, directory, selectedFiles}` (only `.md` / `.txt`; the list shows only folders and those files); Save As -> `{mode, directory, filename, path}` with `path` a Windows path. Returning `false` from `onConfirm` keeps the picker open.
+- The floating modal uses the shared surface chrome (draggable/resizable, Focus mode). Overlays (context menu, dialogs, editor) are positioned inside `.fb`, not `position: fixed`, because the modal is transformed.
+- Keyboard: handled on `.fb`; while the Files modal is top of the modal stack, keys pressed with nothing focused (after a dialog closes) are routed to it too, never when text is selected. Shortcuts: Enter, Backspace / Alt+Up, Alt+Left / Alt+Right, F2, F5, Del (Recycle Bin), Shift+Del (permanent), Ctrl+A / C / X / V, Ctrl+Shift+N, Ctrl+L / Alt+D, arrows / Home / End (Shift extends), type-ahead.
+- Delete always asks first; it says when a drive has no Recycle Bin. Downloads are native browser downloads of a GET URL (no blobs in page memory); folders and multi-selections arrive as one ZIP.
+- The built-in text editor (any text file up to 2 MB) saves with the file's encoding and line endings (`newline` from `read_text`) and refuses to overwrite a file changed on disk.
+- Remembered folder (localStorage `fileBrowser.lastDirectory`) only while settings `file_browser_remember_last_directory` is on. View preferences (panes, hidden items, sort) live in localStorage `fileBrowser.prefs`; on screens 600 px wide or less the navigation pane starts closed.
+- Narrow layouts: the list drops Type, then Date modified (`fb-list` container queries); the window hides the preview pane, then command labels, then overlays the navigation pane (`fb-root`).
 
 ## Work Guidance
 
 - Share markup and store behavior between modal and canvas modes; branch only on explicit component `mode`.
-- Keep modal footer relocation compatible with `data-modal-footer` while allowing canvas mode to render inline controls.
+- Show refusals from the backend as they are (they explain the access setting); do not re-implement access rules in the frontend.
 
 ## Verification
 
-- Smoke-test opening Files as a modal and from the right-canvas rail.
-- Run targeted file-browser tests after behavior changes.
+- `pytest tests/test_file_browser_navigation.py tests/test_file_manager.py tests/test_file_access.py`
+- Smoke-test in the dev server: open Files as a modal and in the canvas, rename (F2), copy/paste, delete to the Recycle Bin, upload, download a folder, edit a text file, the Editor Open/Save As pickers, and a phone-width viewport.
 
 ## Child DOX Index
 

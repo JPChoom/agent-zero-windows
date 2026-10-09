@@ -35,6 +35,7 @@ export const store = createStore("securitySettings", {
     this.isLocal = !!data.is_local;
     this.myIp = data.my_ip || "";
     this.bypassPasswordSet = !!data.bypass_password_set;
+    if (data.file_access) this.fileAccess = { ...data.file_access };
     const s = globalThis.Alpine?.store?.("settings")?.settings;
     if (s) {
       s.tunnel_ip_allowlist = this.allowlist;
@@ -98,6 +99,19 @@ export const store = createStore("securitySettings", {
     return this._call({ action: "allow_ip", ip }, `${ip} added to the allowlist`);
   },
 
+  // File Browser access (helpers/file_access.py). Saved on its own; widening it
+  // from a remote session asks for the Bypass password through the same flow.
+  fileAccess: {
+    file_browser_scope: "a0_root",
+    file_browser_remote_scope: "a0_root",
+    file_browser_allow_other_drives: false,
+    file_browser_allow_removable_drives: false,
+  },
+
+  saveFileAccess() {
+    return this._call({ action: "save_file_access", config: { ...this.fileAccess } }, "File Browser access saved");
+  },
+
   logFilter: "logins",
   logRecords: [],
   logLoading: false,
@@ -119,6 +133,10 @@ export const store = createStore("securitySettings", {
   },
 
   eventLabel(event) {
+    if (String(event).startsWith("file_")) {
+      const words = String(event).slice(5).replace("_refused", "").replace("_", " ");
+      return "File " + words + (String(event).endsWith("_refused") ? " (refused)" : "");
+    }
     return {
       login_success: "Signed in",
       login_failure: "Sign-in failed",
@@ -130,6 +148,8 @@ export const store = createStore("securitySettings", {
   },
 
   eventTone(event) {
+    if (String(event).endsWith("_refused")) return "bad";
+    if (String(event).startsWith("file_")) return "info";
     if (event === "login_success" || event === "logout" || event === "remote_access") return "ok";
     if (event === "blocked" || event === "login_failure" || event === "login_locked") return "bad";
     return "info";

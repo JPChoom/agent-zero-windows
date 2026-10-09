@@ -26,10 +26,10 @@ class FileManager(ApiHandler):
     caller's policy (helpers/file_access.py): local sessions use the File
     Browser access mode, remote sessions its remote cap.
 
-    actions: places | list {path, show_hidden} | mkdir {path, name} |
+    actions: places | locate {path} | list {path, show_hidden} | mkdir {path, name} |
       new_file {path, name} | rename {path, name} | delete {paths, permanent} |
       copy {paths, dest} | move {paths, dest} | read_text {path} |
-      write_text {path, content, encoding, expected_modified} |
+      write_text {path, content, encoding, expected_modified, newline} |
       reveal {path} (opens Explorer on this PC; local sessions only)
     """
 
@@ -52,6 +52,8 @@ class FileManager(ApiHandler):
         name = str(input.get("name") or "")
         if action == "places":
             return fm.places(policy)
+        if action == "locate":
+            return fm.locate(path, policy)
         if action == "list":
             return fm.list_dir(path, policy, bool(input.get("show_hidden")))
         if action == "mkdir":
@@ -70,6 +72,7 @@ class FileManager(ApiHandler):
             return fm.write_text(
                 path, str(input.get("content") or ""), policy,
                 str(input.get("encoding") or "utf-8"), input.get("expected_modified"),
+                "\r\n" if input.get("newline") == "\r\n" else "\n",
             )
         if action == "reveal":
             if remote:

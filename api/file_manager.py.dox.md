@@ -11,7 +11,7 @@
 
 ## Runtime Contracts
 
-- POST JSON `{action, ...}`: `places`, `list {path, show_hidden}`, `mkdir {path, name}`, `new_file {path, name}`, `rename {path, name}`, `delete {paths, permanent}`, `copy` / `move {paths, dest}`, `read_text {path}`, `write_text {path, content, encoding, expected_modified}`, `reveal {path}` (opens File Explorer on this PC; refused for remote sessions). Returns `{ok: true, ...}` or `{ok: false, error}`.
+- POST JSON `{action, ...}`: `places`, `locate {path}`, `list {path, show_hidden}`, `mkdir {path, name}`, `new_file {path, name}`, `rename {path, name}`, `delete {paths, permanent}`, `copy` / `move {paths, dest}`, `read_text {path}`, `write_text {path, content, encoding, expected_modified, newline}`, `reveal {path}` (opens File Explorer on this PC; refused for remote sessions). Returns `{ok: true, ...}` or `{ok: false, error}`.
 - Paths are absolute Windows paths. The policy comes from `file_access.policy_for(is_remote)`; remote = not `access_control.is_local_request`.
 - Changes are audited to `usr/security_audit.jsonl` as `file_<action>` / `file_<action>_refused` with `by` (`local` or client IP).
 - Default auth + CSRF apply.

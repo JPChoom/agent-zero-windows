@@ -8,9 +8,9 @@
 <body>
   <div x-data>
     <template x-if="$store.fileBrowser">
-      <div class="rename-modal-root" x-init="$nextTick(() => $refs.renameInput?.focus())">
+      <div class="rename-modal-root" x-destroy="$store.fileBrowser.focusList()" x-init="$nextTick(() => { const el = $refs.renameInput; if (!el) return; el.focus(); const dot = el.value.lastIndexOf('.'); el.setSelectionRange(0, dot > 0 && $store.fileBrowser.renameMode !== 'create-folder' ? dot : el.value.length) })">
         <div class="rename-form">
-          <label class="rename-label" x-text="$store.fileBrowser.renameMode === 'create-folder' ? 'New folder name' : 'New name'"></label>
+          <label class="rename-label" x-text="$store.fileBrowser.renameTitle"></label>
           <input
             class="rename-input"
             type="text"
@@ -22,7 +22,7 @@
           <template x-if="$store.fileBrowser.renameError">
             <p class="rename-error" x-text="$store.fileBrowser.renameError"></p>
           </template>
-          <p class="rename-hint" x-text="$store.fileBrowser.renameMode === 'create-folder' ? 'Folder will be created in the current directory.' : 'Renaming will keep the item in the same directory.'"></p>
+          <p class="rename-hint" x-text="$store.fileBrowser.renameMode === 'rename' ? 'The item stays in the same folder.' : 'It will be created in the current folder.'"></p>
         </div>
       </div>
     </template>
@@ -30,7 +30,7 @@
 
   <template x-if="$store.fileBrowser">
     <div class="modal-footer" data-modal-footer>
-      <button class="btn btn-ok" @click="$store.fileBrowser.confirmRename()" :disabled="$store.fileBrowser.isRenaming || !$store.fileBrowser.renameName.trim()" x-text="$store.fileBrowser.renameMode === 'create-folder' ? 'Create Folder' : 'Rename'"></button>
+      <button class="btn btn-ok" @click="$store.fileBrowser.confirmRename()" :disabled="$store.fileBrowser.isRenaming || !$store.fileBrowser.renameName.trim()" x-text="({ 'create-folder': 'Create Folder', 'create-file': 'Create File' })[$store.fileBrowser.renameMode] || 'Rename'"></button>
       <button class="btn btn-cancel" @click="$store.fileBrowser.closeRenameModal()" :disabled="$store.fileBrowser.isRenaming">Cancel</button>
     </div>
   </template>
