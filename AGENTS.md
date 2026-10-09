@@ -177,7 +177,7 @@ Key Files:
 - Call `asyncio.run` / `run_until_complete` from code that can run inside a running event loop (nested loops drop task wakeups and freeze agents); use `helpers/sync_async.run_sync`.
 
 ### Security Architecture (summary)
-- Remote access: `helpers/access_control.py` IP allowlist wraps the whole ASGI app; unauthenticated visitors get only the generic sign-in page; login is rate-limited and audited (`usr/security_audit.jsonl`).
+- Remote access: `helpers/access_control.py` IP allowlist wraps the whole ASGI app; unauthenticated visitors get only the generic sign-in page; login is rate-limited; every sign-in/out, blocked request and remote visit is audited with full request details (`usr/security_audit.jsonl`, viewable in Settings > Security > Access log).
 - Agent permissions: per-chat in-memory modes with a password-locked, auto-expiring Bypass (`plugins/_permissions`); deterministic command floor (`plugins/_safety_policy`); infection check (`plugins/_infection_check`).
 - Prompt injection: external tool output is wrapped as `<untrusted_content>` data with a fresh random id per result (`helpers/untrusted_content.py`); prompt includes load only from `usr/promptincludes/` and project roots; memory never learns from external content; host-bound secrets; third-party plugins install review-pending.
 

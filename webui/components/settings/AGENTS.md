@@ -11,7 +11,7 @@
 - `mcp/client/` owns the global/project MCP server manager, server search, raw JSON editor surface, examples modal, server tool detail modal, MCP scanner modal, scan checks, and scan prompt assets.
 - `appearance/appearance.html` owns Settings > Appearance (theme, accent, material, wallpaper, live preview). It has no store of its own: it binds to `$store.preferences`, applies instantly, and stores per browser - no Save.
 - Every settings section rendered in a tab must also be listed in that tab's `sections` in `settings-store.js` `TAB_ITEMS`, or it gets no navigation link.
-- `external/security.html` + `external/security-store.js` own Settings > Security: the remote-access IP allowlist and blocked log (`api/security_settings.py`), default permission mode and Bypass time limit (ordinary settings fields), and the Bypass password form (`api/permissions_bypass_password.py`). Allowlist saves are mirrored into `$store.settings` so the main Save never writes back a stale list.
+- `external/security.html` + `external/security-store.js` own Settings > Security: the remote-access IP allowlist, blocked list and Access log viewer (`api/security_settings.py`, action `audit_log`; rows expand to the full JSON record), default permission mode and Bypass time limit (ordinary settings fields), and the Bypass password form (`api/permissions_bypass_password.py`). Allowlist saves are mirrored into `$store.settings` so the main Save never writes back a stale list.
 - `skills/` owns skill listing, importing, standalone skill scanning, uploaded archive scan preparation UI, scanner modal, scan checks, and scan prompt assets.
 
 ## Local Contracts

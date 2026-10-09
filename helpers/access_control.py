@@ -30,11 +30,14 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import json
+import os
+import re
 import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Iterable, Mapping
+from urllib.parse import parse_qsl, urlencode
 
 from helpers import files
 from helpers.network import is_loopback_address
@@ -51,12 +54,25 @@ PROXY_HEADERS = (
 )
 
 AUDIT_FILE = "usr/security_audit.jsonl"
+AUDIT_MAX_BYTES = 10 * 1024 * 1024
+AUDIT_KEEP_FILES = 20
+REMOTE_VISIT_GAP_SECONDS = 30 * 60
 _SETTINGS_TTL_SECONDS = 2.0
+
+# Recorded as present, never stored: they carry the session, CSRF token or credentials.
+SENSITIVE_HEADERS = frozenset({
+    "cookie", "set-cookie", "authorization", "proxy-authorization",
+    "x-csrf-token", "x-api-key", "x-auth-token",
+})
+_SENSITIVE_QUERY_KEY = re.compile(r"token|key|secret|pass|auth|session|sig|code", re.IGNORECASE)
+_MAX_HEADER_VALUE = 500
 
 _lock = threading.Lock()
 _settings_cache: tuple[float, str, bool] | None = None
 _parsed_cache: tuple[str, list] | None = None
 _recent_blocks: deque = deque(maxlen=50)
+_ip_history: dict[str, dict] | None = None
+_last_remote_visit: dict[str, float] = {}
 
 
 # ----------------------------------------------------------------- headers
@@ -208,20 +224,205 @@ def check_access(remote_addr: str | None, headers) -> tuple[bool, str, str]:
     return False, ip, "not on allowlist" if ip else "unknown client address"
 
 
+# ----------------------------------------------------------- request details
+
+def _redact_query(query: str) -> str:
+    if not query:
+        return ""
+    pairs = parse_qsl(query, keep_blank_values=True)
+    if not pairs:
+        return query[:300]
+    cleaned = [(k, "[redacted]" if _SENSITIVE_QUERY_KEY.search(k) else v) for k, v in pairs]
+    return urlencode(cleaned)[:300]
+
+
+def describe_request(
+    remote_addr: str | None,
+    headers,
+    *,
+    method: str = "",
+    path: str = "",
+    query: str = "",
+    scheme: str = "",
+    http_version: str = "",
+    kind: str = "http",
+    remote_port=None,
+) -> dict:
+    """Everything this server can learn about one request, for the security
+    audit log. Credentials, cookies and CSRF tokens are noted as present but
+    never stored."""
+    h = _lower_headers(headers)
+    local = is_local_request(remote_addr, h)
+    provider = None if local else _active_tunnel_provider()
+    ip = str(remote_addr or "") if local else client_ip(remote_addr, h, provider=provider)
+    enabled, networks = _current_policy()
+    if local:
+        via = "local"
+    elif provider:
+        via = f"tunnel:{provider}"
+    elif is_proxied(h):
+        via = "proxy"
+    else:
+        via = "direct"
+    recorded_headers = {
+        name: ("[present, not stored]" if name in SENSITIVE_HEADERS else value[:_MAX_HEADER_VALUE])
+        for name, value in sorted(h.items())
+    }
+    return {
+        "ip": ip or "?",
+        "via": via,
+        "remote_addr": str(remote_addr or ""),
+        "remote_port": remote_port,
+        "allowlisted": (not local) and ip_in_allowlist(ip, networks),
+        "allowlist_enabled": enabled,
+        "country": h.get("cf-ipcountry", ""),
+        "cf_ray": h.get("cf-ray", ""),
+        "user_agent": h.get("user-agent", "")[:_MAX_HEADER_VALUE],
+        "accept_language": h.get("accept-language", "")[:200],
+        "referer": h.get("referer", "")[:_MAX_HEADER_VALUE],
+        "origin": h.get("origin", "")[:200],
+        "host": h.get("host", "")[:200],
+        "kind": kind,
+        "method": method,
+        "path": str(path or "")[:300],
+        "query": _redact_query(str(query or "")),
+        "scheme": scheme or h.get("x-forwarded-proto", ""),
+        "http_version": str(http_version or ""),
+        "forwarded_for": h.get("x-forwarded-for", "")[:300],
+        "headers": recorded_headers,
+    }
+
+
+def describe_scope(scope) -> dict:
+    client = scope.get("client") or (None, None)
+    raw_query = scope.get("query_string") or b""
+    return describe_request(
+        client[0],
+        scope.get("headers") or [],
+        method=str(scope.get("method") or ("WS" if scope.get("type") == "websocket" else "")),
+        path=str(scope.get("path", "")),
+        query=raw_query.decode("latin-1") if isinstance(raw_query, bytes) else str(raw_query),
+        scheme=str(scope.get("scheme") or ""),
+        http_version=str(scope.get("http_version") or ""),
+        kind=str(scope.get("type") or ""),
+        remote_port=client[1] if len(client) > 1 else None,
+    )
+
+
 # ------------------------------------------------------------------- audit
 
-def audit(event: str, **fields) -> None:
-    record = {"time": datetime.now(timezone.utc).isoformat(), "event": event, **fields}
+def _audit_path() -> str:
+    return files.get_abs_path(AUDIT_FILE)
+
+
+def _rotate_if_needed(path: str) -> None:
+    """Keeps every record: the full file is renamed, never truncated, and only
+    the oldest of AUDIT_KEEP_FILES archives is removed. Caller holds _lock."""
     try:
-        path = files.get_abs_path(AUDIT_FILE)
+        if os.path.getsize(path) < AUDIT_MAX_BYTES:
+            return
+    except OSError:
+        return
+    base, ext = os.path.splitext(path)
+    oldest = f"{base}.{AUDIT_KEEP_FILES}{ext}"
+    if os.path.exists(oldest):
+        os.remove(oldest)
+    for n in range(AUDIT_KEEP_FILES - 1, 0, -1):
+        src = f"{base}.{n}{ext}"
+        if os.path.exists(src):
+            os.replace(src, f"{base}.{n + 1}{ext}")
+    os.replace(path, f"{base}.1{ext}")
+
+
+def _load_ip_history() -> dict[str, dict]:
+    """ip -> {first_seen, events}, seeded once from the current audit file so
+    "seen before" survives a restart. Caller holds _lock."""
+    global _ip_history
+    if _ip_history is not None:
+        return _ip_history
+    history: dict[str, dict] = {}
+    try:
+        with open(_audit_path(), "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                ip = rec.get("ip")
+                if not ip or ip == "?":
+                    continue
+                entry = history.setdefault(ip, {"first_seen": rec.get("time", ""), "events": 0})
+                entry["events"] += 1
+    except OSError:
+        pass
+    _ip_history = history
+    return history
+
+
+def audit(event: str, **fields) -> None:
+    now = datetime.now(timezone.utc)
+    record = {
+        "time": now.isoformat(),
+        "local_time": now.astimezone().isoformat(),
+        "event": event,
+        **fields,
+    }
+    try:
+        path = _audit_path()
         with _lock:
+            ip = record.get("ip")
+            if ip and ip != "?":
+                history = _load_ip_history()
+                prior = history.get(ip)
+                record.setdefault("ip_seen_before", prior is not None)
+                record.setdefault("ip_first_seen", prior["first_seen"] if prior else record["time"])
+                record.setdefault("ip_prior_events", prior["events"] if prior else 0)
+                entry = history.setdefault(ip, {"first_seen": record["time"], "events": 0})
+                entry["events"] += 1
+            _rotate_if_needed(path)
             with open(path, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record) + "\n")
+                fh.write(json.dumps(record, default=str) + "\n")
     except Exception:
         pass
 
 
-def record_block(ip: str, path: str, reason: str, country: str = "") -> None:
+def read_audit_log(limit: int = 200, kinds: Iterable[str] | None = None) -> list[dict]:
+    """Newest-first records from the current audit file, optionally only the
+    given event names."""
+    wanted = set(kinds) if kinds else None
+    limit = max(1, min(int(limit or 200), 2000))
+    try:
+        with open(_audit_path(), "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return []
+    out: list[dict] = []
+    for line in reversed(lines):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if wanted is None or rec.get("event") in wanted:
+            out.append(rec)
+            if len(out) >= limit:
+                break
+    return out
+
+
+def note_remote_visit(details: dict) -> None:
+    """Log an allowed remote client once per REMOTE_VISIT_GAP_SECONDS of
+    activity, so normal use doesn't log every request."""
+    ip = details.get("ip") or "?"
+    now = time.monotonic()
+    with _lock:
+        last = _last_remote_visit.get(ip)
+        _last_remote_visit[ip] = now
+    if last is not None and now - last < REMOTE_VISIT_GAP_SECONDS:
+        return
+    audit("remote_access", **details)
+
+
+def record_block(ip: str, path: str, reason: str, country: str = "", details: dict | None = None) -> None:
     entry = {
         "time": datetime.now(timezone.utc).isoformat(),
         "ip": ip or "?",
@@ -231,7 +432,7 @@ def record_block(ip: str, path: str, reason: str, country: str = "") -> None:
     }
     with _lock:
         _recent_blocks.appendleft(entry)
-    audit("blocked", **entry)
+    audit("blocked", **{**(details or {}), **entry})
     _maybe_notify_block_burst()
 
 
@@ -258,6 +459,46 @@ def _maybe_notify_block_burst() -> None:
             display_time=10,
             group="access_control",
             id="access_control_blocked_burst",
+        )
+    except Exception:
+        pass
+
+
+def flask_request_details(request) -> dict:
+    environ = getattr(request, "environ", {}) or {}
+    raw_query = getattr(request, "query_string", b"") or b""
+    return describe_request(
+        request.remote_addr,
+        request.headers,
+        method=request.method,
+        path=request.path,
+        query=raw_query.decode("latin-1") if isinstance(raw_query, bytes) else str(raw_query),
+        scheme=request.scheme,
+        http_version=environ.get("SERVER_PROTOCOL", ""),
+        remote_port=environ.get("REMOTE_PORT"),
+    )
+
+
+def record_login(event: str, details: dict, **fields) -> None:
+    """Audit a sign-in event; a successful remote sign-in also raises a
+    notification, high priority when the address has never been seen."""
+    with _lock:
+        seen_before = details.get("ip") in _load_ip_history()
+    audit(event, **details, **fields)
+    if event != "login_success" or details.get("via") == "local":
+        return
+    try:
+        from helpers.notification import NotificationManager, NotificationPriority, NotificationType
+
+        place = f" ({details['country']})" if details.get("country") else ""
+        NotificationManager.send_notification(
+            type=NotificationType.INFO if seen_before else NotificationType.WARNING,
+            priority=NotificationPriority.NORMAL if seen_before else NotificationPriority.HIGH,
+            title="Remote sign-in" if seen_before else "Remote sign-in from a new address",
+            message=f"Signed in from {details.get('ip', '?')}{place}.",
+            detail="See Settings > Security > Access log for the full record.",
+            display_time=10,
+            group="access_control",
         )
     except Exception:
         pass
@@ -306,6 +547,11 @@ class LoginThrottle:
                 return True
             return False
 
+    def failure_count(self, key: str, now: float | None = None) -> int:
+        now = time.time() if now is None else now
+        with self._mutex:
+            return len([t for t in self._failures.get(key, []) if now - t < self.WINDOW])
+
     def record_success(self, key: str) -> None:
         with self._mutex:
             self._failures.pop(key, None)
@@ -340,10 +586,19 @@ class AccessControlMiddleware:
         headers = scope.get("headers") or []
         allowed, ip, reason = check_access(client[0], headers)
         if allowed:
+            if reason != "local":
+                try:
+                    note_remote_visit({**describe_scope(scope), "reason": reason})
+                except Exception:
+                    pass
             return await self.app(scope, receive, send)
 
         h = _lower_headers(headers)
-        record_block(ip, str(scope.get("path", "")), reason, h.get("cf-ipcountry", ""))
+        try:
+            details = describe_scope(scope)
+        except Exception:
+            details = None
+        record_block(ip, str(scope.get("path", "")), reason, h.get("cf-ipcountry", ""), details=details)
 
         if kind == "websocket":
             # Reject the handshake before accepting it.

@@ -97,4 +97,48 @@ export const store = createStore("securitySettings", {
   allowIp(ip) {
     return this._call({ action: "allow_ip", ip }, `${ip} added to the allowlist`);
   },
+
+  logFilter: "logins",
+  logRecords: [],
+  logLoading: false,
+  logOpen: null,
+  logFilterTried: false,
+
+  async loadLog() {
+    this.logLoading = true;
+    this.logFilterTried = true;
+    try {
+      const data = await callJsonApi("security_settings", { action: "audit_log", filter: this.logFilter, limit: 200 });
+      this.logRecords = data?.ok ? data.records || [] : [];
+      this.logOpen = null;
+    } catch (e) {
+      globalThis.toastFrontendError?.(e?.message || "Could not load the access log", "Security");
+    } finally {
+      this.logLoading = false;
+    }
+  },
+
+  eventLabel(event) {
+    return {
+      login_success: "Signed in",
+      login_failure: "Sign-in failed",
+      login_locked: "Locked out",
+      logout: "Signed out",
+      remote_access: "Remote visit",
+      blocked: "Blocked",
+    }[event] || event;
+  },
+
+  eventTone(event) {
+    if (event === "login_success" || event === "logout" || event === "remote_access") return "ok";
+    if (event === "blocked" || event === "login_failure" || event === "login_locked") return "bad";
+    return "info";
+  },
+
+  shortAgent(ua) {
+    if (!ua) return "";
+    const browser = (ua.match(/(Edg|OPR|Chrome|Firefox|Safari)\/[\d.]+/) || [""])[0].replace("Edg", "Edge").replace("OPR", "Opera");
+    const os = (ua.match(/Windows NT [\d.]+|Android [\d.]+|iPhone OS [\d_]+|Mac OS X [\d_]+|Linux/) || [""])[0];
+    return [browser, os].filter(Boolean).join(" · ") || ua.slice(0, 60);
+  },
 });

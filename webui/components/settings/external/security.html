@@ -104,6 +104,51 @@
             </template>
           </div>
 
+          <!-- Access log -->
+          <div class="security-subtitle">Access log</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Sign-ins and remote access</div>
+              <div class="field-description">
+                Every sign-in, sign-out, blocked request and remote visit (allowlisted or not), with address, time, country,
+                browser, headers and address history. Passwords, cookies and tokens are never recorded.
+                Stored in <code>usr/security_audit.jsonl</code> (rolls over at 10 MB, 20 files kept).
+              </div>
+            </div>
+            <div class="field-control security-log-controls">
+              <select x-model="$store.securitySettings.logFilter" @change="$store.securitySettings.loadLog()">
+                <option value="logins">Sign-ins</option>
+                <option value="failed">Failed sign-ins</option>
+                <option value="remote">Remote visits</option>
+                <option value="blocked">Blocked</option>
+                <option value="settings">Security changes</option>
+                <option value="all">Everything</option>
+              </select>
+              <button type="button" class="btn btn-ok" :disabled="$store.securitySettings.logLoading"
+                      @click="$store.securitySettings.loadLog()"
+                      x-text="$store.securitySettings.logRecords.length ? 'Refresh' : 'Show log'"></button>
+            </div>
+          </div>
+          <div class="security-log" x-show="$store.securitySettings.logRecords.length || $store.securitySettings.logLoading">
+            <template x-for="(r, i) in $store.securitySettings.logRecords" :key="i">
+              <div class="security-log-entry">
+                <button type="button" class="security-log-row" @click="$store.securitySettings.logOpen = ($store.securitySettings.logOpen === i ? null : i)">
+                  <span class="security-badge" :class="'is-' + $store.securitySettings.eventTone(r.event)"
+                        x-text="$store.securitySettings.eventLabel(r.event)"></span>
+                  <code x-text="r.ip || r.by || ''"></code>
+                  <span x-text="r.country || ''"></span>
+                  <span class="security-hint" x-show="r.ip_seen_before === false">new address</span>
+                  <span class="security-hint" x-text="new Date(r.time).toLocaleString()"></span>
+                  <span class="security-hint security-path" x-text="r.username ? 'user: ' + r.username : $store.securitySettings.shortAgent(r.user_agent)"></span>
+                </button>
+                <template x-if="$store.securitySettings.logOpen === i">
+                  <pre class="security-log-detail" x-text="JSON.stringify(r, null, 2)"></pre>
+                </template>
+              </div>
+            </template>
+          </div>
+          <div class="security-hint" x-show="!$store.securitySettings.logLoading && $store.securitySettings.logRecords.length === 0 && $store.securitySettings.logFilterTried">No matching records.</div>
+
           <!-- Permissions -->
           <div class="security-subtitle">Permissions</div>
           <div class="field">
@@ -171,6 +216,17 @@
       .security-blocked-row { display: flex; gap: 10px; align-items: center; font-size: 0.85rem; flex-wrap: wrap; }
       .security-path { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .security-pw { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+      .security-log-controls { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+      .security-log { display: flex; flex-direction: column; gap: 2px; max-height: 420px; overflow-y: auto; margin-bottom: 10px; }
+      .security-log-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; text-align: left;
+        font-size: 0.85rem; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+      .security-log-row:hover { background: var(--color-background-hover, rgba(127,127,127,0.12)); }
+      .security-badge { font-size: 0.72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+      .security-badge.is-ok { background: color-mix(in srgb, #22c55e 18%, transparent); color: #22c55e; }
+      .security-badge.is-bad { background: color-mix(in srgb, var(--color-error, #ef4444) 18%, transparent); color: var(--color-error, #ef4444); }
+      .security-badge.is-info { background: color-mix(in srgb, var(--color-primary, #3b82f6) 18%, transparent); color: var(--color-primary, #3b82f6); }
+      .security-log-detail { font-size: 0.75rem; margin: 2px 6px 8px; padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto;
+        white-space: pre-wrap; word-break: break-all; background: var(--color-input, rgba(127,127,127,0.1)); }
     </style>
   </body>
 </html>

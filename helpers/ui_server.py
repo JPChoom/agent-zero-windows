@@ -324,8 +324,10 @@ class UiRouteHandlers:
 
         if request.method == "POST":
             client = access_control.client_ip(request.remote_addr, request.headers) or "?"
+            details = access_control.flask_request_details(request)
+            attempted_user = str(request.form.get("username") or "")[:64]
             if access_control.login_throttle.is_locked(client):
-                access_control.audit("login_locked", ip=client)
+                access_control.record_login("login_locked", details, username=attempted_user)
                 await asyncio.sleep(1)
                 error = "Sign-in failed. Please try again later."
             else:
@@ -338,13 +340,20 @@ class UiRouteHandlers:
 
                 if user and user_ok and pass_ok:
                     access_control.login_throttle.record_success(client)
-                    access_control.audit("login_success", ip=client)
                     session.clear()  # fresh session on privilege change
                     session["authentication"] = login.get_credentials_hash()
+                    session["login_id"] = secrets.token_hex(8)
+                    access_control.record_login(
+                        "login_success", details, username=attempted_user, login_id=session["login_id"]
+                    )
                     return redirect(next_url or fallback_url)
 
                 locked = access_control.login_throttle.record_failure(client)
-                access_control.audit("login_failure", ip=client, locked=locked)
+                access_control.record_login(
+                    "login_failure", details,
+                    username=attempted_user, username_correct=bool(user and user_ok), locked=locked,
+                    failures_in_window=access_control.login_throttle.failure_count(client),
+                )
                 await asyncio.sleep(1)
                 error = "Sign-in failed. Please try again."
 
@@ -353,7 +362,12 @@ class UiRouteHandlers:
 
     @extensible
     async def logout_handler(self):
+        if session.get("authentication"):
+            access_control.record_login(
+                "logout", access_control.flask_request_details(request), login_id=session.get("login_id", "")
+            )
         session.pop("authentication", None)
+        session.pop("login_id", None)
         return redirect(url_for("login_handler"))
 
     @requires_auth

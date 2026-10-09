@@ -3,6 +3,18 @@ from helpers import access_control
 from helpers import settings as settings_helper
 from plugins._permissions.helpers import bypass_lock
 
+AUDIT_FILTERS: dict[str, tuple[str, ...] | None] = {
+    "all": None,
+    "logins": ("login_success", "login_failure", "login_locked", "logout"),
+    "failed": ("login_failure", "login_locked"),
+    "remote": ("remote_access",),
+    "blocked": ("blocked",),
+    "settings": (
+        "allowlist_saved", "allowlist_ip_added", "bypass_unlocked", "bypass_failure",
+        "bypass_locked", "bypass_password_changed", "bypass_password_change_failed",
+    ),
+}
+
 
 class SecuritySettings(ApiHandler):
     """Backend of Settings > Security: the tunnel IP allowlist and its
@@ -13,6 +25,7 @@ class SecuritySettings(ApiHandler):
       get                                  -> current state
       save_allowlist {text, enabled, password?}
       allow_ip {ip}                        -> append one address
+      audit_log {filter?, limit?}          -> newest-first usr/security_audit.jsonl records
 
     Lockout guard: a change made remotely (through the tunnel) that would
     stop the requester's own address from getting in again requires the
@@ -29,6 +42,10 @@ class SecuritySettings(ApiHandler):
 
         if action == "get":
             return self._state(is_local, my_ip)
+
+        if action == "audit_log":
+            kinds = AUDIT_FILTERS.get(str(input.get("filter") or "all"))
+            return {"ok": True, "records": access_control.read_audit_log(input.get("limit") or 200, kinds)}
 
         if action == "allow_ip":
             ip = str(input.get("ip") or "").strip()

@@ -195,3 +195,118 @@ def test_constant_time_equals():
     assert ac.constant_time_equals("a", "a")
     assert not ac.constant_time_equals("a", "b")
     assert not ac.constant_time_equals(None, "a")
+
+
+# -- forensic audit log -------------------------------------------------------
+
+def _records(tmp_path):
+    import json
+    p = tmp_path / "audit.jsonl"
+    return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()] if p.exists() else []
+
+
+@pytest.fixture
+def _fresh_history(monkeypatch):
+    monkeypatch.setattr(ac, "_ip_history", None)
+    ac._last_remote_visit.clear()
+
+
+def test_describe_request_records_details_but_never_secrets(monkeypatch, _fresh_history):
+    _policy(monkeypatch)
+    monkeypatch.setattr(ac, "_active_tunnel_provider", lambda: "cloudflared")
+    d = ac.describe_request(
+        "127.0.0.1",
+        {**CF, "cf-ipcountry": "CA", "user-agent": "Mozilla/5.0 Firefox/131.0", "cookie": "session=SECRET",
+         "x-csrf-token": "TOKEN", "accept-language": "en-CA"},
+        method="POST", path="/login", query="next=/&token=abc123", scheme="https", http_version="HTTP/1.1",
+        remote_port=50123,
+    )
+    assert d["ip"] == ALLOWED and d["via"] == "tunnel:cloudflared" and d["allowlisted"] is True
+    assert d["country"] == "CA" and d["cf_ray"] == "abc" and d["remote_port"] == 50123
+    assert d["user_agent"].startswith("Mozilla") and d["accept_language"] == "en-CA"
+    assert d["headers"]["cookie"] == d["headers"]["x-csrf-token"] == "[present, not stored]"
+    assert "abc123" not in d["query"] and "next=%2F" in d["query"]
+    blob = str(d)
+    assert "SECRET" not in blob and "TOKEN" not in blob
+
+
+def test_local_request_is_described_as_local(monkeypatch, _fresh_history):
+    _policy(monkeypatch)
+    d = ac.describe_request("127.0.0.1", {"host": "localhost:5000"})
+    assert d["via"] == "local" and d["allowlisted"] is False and d["ip"] == "127.0.0.1"
+
+
+def test_audit_tracks_whether_an_ip_was_seen_before(tmp_path, _fresh_history):
+    ac.audit("login_failure", ip="198.51.100.7")
+    ac.audit("login_success", ip="198.51.100.7")
+    first, second = _records(tmp_path)
+    assert first["ip_seen_before"] is False and first["ip_prior_events"] == 0
+    assert second["ip_seen_before"] is True and second["ip_prior_events"] == 1
+    assert second["ip_first_seen"] == first["time"]
+    assert "local_time" in first
+
+
+def test_ip_history_survives_a_restart(tmp_path, monkeypatch, _fresh_history):
+    ac.audit("blocked", ip="198.51.100.9")
+    monkeypatch.setattr(ac, "_ip_history", None)  # as after a restart
+    ac.audit("blocked", ip="198.51.100.9")
+    assert _records(tmp_path)[-1]["ip_seen_before"] is True
+
+
+def test_remote_visit_logged_once_per_quiet_period(tmp_path, monkeypatch, _fresh_history):
+    clock = [1000.0]
+    monkeypatch.setattr(ac.time, "monotonic", lambda: clock[0])
+    for _ in range(3):
+        ac.note_remote_visit({"ip": ALLOWED, "path": "/"})
+    clock[0] += ac.REMOTE_VISIT_GAP_SECONDS + 1
+    ac.note_remote_visit({"ip": ALLOWED, "path": "/"})
+    assert [r["event"] for r in _records(tmp_path)] == ["remote_access", "remote_access"]
+
+
+@pytest.mark.asyncio
+async def test_middleware_logs_allowed_remote_and_blocked_with_details(tmp_path, monkeypatch, _fresh_history):
+    _policy(monkeypatch)
+    monkeypatch.setattr(ac, "_active_tunnel_provider", lambda: "cloudflared")
+    await _run(ac.AccessControlMiddleware(_App()), _scope("http", {**CF, "user-agent": "UA-ok"}, "/"))
+    await _run(ac.AccessControlMiddleware(_App()), _scope("http", {"cf-connecting-ip": "8.8.8.8", "user-agent": "UA-bad"}, "/x"))
+    await _run(ac.AccessControlMiddleware(_App()), _scope("http", {}, "/"))  # this PC: not logged
+    visit, block = _records(tmp_path)
+    assert visit["event"] == "remote_access" and visit["ip"] == ALLOWED and visit["user_agent"] == "UA-ok"
+    assert block["event"] == "blocked" and block["ip"] == "8.8.8.8" and block["allowlisted"] is False
+    assert block["user_agent"] == "UA-bad" and block["reason"] == "not on allowlist"
+
+
+def test_rotation_keeps_records_instead_of_truncating(tmp_path, monkeypatch, _fresh_history):
+    monkeypatch.setattr(ac, "AUDIT_MAX_BYTES", 200)
+    monkeypatch.setattr(ac, "AUDIT_KEEP_FILES", 2)
+    for i in range(12):
+        ac.audit("blocked", ip=f"198.51.100.{i}", pad="x" * 60)
+    archives = sorted(p.name for p in tmp_path.iterdir())
+    assert archives == ["audit.1.jsonl", "audit.2.jsonl", "audit.jsonl"]
+
+
+def test_read_audit_log_is_newest_first_and_filters(tmp_path, _fresh_history):
+    for event in ("login_failure", "blocked", "login_success", "remote_access"):
+        ac.audit(event, ip="198.51.100.20")
+    assert [r["event"] for r in ac.read_audit_log(10)] == ["remote_access", "login_success", "blocked", "login_failure"]
+    assert [r["event"] for r in ac.read_audit_log(10, ["login_success", "login_failure"])] == ["login_success", "login_failure"]
+    assert len(ac.read_audit_log(1)) == 1
+
+
+def test_remote_sign_in_from_new_address_notifies_high(monkeypatch, _fresh_history):
+    sent = []
+    from helpers import notification
+    monkeypatch.setattr(notification.NotificationManager, "send_notification", staticmethod(lambda **kw: sent.append(kw)))
+    details = {"ip": "198.51.100.30", "via": "tunnel:cloudflared", "country": "CA"}
+    ac.record_login("login_success", details, username="u")
+    ac.record_login("login_success", details, username="u")
+    ac.record_login("login_success", {"ip": "127.0.0.1", "via": "local"}, username="u")
+    assert [s["priority"] for s in sent] == [notification.NotificationPriority.HIGH, notification.NotificationPriority.NORMAL]
+
+
+def test_failure_count_tracks_the_window():
+    t = ac.LoginThrottle()
+    t.record_failure("ip", now=100)
+    t.record_failure("ip", now=101)
+    assert t.failure_count("ip", now=102) == 2
+    assert t.failure_count("ip", now=100 + t.WINDOW + 5) == 0
