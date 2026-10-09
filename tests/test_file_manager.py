@@ -290,3 +290,67 @@ async def test_old_download_url_goes_through_the_policy(env, monkeypatch):
     assert ok.status_code == 200 and b"".join(ok.response) == b"alpha"
     assert (await get("/a0/usr/.env")).status_code == 403
     assert (await get(str(env.out / "private.txt"))).status_code == 403
+
+
+# -- folder uploads ----------------------------------------------------------------
+
+def test_ensure_dir_builds_nested_folders_and_keeps_existing_ones(env):
+    deepest = fm.ensure_dir(str(env.work), "Photos/2026/Trip", env.policy)
+    assert deepest == str(env.work / "Photos" / "2026" / "Trip") and os.path.isdir(deepest)
+    assert fm.ensure_dir(str(env.work), r"Photos\2026", env.policy) == str(env.work / "Photos" / "2026")
+    (env.work / "Photos" / "clash").write_text("x")
+    with pytest.raises(fm.FileOpError, match="exists as a file"):
+        fm.ensure_dir(str(env.work), "Photos/clash/inner", env.policy)
+
+
+@pytest.mark.parametrize("rel", ["../escape", "a/../../escape", "ok/./x", "a/con/b", "a/b:c", "x/" * 70 + "y"])
+def test_ensure_dir_refuses_escapes_and_invalid_names(env, rel):
+    with pytest.raises((fa.AccessDenied, fm.FileOpError)):
+        fm.ensure_dir(str(env.work), rel, env.policy)
+    assert not (env.work.parent / "escape").exists()
+
+
+def test_ensure_dir_cannot_create_protected_names(env):
+    with pytest.raises(fa.AccessDenied):
+        fm.ensure_dir(str(env.base / "usr" / "plugins"), "_oauth/x", env.policy)
+
+
+@pytest.mark.asyncio
+async def test_upload_endpoint_keeps_folder_structure_and_empty_folders(env, monkeypatch):
+    from flask import Flask
+    from werkzeug.datastructures import FileStorage, MultiDict
+    from api import file_manager_upload as up
+
+    events = []
+
+    async def fake_announce(action, paths, current=""):
+        events.append((action, paths))
+
+    monkeypatch.setattr(up, "caller", lambda request: (False, "local"))
+    monkeypatch.setattr(up.fa, "policy_for", lambda remote: env.policy)
+    monkeypatch.setattr(up.access_control, "audit", lambda *a, **k: None)
+    monkeypatch.setattr(up, "announce_change", fake_announce)
+    handler = up.FileManagerUpload.__new__(up.FileManagerUpload)
+    app = Flask(__name__)
+
+    form = MultiDict([
+        ("path", str(env.work)),
+        ("dirs[]", "Album"), ("dirs[]", "Album/empty"), ("dirs[]", "Album/sub"),
+        ("relpaths[]", "Album/cover.jpg"), ("relpaths[]", "Album/sub/note.txt"), ("relpaths[]", "Album/../../evil.txt"),
+    ])
+    files = MultiDict([
+        ("files[]", FileStorage(io.BytesIO(b"jpg"), filename="cover.jpg")),
+        ("files[]", FileStorage(io.BytesIO(b"txt"), filename="note.txt")),
+        ("files[]", FileStorage(io.BytesIO(b"bad"), filename="evil.txt")),
+    ])
+    with app.test_request_context("/api/file_manager_upload", method="POST", data={**form.to_dict(flat=False), **files.to_dict(flat=False)}, content_type="multipart/form-data"):
+        from flask import request
+        result = await handler.process({}, request)
+
+    album = env.work / "Album"
+    assert (album / "cover.jpg").read_bytes() == b"jpg"
+    assert (album / "sub" / "note.txt").read_bytes() == b"txt"
+    assert (album / "empty").is_dir()
+    assert [f["name"] for f in result["failed"]] == ["Album/../../evil.txt"]
+    assert not (env.base / "evil.txt").exists() and not (env.work.parent / "evil.txt").exists()
+    assert events and events[0][0] == "upload"

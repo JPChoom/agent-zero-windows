@@ -75,6 +75,10 @@
             <span class="material-symbols-outlined">upload</span><span>Upload</span>
             <input type="file" multiple hidden :disabled="!fb.writable" @change="fb.pickUpload($event)" />
           </label>
+          <label class="fb-cmd" :class="{ 'is-disabled': !fb.writable }" title="Upload a folder with everything in it">
+            <span class="material-symbols-outlined">drive_folder_upload</span><span>Upload folder</span>
+            <input type="file" webkitdirectory multiple hidden :disabled="!fb.writable" @change="fb.pickUploadFolder($event)" />
+          </label>
           <span class="fb-cmd-sep"></span>
           <button type="button" class="fb-cmd fb-cmd-icon" :disabled="!fb.selectedEntries.length" @click="fb.copySelection(true)" title="Cut (Ctrl+X)">
             <span class="material-symbols-outlined">content_cut</span></button>
@@ -103,18 +107,22 @@
           <nav class="fb-nav" x-show="fb.showNav" aria-label="Places">
             <div class="fb-nav-title">Quick access</div>
             <template x-for="place in fb.places.quick" :key="place.path">
-              <button type="button" class="fb-nav-item" :class="{ 'is-current': place.path.toLowerCase() === fb.path.toLowerCase() }"
-                      :title="place.path" @click="fb.navigateFromPane(place.path)">
+              <button type="button" class="fb-nav-item" :class="{ 'is-current': place.path.toLowerCase() === fb.path.toLowerCase(), 'is-drop-target': fb.dropTarget === place.path }"
+                      :title="place.path" @click="fb.navigateFromPane(place.path)"
+                      @dragover="fb.onRowDragOver($event, { is_dir: true, path: place.path })" @dragleave="fb.dropTarget = ''"
+                      @drop="fb.onRowDrop($event, { is_dir: true, path: place.path })">
                 <span class="material-symbols-outlined" x-text="({desktop:'desktop_windows', documents:'description', downloads:'download', pictures:'image', music:'music_note', videos:'movie'})[place.icon] || place.icon"></span>
                 <span x-text="place.name"></span>
               </button>
             </template>
             <div class="fb-nav-title">This PC</div>
             <template x-for="drive in fb.places.drives" :key="drive.root">
-              <button type="button" class="fb-nav-item fb-drive" :class="{ 'is-locked': !drive.allowed && !drive.partly }"
+              <button type="button" class="fb-nav-item fb-drive" :class="{ 'is-locked': !drive.allowed && !drive.partly, 'is-drop-target': fb.dropTarget === drive.root }"
                       :disabled="!drive.allowed && !drive.partly"
                       :title="drive.allowed ? drive.root : drive.partly ? 'Only some folders on this drive are open to the File Browser' : 'Not allowed by Settings > Security > File Browser access'"
-                      @click="drive.allowed && fb.navigateFromPane(drive.root)">
+                      @click="drive.allowed && fb.navigateFromPane(drive.root)"
+                      @dragover="drive.allowed && fb.onRowDragOver($event, { is_dir: true, path: drive.root })" @dragleave="fb.dropTarget = ''"
+                      @drop="drive.allowed && fb.onRowDrop($event, { is_dir: true, path: drive.root })">
                 <span class="material-symbols-outlined" x-text="fb.driveIcon(drive)"></span>
                 <span class="fb-drive-text">
                   <span class="fb-drive-name" x-text="(drive.label || (drive.kind === 'removable' ? 'USB Drive' : 'Local Disk')) + ' (' + drive.root.slice(0, 2) + ')'"></span>
@@ -131,7 +139,7 @@
 
           <!-- File list -->
           <section class="fb-main" @contextmenu.prevent="fb.openMenu($event)" @pointerdown="fb.showNav && fb.isNarrow() && (fb.showNav = false)"
-                   @dragover.prevent="fb.dragOver = !fb.isPickerMode() && $event.dataTransfer?.types?.includes('Files')"
+                   @dragover.prevent="fb.dragOver = !fb.isPickerMode() && fb.isOsFileDrag($event); fb.dropTarget = ''"
                    @dragleave.self="fb.dragOver = false" @drop.prevent="fb.onDrop($event)">
             <div class="fb-header">
               <button type="button" @click="fb.sortBy('name')">Name <span class="material-symbols-outlined" x-text="fb.sortIndicator('name')"></span></button>
@@ -142,7 +150,10 @@
             <div class="fb-rows" @click.self="fb.clearSelection()" role="listbox" aria-multiselectable="true">
               <template x-for="entry in fb.visibleEntries" :key="entry.path">
                 <div class="fb-row" role="option" :data-path="entry.path" :aria-selected="fb.isSelected(entry)"
-                     :class="{ 'is-selected': fb.isSelected(entry), 'is-focus': fb.focusPath === entry.path, 'is-hidden': entry.hidden || entry.system, 'is-cut': fb.isCut(entry) }"
+                     :class="{ 'is-selected': fb.isSelected(entry), 'is-focus': fb.focusPath === entry.path, 'is-hidden': entry.hidden || entry.system, 'is-cut': fb.isCut(entry), 'is-drop-target': fb.dropTarget === entry.path }"
+                     :draggable="!fb.isPickerMode()" @dragstart="fb.onRowDragStart($event, entry)" @dragend="fb.onRowDragEnd()"
+                     @dragover="fb.onRowDragOver($event, entry)" @dragleave="fb.dropTarget === entry.path && (fb.dropTarget = '')"
+                     @drop="fb.onRowDrop($event, entry)"
                      :title="entry.outside ? 'This link points outside what the File Browser may open' : ''"
                      @click.stop="fb.clickEntry(entry, $event)" @dblclick="fb.activate(entry)"
                      @contextmenu.prevent.stop="fb.openMenu($event, entry)">
@@ -168,7 +179,7 @@
             </div>
             <div class="fb-drop" x-show="fb.dragOver">
               <span class="material-symbols-outlined">upload_file</span>
-              <span x-text="'Drop to upload to ' + (fb.breadcrumbs.at(-1)?.name || fb.path)"></span>
+              <span x-text="'Drop files or folders to upload to ' + (fb.breadcrumbs.at(-1)?.name || fb.path)"></span>
             </div>
           </section>
 
@@ -432,6 +443,10 @@
     .fb-row:hover { background: var(--fb-hover); }
     .fb-row.is-selected { background: var(--fb-sel); border-color: var(--fb-sel-line); }
     .fb-row.is-hidden, .fb-row.is-cut { opacity: 0.55; }
+    .fb-row.is-drop-target, .fb-nav-item.is-drop-target {
+      background: color-mix(in srgb, var(--color-primary) 28%, transparent); border-color: var(--color-primary); opacity: 1;
+    }
+    .fb-nav-item.is-drop-target { outline: 1px solid var(--color-primary); }
     .fb-row > span { padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .fb-row .fb-col-modified, .fb-row .fb-col-type, .fb-row .fb-col-size { font-size: 0.8rem; opacity: 0.72; }
     .fb-row .fb-col-size { text-align: right; }

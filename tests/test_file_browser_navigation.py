@@ -134,3 +134,15 @@ def test_file_browser_is_registered_as_right_canvas_surface() -> None:
     assert 'import { store as fileBrowserStore } from "/components/modals/file-browser/file-browser-store.js";' in welcome_store
     assert "fileBrowserStore.open()" in welcome_store
     assert "chatInputStore.browseFiles" not in welcome_store
+
+
+def test_file_browser_folder_drag_and_drop_contract() -> None:
+    html = read("webui", "components", "modals", "file-browser", "file-browser.html")
+    store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
+
+    assert "webkitGetAsEntry" in store and "reader.readEntries" in store  # dropped folders are walked
+    assert 'form.append("relpaths[]", item.rel)' in store and 'form.append("dirs[]", dir)' in store
+    assert "webkitdirectory" in html and "fb.pickUploadFolder($event)" in html
+    assert 'dt.setData("DownloadURL"' in store  # drag out to the desktop (Chromium)
+    assert ':draggable="!fb.isPickerMode()"' in html
+    assert "fb.onRowDrop($event, entry)" in html

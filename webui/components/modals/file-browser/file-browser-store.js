@@ -115,6 +115,8 @@ const model = {
   confirm: null,
   uploads: [],
   dragOver: false,
+  dragPaths: null,
+  dropTarget: "",
   preview: null,
   textEditor: null,
   closePromise: null,
@@ -1020,57 +1022,234 @@ const model = {
   pickUpload(event) {
     const files = Array.from(event.target.files || []);
     event.target.value = "";
-    this.upload(files);
+    this.upload({ files: files.map((file) => ({ file, rel: "" })), dirs: [] });
   },
 
-  onDrop(event) {
+  // "Upload folder" button (<input webkitdirectory>): each file carries its
+  // path inside the chosen folder. Browsers leave empty folders out here.
+  pickUploadFolder(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    this.upload({ files: files.map((file) => ({ file, rel: file.webkitRelativePath || file.name })), dirs: [] });
+  },
+
+  isOsFileDrag(event) {
+    return Array.from(event.dataTransfer?.types || []).includes("Files") && !this.dragPaths;
+  },
+
+  // Files and folders dropped from Windows. Entries must be taken while the
+  // drop event is live; the folder trees are read afterwards.
+  async onDrop(event, dest = this.path) {
     this.dragOver = false;
-    const items = Array.from(event.dataTransfer?.items || []);
-    const hasFolder = items.some((item) => item.webkitGetAsEntry?.()?.isDirectory);
-    const files = Array.from(event.dataTransfer?.files || []).filter((file, index) => !items[index]?.webkitGetAsEntry?.()?.isDirectory);
-    if (hasFolder) window.toastFrontendInfo?.("Folders can't be dropped here yet; drop the files inside them, or upload a ZIP.", "Upload", 6);
-    this.upload(files);
+    this.dropTarget = "";
+    if (this.dragPaths) return this.dropInternal(event, dest);
+    const entries = Array.from(event.dataTransfer?.items || [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.webkitGetAsEntry?.() || item.getAsFile?.())
+      .filter(Boolean);
+    const tree = { files: [], dirs: [] };
+    try {
+      for (const entry of entries) await this.readDropped(entry, "", tree);
+    } catch (error) {
+      window.toastFrontendError?.(`Could not read the dropped items: ${error.message || error}`, "Upload");
+      return;
+    }
+    this.upload(tree, dest);
   },
 
-  async upload(files) {
-    if (!files.length) return;
-    if (!this.writable) {
+  async readDropped(entry, prefix, tree) {
+    if (entry instanceof File) {
+      tree.files.push({ file: entry, rel: prefix + entry.name });
+      return;
+    }
+    if (entry.isFile) {
+      const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+      tree.files.push({ file, rel: prefix + entry.name });
+      return;
+    }
+    if (!entry.isDirectory) return;
+    const rel = prefix + entry.name;
+    tree.dirs.push(rel);
+    const reader = entry.createReader();
+    for (;;) {
+      // readEntries returns at most ~100 entries per call; repeat until empty.
+      const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+      if (!batch.length) break;
+      for (const child of batch) await this.readDropped(child, rel + "/", tree);
+    }
+  },
+
+  // Uploads keep folder structure. A top-level folder whose name is taken in
+  // the destination becomes "Name (2)" (as Explorer does), so nothing merges
+  // silently. Large uploads go in batches with one combined progress bar.
+  async upload(tree, dest = this.path) {
+    const items = tree.files || [];
+    const dirs = tree.dirs || [];
+    if (!items.length && !dirs.length) return;
+    if (dest === this.path && !this.writable) {
       window.toastFrontendError?.("This folder is read-only.", "Upload");
       return;
     }
-    const job = { id: Date.now() + Math.random(), name: files.length === 1 ? files[0].name : `${files.length} files`, progress: 0, error: "" };
-    this.uploads.push(job);
-    const form = new FormData();
-    form.append("path", this.path);
-    for (const file of files) form.append("files[]", file, file.name);
+    let taken;
     try {
-      const token = await getCsrfToken();
-      const result = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/file_manager_upload");
-        xhr.setRequestHeader("X-CSRF-Token", token);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) job.progress = Math.round((e.loaded / e.total) * 100);
-        };
-        xhr.onload = () => {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch {
-            reject(new Error(xhr.status === 413 ? "The upload is too large." : `Upload failed (${xhr.status}).`));
-          }
-        };
-        xhr.onerror = () => reject(new Error("The connection dropped during the upload."));
-        xhr.send(form);
-      });
-      for (const failure of result.failed || []) window.toastFrontendError?.(`${failure.name}: ${failure.error}`, "Upload");
-      await this.refresh();
-      const next = {};
-      for (const path of result.saved || []) next[path] = true;
-      this.selected = next;
+      const names = dest === this.path ? this.entries : (await this.api("list", { path: dest, show_hidden: true })).entries;
+      taken = new Set(names.map((e) => e.name.toLowerCase()));
     } catch (error) {
       window.toastFrontendError?.(error.message, "Upload");
+      return;
+    }
+    const topOf = (rel) => rel.split("/")[0];
+    const rename = new Map();
+    for (const rel of [...dirs, ...items.filter((i) => i.rel.includes("/")).map((i) => i.rel)]) {
+      const top = topOf(rel);
+      if (rename.has(top)) continue;
+      let name = top;
+      for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = `${top} (${n})`;
+      taken.add(name.toLowerCase());
+      rename.set(top, name);
+    }
+    const mapRel = (rel) => {
+      const parts = rel.split("/");
+      if (!rename.has(parts[0]) || (parts.length === 1 && !dirs.includes(rel))) return rel;
+      return [rename.get(parts[0]), ...parts.slice(1)].join("/");
+    };
+    const files = items.map((item) => ({ file: item.file, rel: item.rel ? mapRel(item.rel) : "" }));
+    const folders = dirs.map(mapRel);
+
+    const total = files.reduce((sum, item) => sum + item.file.size, 0) || 1;
+    const label = rename.size === 1 ? [...rename.values()][0] : files.length === 1 ? files[0].file.name : `${files.length} files`;
+    const job = { id: Date.now() + Math.random(), name: label, progress: 0, error: "" };
+    this.uploads.push(job);
+    const batches = [];
+    let batch = [];
+    let batchBytes = 0;
+    for (const item of files) {
+      if (batch.length && (batchBytes + item.file.size > 256 * 1024 * 1024 || batch.length >= 500)) {
+        batches.push(batch);
+        batch = [];
+        batchBytes = 0;
+      }
+      batch.push(item);
+      batchBytes += item.file.size;
+    }
+    if (batch.length || !batches.length) batches.push(batch);
+
+    const saved = [];
+    let sent = 0;
+    try {
+      const token = await getCsrfToken();
+      for (const [index, part] of batches.entries()) {
+        const form = new FormData();
+        form.append("path", dest);
+        if (index === 0) for (const dir of folders) form.append("dirs[]", dir);
+        for (const item of part) {
+          form.append("files[]", item.file, item.file.name);
+          form.append("relpaths[]", item.rel);
+        }
+        const result = await this.sendUpload(form, token, (loaded) => {
+          job.progress = Math.min(100, Math.round(((sent + loaded) / total) * 100));
+        });
+        sent += part.reduce((sum, item) => sum + item.file.size, 0);
+        saved.push(...(result.saved || []), ...(result.folders || []));
+        const failed = result.failed || [];
+        for (const failure of failed.slice(0, 5)) window.toastFrontendError?.(`${failure.name}: ${failure.error}`, "Upload");
+        if (failed.length > 5) window.toastFrontendError?.(`${failed.length - 5} more items failed.`, "Upload");
+      }
+      if (dest === this.path) {
+        await this.refresh();
+        // Select what landed here: uploaded files, or the uploaded top folders.
+        const next = {};
+        for (const entry of this.entries) {
+          const lower = entry.path.toLowerCase();
+          if (saved.some((p) => p.toLowerCase() === lower || p.toLowerCase().startsWith(lower + "\\"))) next[entry.path] = true;
+        }
+        this.selected = next;
+      } else {
+        window.toastFrontendSuccess?.(`Uploaded to ${dest.split("\\").pop()}`, "Upload", 3);
+      }
+    } catch (error) {
+      window.toastFrontendError?.(error.message, "Upload");
+      if (dest === this.path) this.refresh();
     } finally {
       this.uploads = this.uploads.filter((item) => item.id !== job.id);
+    }
+  },
+
+  sendUpload(form, token, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/file_manager_upload");
+      xhr.setRequestHeader("X-CSRF-Token", token);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(e.loaded);
+      };
+      xhr.onload = () => {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error(xhr.status === 413 ? "The upload is too large." : `Upload failed (${xhr.status}).`));
+        }
+      };
+      xhr.onerror = () => reject(new Error("The connection dropped during the upload."));
+      xhr.send(form);
+    });
+  },
+
+  // --- drag out (download) and drag to move -------------------------------------
+  // Chromium (Chrome/Edge) turns a "DownloadURL" drag into a real download when
+  // the item is dropped on the desktop or in File Explorer; other browsers ignore it.
+  onRowDragStart(event, entry) {
+    if (this.isPickerMode()) return event.preventDefault();
+    if (!this.isSelected(entry)) this.selectOnly(entry.path);
+    const items = this.selectedEntries;
+    this.dragPaths = items.map((e) => e.path);
+    const single = items.length === 1 && !items[0].is_dir;
+    const name = single ? items[0].name : `${items.length === 1 ? items[0].name : "selection"}.zip`;
+    const mime = single ? "application/octet-stream" : "application/zip";
+    const url = new URL(this.downloadUrl(this.dragPaths), location.href).href;
+    const dt = event.dataTransfer;
+    dt.effectAllowed = "copyMove";
+    dt.setData("DownloadURL", `${mime}:${name.replace(/:/g, "_")}:${url}`);
+    dt.setData("text/plain", this.dragPaths.join("\n"));
+  },
+
+  onRowDragEnd() {
+    this.dragPaths = null;
+    this.dropTarget = "";
+  },
+
+  canDropOn(entry) {
+    if (!entry?.is_dir || entry.outside) return false;
+    if (!this.dragPaths) return true; // files from Windows: upload into this folder
+    const target = entry.path.toLowerCase();
+    return !this.dragPaths.some((p) => target === p.toLowerCase() || target.startsWith(p.toLowerCase() + "\\"));
+  },
+
+  onRowDragOver(event, entry) {
+    if (!this.canDropOn(entry) || (!this.dragPaths && !this.isOsFileDrag(event))) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = this.dragPaths ? (event.ctrlKey ? "copy" : "move") : "copy";
+    this.dropTarget = entry.path;
+    this.dragOver = false;
+  },
+
+  onRowDrop(event, entry) {
+    if (!this.canDropOn(entry)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.onDrop(event, entry.path);
+  },
+
+  async dropInternal(event, dest) {
+    const paths = this.dragPaths || [];
+    this.dragPaths = null;
+    if (!paths.length || dest.toLowerCase() === this.path.toLowerCase()) return;
+    const copy = event.ctrlKey;
+    const result = await this.run(copy ? "Copy" : "Move", copy ? "copy" : "move", { paths, dest });
+    if (result) {
+      const count = result.created.length;
+      window.toastFrontendSuccess?.(`${copy ? "Copied" : "Moved"} ${count} ${count === 1 ? "item" : "items"} to ${dest.split("\\").pop() || dest}`, "File Browser", 3);
     }
   },
 

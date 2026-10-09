@@ -286,6 +286,28 @@ def transfer(raws: list[str], dest_folder: str, policy: fa.Policy, move: bool) -
     return done
 
 
+MAX_UPLOAD_DEPTH = 64
+
+
+def ensure_dir(folder: str, rel: str, policy: fa.Policy) -> str:
+    """Create `rel` ("A/B/C", either slash) inside existing allowed `folder`,
+    one checked level at a time (each name validated, each level inside the
+    policy), keeping folders that already exist. Returns the deepest path."""
+    current = fa.resolve(folder, policy)
+    parts = [p for p in str(rel or "").replace("\\", "/").split("/") if p]
+    if len(parts) > MAX_UPLOAD_DEPTH:
+        raise FileOpError("The folder structure is nested too deeply.")
+    for part in parts:
+        target = fa.resolve_new(current, part, policy)
+        if target.exists():
+            if not target.is_dir():
+                raise FileOpError(f"{part} exists as a file, so a folder with that name can't be created.")
+        else:
+            target.mkdir()
+        current = target
+    return str(current)
+
+
 def save_upload(dest_folder: str, filename: str, stream, policy: fa.Policy, overwrite: bool = False) -> str:
     name = os.path.basename(str(filename or "").replace("\\", "/"))
     target = fa.resolve_new(dest_folder, name, policy)
