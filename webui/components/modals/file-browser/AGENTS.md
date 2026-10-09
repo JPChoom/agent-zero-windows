@@ -12,7 +12,7 @@
 
 ## Local Contracts
 
-- Backend is only `api/file_manager.py`, `api/file_manager_upload.py` and `api/file_manager_download.py`; every path is checked by `helpers/file_access.py`. Never call the legacy `*_work_dir_*` endpoints from here.
+- Backend is only `api/file_manager.py`, `api/file_manager_upload.py` and `api/file_manager_download.py`; every path is checked by `helpers/file_access.py`. The legacy work-dir endpoints were removed; `/api/download_work_dir_file` remains only for links built elsewhere (attachments, message file links, Office) and goes through the same checks.
 - Paths are absolute Windows paths. Callers may pass `""`, `$WORK_DIR`, Docker-style `/a0/...`, workdir-relative names or a Windows file/folder path; `openPath` resolves them with the `locate` action (a file opens its folder with the file selected), falling back to the remembered folder and then the workdir.
 - Public API used by other features (keep signatures): `open(path, options)` (awaits close), `openSurface(path)` (canvas, no modal), `openTextPicker(path, onConfirm)`, `openSaveAsPicker(path, {filename, defaultExtension, onConfirm})`, `openRenameModal(file, {currentPath, entries, validateName, performRename, onRenamed})`, `downloadFile(file)`, `handleClose()`, `onMount` / `onUnmount`, `begin/finish/cancelSurfaceHandoff`, and `window.openFileLink(path)`.
 - Picker payloads: Open -> `{mode, directory, selectedFiles}` (only `.md` / `.txt`; the list shows only folders and those files); Save As -> `{mode, directory, filename, path}` with `path` a Windows path. Returning `false` from `onConfirm` keeps the picker open.

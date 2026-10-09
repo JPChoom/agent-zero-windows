@@ -221,3 +221,72 @@ def test_wrong_passwords_lock_out_across_endpoints(security_api):
     result = security_api.call(False, config={"file_browser_scope": "full"}, password="right-password")
     assert "Too many" in result["error"]
     assert bypass_lock.check("right-password", "203.0.113.9") == "locked"  # the Bypass unlock shares it
+
+
+# -- legacy path forms, change events, the old download URL ----------------------
+
+@pytest.mark.parametrize("raw, expected", [
+    ("", "work"), ("$WORK_DIR", "work"), ("/a0/usr/uploads/x y.pdf", "base:usr/uploads/x y.pdf"),
+    ("file:///a0/usr/workdir/a.txt", "base:usr/workdir/a.txt"), ("docs/b.md", "work:docs/b.md"),
+    ("file:///C:/Temp/x%20y.txt", r"C:/Temp/x y.txt"), (r"D:\data\z.csv", r"D:\data\z.csv"),
+])
+def test_translate_handles_every_path_form_other_features_send(env, raw, expected):
+    if expected == "work":
+        want = str(env.work)
+    elif expected.startswith("base:"):
+        want = str(env.base.joinpath(*expected[5:].split("/")))
+    elif expected.startswith("work:"):
+        want = str(env.work.joinpath(*expected[5:].split("/")))
+    else:
+        want = expected
+    assert fm.translate(raw) == want
+
+
+@pytest.mark.asyncio
+async def test_changes_announce_workdir_file_mutation_after(env, monkeypatch):
+    from api import file_manager as api
+
+    events = []
+
+    async def fake_call(point, agent=None, data=None, **kwargs):
+        events.append((point, data))
+
+    monkeypatch.setattr(api.extension, "call_extensions_async", fake_call)
+    monkeypatch.setattr(api, "caller", lambda request: (False, "local"))
+    monkeypatch.setattr(api.fa, "policy_for", lambda remote: env.policy)
+    monkeypatch.setattr(api.access_control, "audit", lambda *a, **k: None)
+    handler = api.FileManager.__new__(api.FileManager)
+
+    result = await handler.process({"action": "rename", "path": str(env.work / "a.txt"), "name": "b.txt"}, None)
+    assert result["ok"]
+    point, data = events[-1]
+    assert point == "workdir_file_mutation_after" and data["action"] == "rename"
+    assert data["paths"] == [str(env.work / "a.txt"), str(env.work / "b.txt")]
+
+    await handler.process({"action": "mkdir", "path": str(env.work), "name": "New"}, None)
+    assert events[-1][1]["action"] == "create-folder"
+    await handler.process({"action": "list", "path": str(env.work)}, None)  # reads announce nothing
+    assert len(events) == 2
+
+
+@pytest.mark.asyncio
+async def test_old_download_url_goes_through_the_policy(env, monkeypatch):
+    from flask import Flask
+    from api import download_work_dir_file as legacy
+    from api import file_manager_download as dl
+
+    monkeypatch.setattr(dl, "caller", lambda request: (False, "local"))
+    monkeypatch.setattr(dl.fa, "policy_for", lambda remote: env.policy)
+    monkeypatch.setattr(dl.access_control, "audit", lambda *a, **k: None)
+    handler = legacy.DownloadFile.__new__(legacy.DownloadFile)
+    app = Flask(__name__)
+
+    async def get(path):
+        with app.test_request_context("/api/download_work_dir_file", query_string={"path": path}):
+            from flask import request
+            return await handler.process({}, request)
+
+    ok = await get("/a0/usr/workdir/a.txt")
+    assert ok.status_code == 200 and b"".join(ok.response) == b"alpha"
+    assert (await get("/a0/usr/.env")).status_code == 403
+    assert (await get(str(env.out / "private.txt"))).status_code == 403

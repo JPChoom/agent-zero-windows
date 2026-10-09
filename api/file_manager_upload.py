@@ -4,7 +4,7 @@ from helpers import access_control
 from helpers import file_access as fa
 from helpers import file_manager as fm
 from helpers.api import ApiHandler, Request, Response
-from api.file_manager import caller
+from api.file_manager import announce_change, caller
 
 
 class FileManagerUpload(ApiHandler):
@@ -24,4 +24,5 @@ class FileManagerUpload(ApiHandler):
             except (fa.AccessDenied, fm.FileOpError, FileNotFoundError, PermissionError, OSError) as exc:
                 failed.append({"name": upload.filename, "error": str(exc) or exc.__class__.__name__})
         access_control.audit("file_upload", by=who, path=folder, saved=saved, failed=[f["name"] for f in failed])
+        await announce_change("upload", saved, folder)
         return {"ok": bool(saved) or not failed, "saved": saved, "failed": failed}

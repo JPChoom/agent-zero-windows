@@ -146,21 +146,30 @@ def places(policy: fa.Policy) -> dict:
     return {"quick": quick, "drives": drives, "policy": policy.describe()}
 
 
-def locate(raw: str, policy: fa.Policy) -> dict:
-    """Translate the path forms other features pass in ("", "$WORK_DIR",
-    Docker-style "/a0/...", workdir-relative "x" or "/x", or a Windows path)
-    into {folder, select}: the folder to show and, when `raw` named a file,
-    that file to highlight."""
+def translate(raw: str) -> str:
+    """The Windows path for the path forms other features pass in: "",
+    "$WORK_DIR", Docker-style "/a0/...", "file://" URLs, workdir-relative "x"
+    or "/x", or a Windows path. Not yet checked against any policy."""
     text = str(raw or "").strip()
+    if text.lower().startswith("file://"):
+        from urllib.parse import unquote
+
+        text = unquote(text[7:])
+        if re.match(r"^/[A-Za-z]:", text):
+            text = text[1:]
     if text in ("", "$WORK_DIR", "/a0/usr/workdir"):
-        target = fa.workdir()
-    elif text == "/a0" or text.startswith("/a0/"):
-        target = fa.a0_base() / text[4:].lstrip("/")
-    elif re.match(r"^[A-Za-z]:[\\/]?", text):
-        target = Path(text)
-    else:
-        target = fa.workdir() / text.lstrip("/\\")
-    path = fa.resolve(str(target), policy)
+        return str(fa.workdir())
+    if text == "/a0" or text.startswith("/a0/"):
+        return str(fa.a0_base() / text[4:].lstrip("/"))
+    if re.match(r"^[A-Za-z]:([\\/]|$)", text):
+        return text
+    return str(fa.workdir() / text.lstrip("/\\"))
+
+
+def locate(raw: str, policy: fa.Policy) -> dict:
+    """{folder, select} for any path form `translate` accepts: the folder to
+    show and, when `raw` named a file, that file to highlight."""
+    path = fa.resolve(translate(raw), policy)
     if path.is_dir():
         return {"folder": str(path), "select": ""}
     return {"folder": str(path.parent), "select": str(path)}

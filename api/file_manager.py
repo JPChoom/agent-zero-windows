@@ -2,7 +2,7 @@ import asyncio
 import os
 import subprocess
 
-from helpers import access_control
+from helpers import access_control, extension
 from helpers import file_access as fa
 from helpers import file_manager as fm
 from helpers.api import ApiHandler, Request, Response
@@ -45,6 +45,7 @@ class FileManager(ApiHandler):
             return {"ok": False, "error": _message(exc)}
         if action in AUDITED:
             access_control.audit(f"file_{action}", by=who, path=_paths(input), dest=input.get("dest") or None)
+            await announce_change(MUTATION_NAMES.get(action, action), _changed_paths(input, result), input.get("path") or input.get("dest") or "")
         return {"ok": True, **result}
 
     def _run(self, action: str, input: dict, policy: fa.Policy, remote: bool) -> dict:
@@ -84,6 +85,35 @@ class FileManager(ApiHandler):
                 subprocess.Popen(["explorer", "/select,", str(target)])
             return {}
         raise fm.FileOpError(f"Unknown action: {action}")
+
+
+# Names the old work-dir endpoints used for workdir_file_mutation_after.
+MUTATION_NAMES = {"mkdir": "create-folder", "new_file": "create-file", "write_text": "edit"}
+
+
+async def announce_change(action: str, paths: list[str], current_path: str = "") -> None:
+    """Fire workdir_file_mutation_after (the Editor re-syncs open documents,
+    Time Travel snapshots the change). Listener errors never fail the request."""
+    if not paths:
+        return
+    try:
+        await extension.call_extensions_async(
+            "workdir_file_mutation_after",
+            agent=None,
+            data={"action": action, "path": paths[-1], "paths": paths, "current_path": current_path},
+        )
+    except Exception:
+        pass
+
+
+def _changed_paths(input: dict, result: dict) -> list[str]:
+    paths = [str(p) for p in (input.get("paths") or [])]
+    if input.get("path"):
+        paths.append(str(input["path"]))
+    for key in ("created", "renamed", "path"):
+        value = result.get(key)
+        paths.extend(str(v) for v in (value if isinstance(value, list) else [value]) if v)
+    return list(dict.fromkeys(paths))
 
 
 def _paths(input: dict):

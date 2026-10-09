@@ -8,8 +8,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-from helpers.file_browser import FileBrowser
-
 
 def read(*parts: str) -> str:
     return PROJECT_ROOT.joinpath(*parts).read_text(encoding="utf-8")
@@ -102,16 +100,6 @@ def test_file_browser_layout_drops_columns_and_panes_as_it_narrows() -> None:
     assert "@container fb-root (max-width: 520px)" in html  # navigation pane overlays
 
 
-@pytest.mark.docker_layout
-def test_file_browser_empty_api_path_uses_default_workdir_contract() -> None:
-    api_source = read("api", "get_work_dir_files.py")
-    api_dox = read("api", "get_work_dir_files.py.dox.md")
-
-    assert 'current_path = request.args.get("path", "") or "$WORK_DIR"' in api_source
-    assert 'current_path = "/a0"' in api_source
-    assert "Empty `path` requests and explicit `$WORK_DIR` requests resolve" in api_dox
-
-
 def test_file_browser_is_registered_as_right_canvas_surface() -> None:
     html = read("webui", "components", "modals", "file-browser", "file-browser.html")
     store = read("webui", "components", "modals", "file-browser", "file-browser-store.js")
@@ -146,14 +134,3 @@ def test_file_browser_is_registered_as_right_canvas_surface() -> None:
     assert 'import { store as fileBrowserStore } from "/components/modals/file-browser/file-browser-store.js";' in welcome_store
     assert "fileBrowserStore.open()" in welcome_store
     assert "chatInputStore.browseFiles" not in welcome_store
-
-
-@pytest.mark.docker_layout
-def test_file_browser_reports_missing_directory(tmp_path: Path) -> None:
-    missing_directory = tmp_path / "missing"
-
-    result = FileBrowser().get_files(str(missing_directory))
-
-    assert result["entries"] == []
-    assert result["current_path"] == str(missing_directory)
-    assert result["error"] == "Directory not found"

@@ -7,14 +7,14 @@
 ## Ownership
 
 - `file_manager.py` owns the runtime implementation; this file owns its contracts.
-- Public API: `FileOpError`, `locate`, `list_dir`, `places`, `mkdir`, `new_file`, `rename`, `delete`, `transfer`, `save_upload`, `read_text`, `write_text`, `zip_selection`, `MAX_ENTRIES`, `MAX_TEXT_BYTES`.
-- Callers: `api/file_manager.py`, `api/file_manager_upload.py`, `api/file_manager_download.py`.
+- Public API: `FileOpError`, `translate`, `locate`, `list_dir`, `places`, `mkdir`, `new_file`, `rename`, `delete`, `transfer`, `save_upload`, `read_text`, `write_text`, `zip_selection`, `MAX_ENTRIES`, `MAX_TEXT_BYTES`.
+- Callers: `api/file_manager.py`, `api/file_manager_upload.py`, `api/file_manager_download.py`, `api/download_work_dir_file.py`.
 
 ## Runtime Contracts
 
 - Every function takes the caller's `file_access.Policy` and checks every path with `file_access.resolve` / `resolve_new` before touching it.
 - `list_dir`: protected entries never listed; hidden/system entries (attributes, or a leading dot) counted in `hidden_count` unless `show_hidden`; at most `MAX_ENTRIES`; `parent` is empty at the edge of the allowed area; links/junctions carry `is_link` and `outside`.
-- `locate` translates the path forms other features pass (`""`, `$WORK_DIR`, `/a0/...`, workdir-relative, Windows paths) into `{folder, select}` and still enforces the policy.
+- `translate` maps the path forms other features pass (`""`, `$WORK_DIR`, Docker-style `/a0/...`, `file://` URLs, workdir-relative, Windows paths) to a Windows path without checking it; `locate` resolves that under the policy into `{folder, select}`.
 - `places`: Workdir, the A0 folder (or `usr`) and the user's known folders (`SHGetKnownFolderPath`, so OneDrive redirection is followed) when allowed; drives with `allowed` / `partly`. Remote sessions only see drives they can at least partly open.
 - `delete` sends to the Recycle Bin (`SHFileOperationW`, `FOF_ALLOWUNDO`, no dialogs) unless `permanent` or the drive is removable/network (no Recycle Bin there; the result says `recycled: false`). It refuses drives, any policy root or its parents, and folders that contain protected files. `rename` / `transfer` refuse the latter too.
 - Name conflicts: `mkdir` / `new_file` / `rename` refuse; copies, moves and uploads get Explorer-style `name (2).ext`; uploads replace only with `overwrite`, and write to a `.part-*` file first.

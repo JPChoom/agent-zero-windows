@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- `file_manager_download.py` owns the runtime implementation. Classes: `FileManagerDownload` (`ApiHandler`, GET only).
+- `file_manager_download.py` owns the runtime implementation. Classes: `FileManagerDownload` (`ApiHandler`, GET only). Function: `serve_download(request, raws, inline)`, also used by `api/download_work_dir_file.py`.
 
 ## Runtime Contracts
 
