@@ -1,6 +1,23 @@
 # Changelog
 
-All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`).
+All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
+
+## v1.2.1
+
+A security fix for permission refusals, a full access log, and in-app updates. **Update from v1.0, v1.1 or v1.2 as soon as you can.**
+
+### Security
+- **Fixed: refusals from the permission gate, the command safety floor and the coding completion gate were logged but not enforced** (v1.0 to v1.2). The tool ran anyway, so Plan mode, deny rules, clicking *Deny* on an approval card, an approval timing out, the denied-command floor and its kill-switch check did not stop anything. All three now block for real; new tests drive the real extension dispatcher, and any future gate that refuses this way must be marked to stay enforced.
+- **Access log**: every sign-in, failed sign-in, lockout, sign-out, blocked request and remote visit (allowlisted or not) is recorded with address and port, how it arrived, allowlist match, country, Cloudflare request ID, browser, language, referrer, host, method, path, query, every request header and the address's history. Passwords, cookies, tokens and secret-looking query values are never stored. A remote sign-in raises a notification (high priority from a never-seen address). Browse it in *Settings > Security > Access log*; the file rolls over at 10 MB and keeps 20.
+
+### New
+- **In-app updates for native installs**: *Settings > Check for updates* shows the latest release of this fork from GitHub and installs it with one click (fast-forward of your git checkout, new packages if needed, one-click roll back). It refuses instead of overwriting local changes. The update check no longer contacts upstream's server.
+- **Restarts keep Remote Control**: a running Cloudflare tunnel is handed to the restarted server and stays at the same address (sign in again afterwards).
+- Discord and Slack cards on the welcome screen's *Connect Channels*.
+
+### Changed
+- The Bypass unlock dialog is sized to its content.
+- Skill-learning tests use a neutral example.
 
 ## v1.2
 
