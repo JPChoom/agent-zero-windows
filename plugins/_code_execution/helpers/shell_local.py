@@ -32,10 +32,14 @@ class LocalInteractiveSession:
         self.full_output = ''
         self.cwd = cwd
 
+    def kill(self):
+        """End the shell now (synchronous; used for deterministic cleanup)."""
+        if self.session:
+            self.session.kill()
+
     def __del__(self):
         try:
-            if self.session:
-                self.session.kill()
+            self.kill()
         except Exception:
             pass
 

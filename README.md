@@ -39,6 +39,8 @@ Other projects in this space put the weight elsewhere: some focus on being reach
 
 **Windows File Browser.** Explorer-style: back/forward, a typeable address bar, Quick access and This PC with drive space, sortable columns, multi-select, right-click menu, keyboard shortcuts, cut/copy/paste, drag-and-drop upload of files and whole folders, drag-to-move, dragging files or folders out to the desktop (Chrome/Edge), previews, a built-in text editor, deletes to the Recycle Bin, and downloads of files or whole folders (as ZIP), also over Remote Control. *Settings > Security* sets what it may open: the Agent Zero user folder, the Agent Zero folder (default) or the whole Windows drive, with separate switches for other internal drives and USB/flash drives and a stricter limit for remote sessions. Agent Zero's own passwords, keys and tokens are never shown.
 
+**Agent Workspace.** *Workspace* (in the side rail) shows which agent owns which apps, terminal sessions and browser tabs, grouped by chat. When a parallel agent finishes, the apps it opened pass to the chat that started it, so that chat can still close them; terminals end when their chat does. Apps are never closed automatically (they may hold unsaved work); you can adopt, release or close them from the view.
+
 **Updates from inside the app.** *Settings > Check for updates* shows the newest release of this fork and installs it with one click: it fast-forwards your git checkout to the release, installs new packages if needed, and keeps the previous version for a one-click roll back. It refuses instead of overwriting anything you changed. A restart keeps a running Cloudflare Remote Control tunnel at the same address.
 
 **Security hardening**

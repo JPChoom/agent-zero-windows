@@ -26,6 +26,7 @@
 - `Delegation` defines `execute(...)`.
 - Observed side-effect areas: filesystem writes, settings/state persistence.
 - `profile`/`agent_profile` values are validated against available profile keys before use; unknown profiles raise `RepairableException` so the agent can retry with a real profile.
+- When `reset=true` replaces an existing subordinate, `helpers/workspace.end_agent` first ends the old subordinate chain's terminal shells.
 - Supplying a different profile for an existing subordinate without `reset=true` raises `RepairableException` instead of silently continuing the old subordinate.
 - Imported dependency areas include: `agent`, `extensions.python.hist_add_tool_result`, `helpers`, `helpers.errors`, `helpers.tool`.
 

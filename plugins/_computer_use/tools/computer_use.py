@@ -29,12 +29,11 @@ import base64
 import time
 from pathlib import Path
 
-from helpers import audit_log, files, kill_switch
+from helpers import audit_log, files, kill_switch, workspace
 from helpers.errors import RepairableException
 from helpers.tool import Response, Tool
 from plugins._computer_use.helpers import driver, policy
 
-_OWNED_KEY = "_computer_use_owned_pids"
 _LABELS_KEY = "_computer_use_element_labels"
 _FOCUS_KEY = "_computer_use_last_field"
 
@@ -122,10 +121,10 @@ class ComputerUse(Tool):
         return ""
 
     def _owned(self, pid) -> bool:
-        try:
-            return int(pid) in self._data(_OWNED_KEY, set())
-        except (TypeError, ValueError):
-            return False
+        """Whether this chat owns the app: it launched it (or a parallel worker
+        it started did) and that same process is still running. Ownership lives
+        in helpers/workspace.py so it survives a worker's temporary context."""
+        return workspace.owns_app(str(getattr(self.agent.context, "id", "")), pid)
 
     async def _guard(self, action: str, pid, *, keys=None, element_label: str = "",
                      foreground: bool = False, args: dict | None = None) -> None:
@@ -302,7 +301,13 @@ class ComputerUse(Tool):
         data = await self._call("launch_app", {key: app, "creates_new_application_instance": True})
         pid = data.get("pid")
         if pid and pid not in running:
-            self._data(_OWNED_KEY, set()).add(int(pid))
+            context = self.agent.context
+            workspace.register_app(
+                pid, label=app, context_id=str(getattr(context, "id", "")),
+                agent_name=str(getattr(self.agent, "agent_name", "")),
+                profile=str(getattr(getattr(self.agent, "config", None), "profile", "") or ""),
+                job_id=str((context.get_data("_parallel_job_id") if hasattr(context, "get_data") else "") or ""),
+            )
             note = "New process, opened by the agent: input to it needs no extra approval."
         else:
             note = ("This attached to an app that was ALREADY running - it is the user's. "
@@ -395,7 +400,7 @@ class ComputerUse(Tool):
             )
         await self._guard("close", pid, args={})
         data = await self._call("kill_app", {"pid": int(pid)})
-        self._data(_OWNED_KEY, set()).discard(int(pid))
+        workspace.forget_app(pid)
         return self._msg(self._summary(data))
 
     async def _stop_driver(self, cfg, **kwargs) -> Response:

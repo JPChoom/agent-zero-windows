@@ -2429,6 +2429,27 @@ def known_context_ids() -> list[str]:
         return sorted(_runtimes)
 
 
+def peek_pages() -> list[dict[str, Any]]:
+    """Open tabs of every running browser, read without starting anything.
+
+    For read-only views (the Workspace list): never calls into a runtime's
+    worker, so it cannot launch a browser or wait on a busy one. Titles are
+    omitted because reading them needs the page's own event loop.
+    """
+    with _runtime_lock:
+        runtimes = list(_runtimes.items())
+    tabs: list[dict[str, Any]] = []
+    for context_id, runtime in runtimes:
+        core = getattr(runtime, "_core", None)
+        for browser_id, browser_page in sorted(dict(getattr(core, "pages", {}) or {}).items()):
+            try:
+                url = str(browser_page.page.url or "")
+            except Exception:
+                url = ""
+            tabs.append({"context_id": context_id, "browser_id": browser_id, "url": url})
+    return tabs
+
+
 async def list_runtime_sessions() -> list[dict[str, Any]]:
     with _runtime_lock:
         runtimes = list(_runtimes.items())

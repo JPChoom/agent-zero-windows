@@ -2,6 +2,18 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### New
+- **File Browser rebuilt** as a Windows Explorer-style browser (address bar, Quick access, drives, sorting, multi-select, shortcuts, cut/copy/paste, drag-and-drop upload of files and folders, drag-out download, previews, built-in text editor, Recycle Bin deletes, ZIP downloads). *Settings > Security* chooses what it may open (Agent Zero user folder, Agent Zero folder, or the whole Windows drive; other and removable drives separately; a stricter limit for remote sessions); Agent Zero's own secrets are never shown. The old work-dir file endpoints were removed.
+- **Agent Workspace**: a Workspace view of which agent owns which apps, terminals and browser tabs, with Adopt / Release / Close.
+
+### Fixed
+- An app a parallel agent launched through Computer Use was forgotten when the job ended, so the chat that started the job could not close it or type into it without an approval, and nothing listed it. Apps now pass to that chat; deleted chats leave their apps listed as orphans (never closed automatically).
+- App ownership is checked against the process's start time, so a reused process id can never make the agent "own" an unrelated program.
+- Terminal sessions now end when their chat is deleted or reset, when a parallel worker finishes, and when a sub-agent is replaced, instead of whenever garbage collection ran.
+- The main Settings save can no longer change the File Browser access settings, and every Bypass-password check shares one wrong-attempt limit.
+
 ## v1.2.1
 
 A security fix for permission refusals, a full access log, and in-app updates. **Update from v1.0, v1.1 or v1.2 as soon as you can.**

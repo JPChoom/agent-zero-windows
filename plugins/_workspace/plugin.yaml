@@ -1,0 +1,10 @@
+name: _workspace
+title: Workspace
+description: Shows which agent owns which apps, terminals and browser tabs, with hand-over, release and close.
+version: 1.0.0
+always_enabled: true
+os_support:
+  - windows
+settings_sections: []
+per_project_config: false
+per_agent_config: false

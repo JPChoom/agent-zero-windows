@@ -114,6 +114,12 @@ def tool(monkeypatch):
     async def fake_audit(record):
         audits.append(record)
 
+    from helpers import workspace
+
+    # Fake pids: no real process to check, and each test starts with no tracked apps.
+    monkeypatch.setattr(workspace, "_same_process", lambda handle: None)
+    monkeypatch.setattr(workspace, "process_start_time", lambda pid: None)
+    workspace._resources.clear()
     monkeypatch.setattr(mod.driver, "call", fake_call)
     monkeypatch.setattr(mod.driver, "get_config", lambda agent=None: {**mod.driver.DEFAULTS, "control_enabled": True})
     monkeypatch.setattr(mod.audit_log, "append_record", fake_audit)

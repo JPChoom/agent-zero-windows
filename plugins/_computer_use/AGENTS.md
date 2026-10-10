@@ -8,7 +8,7 @@
 
 - `helpers/driver.py` owns finding `cua-driver.exe` (config `driver_path`, else newest `usr/cua-driver/<version>/`), starting the daemon on demand, telemetry opt-out, and `call` (JSON on stdin, one session label per chat).
 - `helpers/policy.py` owns hard limits (no Agent Zero imports): secret/elevation processes, terminals, blocked and risky hotkeys, secret-field labels.
-- `tools/computer_use.py` owns actions, gates, ownership tracking (`context.data["_computer_use_owned_pids"]`, transient) and audit records.
+- `tools/computer_use.py` owns actions, gates, ownership tracking (registered in `helpers/workspace.py`: apps it launches belong to the launching chat and agent, pass to the chat that started a parallel job when the job ends, and are trusted only while the same process runs) and audit records.
 - `prompts/agent.system.tool.computer_use.md` and `webui/config.html` own the agent prompt and settings UI.
 
 ## Local Contracts

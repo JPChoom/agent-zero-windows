@@ -1,0 +1,11 @@
+<div
+  class="right-canvas-surface-panel workspace-canvas-surface"
+  data-surface-id="workspace"
+  :class="{
+    'is-active': $store.rightCanvas?.isSurfaceVisible('workspace'),
+    'is-mounted': $store.rightCanvas?.isSurfaceRendered('workspace')
+  }"
+  :aria-hidden="(!$store.rightCanvas?.isSurfaceVisible('workspace')).toString()"
+>
+  <x-component path="/plugins/_workspace/webui/workspace-panel.html" mode="canvas"></x-component>
+</div>

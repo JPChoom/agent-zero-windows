@@ -1,0 +1,183 @@
+<div
+  x-data
+  class="ws-shell"
+  x-create="$store.workspace?.onMount()"
+  x-destroy="$store.workspace?.onUnmount()"
+>
+  <template x-if="$store.workspace">
+    <div class="ws" x-data="{ get ws() { return $store.workspace } }">
+
+      <div class="ws-bar">
+        <div class="ws-filters" role="tablist" aria-label="Show">
+          <template x-for="f in ws.filters" :key="f.id">
+            <button type="button" role="tab" class="ws-chip" :class="{ 'is-on': ws.filter === f.id }"
+                    :aria-selected="ws.filter === f.id" @click="ws.filter = f.id" x-text="f.label"></button>
+          </template>
+        </div>
+        <label class="ws-check" title="Only show what belongs to the chat you are in">
+          <input type="checkbox" x-model="ws.onlyThisChat" /> This chat only
+        </label>
+        <span class="ws-grow"></span>
+        <button type="button" class="ws-icon-btn" title="Refresh" @click="ws.refresh()">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+      </div>
+
+      <div class="ws-list">
+        <div class="ws-error" x-show="ws.error" x-text="ws.error"></div>
+
+        <template x-for="group in ws.groups" :key="group.key">
+          <section class="ws-group" :class="{ 'is-orphan': group.orphan }">
+            <header class="ws-group-title">
+              <span class="material-symbols-outlined" x-text="group.orphan ? 'link_off' : 'forum'"></span>
+              <span x-text="group.title"></span>
+              <span class="ws-tag" x-show="group.current">this chat</span>
+              <span class="ws-count" x-text="group.items.length"></span>
+            </header>
+
+            <template x-for="item in group.items" :key="item.id">
+              <div class="ws-row">
+                <span class="material-symbols-outlined ws-kind" :title="item.kind" x-text="ws.icon(item)"></span>
+                <div class="ws-main">
+                  <div class="ws-label">
+                    <span class="ws-name" x-text="item.label"></span>
+                    <span class="ws-tag" x-show="item.owner_agent" x-text="item.owner_agent" title="The agent that owns it"></span>
+                    <span class="ws-tag ws-tag-warn" x-show="item.state === 'orphaned'">orphaned</span>
+                  </div>
+                  <div class="ws-detail" x-show="item.detail || item.note" x-text="[item.detail, item.note].filter(Boolean).join('  -  ')"></div>
+                </div>
+                <span class="ws-age" x-text="ws.age(item)"></span>
+                <div class="ws-actions">
+                  <button type="button" class="ws-btn" x-show="ws.canAdopt(item)" :disabled="ws.busy"
+                          title="Make this chat the owner" @click="ws.adopt(item)">Adopt here</button>
+                  <button type="button" class="ws-btn" x-show="item.kind === 'app'" :disabled="ws.busy"
+                          title="Stop tracking: it becomes your own app again" @click="ws.askRelease(item)">Release</button>
+                  <button type="button" class="ws-btn ws-btn-danger" x-show="item.kind === 'app' || item.kind === 'terminal'"
+                          :disabled="ws.busy || (item.kind === 'app' && !ws.controlEnabled)"
+                          :title="item.kind === 'app' && !ws.controlEnabled ? 'Turn on Settings > Agent > Computer Use > Allow input to close apps' : 'Close it'"
+                          @click="ws.askClose(item)">Close</button>
+                </div>
+              </div>
+            </template>
+          </section>
+        </template>
+
+        <div class="ws-empty" x-show="ws.loaded && !ws.groups.length">
+          <span class="material-symbols-outlined">lan</span>
+          <p>Nothing here yet.</p>
+          <p class="ws-hint">Apps the agent opens with Computer Use, its terminal sessions and its browser tabs show up here, grouped by chat and agent. When a parallel agent finishes, the apps it opened pass to the chat that started it. Apps are never closed automatically, because they may hold unsaved work.</p>
+        </div>
+      </div>
+
+      <div class="ws-status">
+        <span x-text="ws.summary"></span>
+        <span class="ws-grow"></span>
+        <span class="ws-hint" x-show="!ws.controlEnabled">Closing apps needs Computer Use input to be on.</span>
+      </div>
+
+      <template x-if="ws.confirm">
+        <div class="ws-overlay" @click.self="ws.confirm = null" @keydown.escape.stop="ws.confirm = null">
+          <div class="ws-dialog" role="alertdialog" x-init="$nextTick(() => $el.querySelector('.ws-btn-ok')?.focus())">
+            <div class="ws-dialog-title" x-text="ws.confirm.title"></div>
+            <p x-text="ws.confirm.message"></p>
+            <div class="ws-dialog-actions">
+              <button type="button" class="btn btn-cancel" @click="ws.confirm = null">Cancel</button>
+              <button type="button" class="btn btn-ok ws-btn-ok" :class="{ 'ws-danger': ws.confirm.danger }"
+                      @click="ws.confirmOk()" x-text="ws.confirm.okLabel"></button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <style>
+    .ws-shell { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; width: 100%; }
+    .modal-inner.workspace-modal {
+      box-sizing: border-box; width: min(70vw, 860px); height: min(72vh, 640px); min-width: min(380px, calc(100vw - 16px));
+      min-height: 300px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); resize: both; overflow: hidden;
+    }
+    .modal-inner.workspace-modal .modal-bd > x-component { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }
+    .modal-inner.workspace-modal .modal-scroll,
+    .modal-inner.workspace-modal .modal-bd { display: flex; flex: 1 1 auto; min-height: 0; padding: 0; overflow: hidden; }
+
+    .ws {
+      --ws-line: color-mix(in srgb, var(--color-border) 75%, transparent);
+      --ws-hover: var(--color-background-hover, color-mix(in srgb, var(--color-text) 7%, transparent));
+      position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; width: 100%;
+      font-size: 0.86rem; color: var(--color-text); container: ws / inline-size;
+    }
+    .ws .material-symbols-outlined { font-size: 19px; line-height: 1; }
+    .ws-grow { flex: 1 1 auto; }
+
+    .ws-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--ws-line); flex-wrap: wrap; }
+    .ws-filters { display: flex; gap: 4px; flex-wrap: wrap; }
+    .ws-chip {
+      height: 28px; padding: 0 12px; border: 1px solid var(--ws-line); border-radius: 999px; background: transparent;
+      color: inherit; font: inherit; cursor: pointer;
+    }
+    .ws-chip:hover { background: var(--ws-hover); }
+    .ws-chip.is-on { background: color-mix(in srgb, var(--color-primary) 22%, transparent); border-color: color-mix(in srgb, var(--color-primary) 55%, transparent); }
+    .ws-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; opacity: 0.85; }
+    .ws-icon-btn { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .ws-icon-btn:hover { background: var(--ws-hover); }
+
+    .ws-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; }
+    .ws-error { color: var(--color-error, #ef4444); padding: 6px 4px; }
+    .ws-group { margin-bottom: 12px; }
+    .ws-group-title {
+      display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-weight: 600;
+      border-bottom: 1px solid var(--ws-line); margin-bottom: 4px;
+    }
+    .ws-group.is-orphan .ws-group-title { color: var(--color-warning, #eab308); }
+    .ws-count { margin-left: auto; font-weight: 400; opacity: 0.6; }
+    .ws-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-radius: 6px; }
+    .ws-row:hover { background: var(--ws-hover); }
+    .ws-kind { opacity: 0.75; flex: 0 0 auto; }
+    .ws-main { flex: 1 1 auto; min-width: 0; }
+    .ws-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .ws-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ws-detail { font-size: 0.76rem; opacity: 0.65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ws-age { font-size: 0.76rem; opacity: 0.6; white-space: nowrap; }
+    .ws-tag {
+      flex: 0 0 auto; padding: 0 7px; border-radius: 999px; font-size: 0.7rem; line-height: 1.5;
+      background: color-mix(in srgb, var(--color-primary) 18%, transparent); color: var(--color-primary);
+    }
+    .ws-tag-warn { background: color-mix(in srgb, var(--color-warning, #eab308) 20%, transparent); color: var(--color-warning, #eab308); }
+    .ws-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+    .ws-btn {
+      height: 26px; padding: 0 10px; border: 1px solid var(--ws-line); border-radius: 6px; background: transparent;
+      color: inherit; font: inherit; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+    }
+    .ws-btn:hover:not(:disabled) { background: var(--ws-hover); }
+    .ws-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .ws-btn-danger { color: var(--color-error, #ef4444); }
+
+    .ws-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 48px 20px; opacity: 0.75; }
+    .ws-empty .material-symbols-outlined { font-size: 44px; opacity: 0.6; }
+    .ws-empty p { margin: 0; }
+    .ws-hint { font-size: 0.78rem; opacity: 0.7; max-width: 460px; line-height: 1.45; }
+
+    .ws-status { display: flex; align-items: center; gap: 12px; min-height: 26px; padding: 0 12px; font-size: 0.76rem; border-top: 1px solid var(--ws-line); white-space: pre; }
+
+    .ws-overlay {
+      position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--color-background) 55%, transparent); backdrop-filter: blur(2px);
+    }
+    .ws-dialog {
+      width: min(420px, calc(100% - 32px)); padding: 18px; border: 1px solid var(--ws-line); border-radius: 10px;
+      background: var(--color-panel, var(--color-background)); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    }
+    .ws-dialog-title { font-weight: 600; font-size: 1rem; margin-bottom: 8px; }
+    .ws-dialog p { margin: 0 0 16px; line-height: 1.45; }
+    .ws-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .ws-danger { background: var(--color-error, #ef4444) !important; border-color: var(--color-error, #ef4444) !important; color: #fff !important; }
+
+    @container ws (max-width: 520px) {
+      .ws-row { flex-wrap: wrap; }
+      .ws-actions { width: 100%; justify-content: flex-end; }
+      .ws-age { display: none; }
+      .ws-status .ws-hint { display: none; }
+    }
+  </style>
+</div>

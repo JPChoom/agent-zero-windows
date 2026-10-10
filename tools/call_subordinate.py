@@ -1,5 +1,5 @@
 from agent import Agent, UserMessage
-from helpers import projects, subagents
+from helpers import projects, subagents, workspace
 from helpers.errors import RepairableException
 from helpers.tool import Tool, Response
 from initialize import initialize_agent
@@ -64,6 +64,8 @@ class Delegation(Tool):
                 {"agent_profile": requested_profile} if requested_profile else None
             )
             config = initialize_agent(override_settings=override_settings)
+            if existing_subordinate is not None:
+                workspace.end_agent(existing_subordinate)  # replaced: end its terminals now
 
             # create agent
             sub = Agent(self.agent.number + 1, config, self.agent.context)

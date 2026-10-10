@@ -9,7 +9,7 @@
 
 - `plugin.yaml` and `default_config.yaml` own metadata and browser settings defaults.
 - `tools/browser.py` owns the agent-facing browser tool.
-- `helpers/` owns Playwright runtime, selectors, URL helpers, extension management, and connector runtime logic.
+- `helpers/` owns Playwright runtime, selectors, URL helpers, extension management, and connector runtime logic; `helpers/workspace_provider.py` lists open tabs for the Workspace view through `runtime.peek_pages()`, which only reads tabs that are already open and never starts a browser.
 - `api/` owns status, extension, and browser WebSocket handlers.
 - `assets/`, `prompts/`, `skills/`, `extensions/`, and `webui/` own browser scripts, prompts, skill guidance, hook contributions, and UI.
 
