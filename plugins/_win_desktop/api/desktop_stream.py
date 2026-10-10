@@ -18,7 +18,7 @@ import time
 from flask import Response
 
 from helpers.api import ApiHandler, Request
-from plugins._win_desktop.helpers import capture
+from plugins._win_desktop.helpers import capture, stream_hub
 
 
 BOUNDARY = "a0desktopframe"
@@ -32,9 +32,9 @@ QUALITY_PRESETS = {
     "low": {"max_edge": 1280, "jpeg_quality": 40, "fps": 5},
 }
 
-# Upper bound on frame rate. Measured cost of a grab plus resize/encode is
-# ~80ms (~12fps), so this caps rather than paces the common case; it exists
-# to stop a fast machine spending the whole core on frames nobody watches.
+# Upper bound on frame rate while the screen is changing. The shared loop
+# (helpers/stream_hub) drops to ~1fps when nothing changes and skips frames
+# identical to the last one sent.
 MAX_FPS = 10
 
 # A viewer left open forever would hold a worker thread indefinitely. The
@@ -94,41 +94,52 @@ class DesktopStream(ApiHandler):
         all_screens = cfg["capture_all_screens"]
         show_cursor = cfg["capture_cursor"]
 
+        key = stream_hub.StreamKey(
+            max_edge=max_edge,
+            jpeg_quality=quality,
+            fps=max_fps,
+            all_screens=all_screens,
+            monitor=monitor_index,
+            show_cursor=show_cursor,
+        )
+        if monitor_index is not None:
+            # Fail fast with a 400 instead of a stream that never yields.
+            try:
+                count = len(capture.list_monitors())
+            except Exception:
+                count = monitor_index + 1
+            if not 0 <= monitor_index < count:
+                return Response("invalid monitor", status=400, mimetype="text/plain")
+
         def frames():
-            deadline = time.time() + STREAM_SECONDS
-            min_interval = 1.0 / max_fps
-            while time.time() < deadline:
-                started = time.time()
-                try:
-                    frame = capture.capture_frame(
-                        max_edge=max_edge,
-                        jpeg_quality=quality,
-                        all_screens=all_screens,
-                        monitor=monitor_index,
-                        show_cursor=show_cursor,
-                    )
-                except Exception:
-                    # A transient grab failure (screen locked, display mode
-                    # change) must not tear down the viewer.
-                    time.sleep(0.5)
-                    continue
-                yield (
-                    f"--{BOUNDARY}\r\n"
-                    f"Content-Type: {frame.mime}\r\n"
-                    f"Content-Length: {len(frame.payload)}\r\n"
-                    f"X-Screen-Width: {frame.screen_width}\r\n"
-                    f"X-Screen-Height: {frame.screen_height}\r\n"
-                    # Where this frame sits in the desktop when a single
-                    # monitor is cropped out. The panel maps clicks using the
-                    # monitor index it asked for rather than these, but they
-                    # make a captured stream self-describing when debugging a
-                    # click that landed on the wrong screen.
-                    f"X-Offset-X: {frame.offset_x}\r\n"
-                    f"X-Offset-Y: {frame.offset_y}\r\n\r\n"
-                ).encode("ascii") + frame.payload + b"\r\n"
-                elapsed = time.time() - started
-                if elapsed < min_interval:
-                    time.sleep(min_interval - elapsed)
+            # Viewers share one capture loop per setting (helpers/stream_hub).
+            # Each part is followed immediately by the next boundary, so a
+            # browser shows a frame as soon as it arrives even when the next
+            # one is seconds away (unchanged frames are not re-sent).
+            producer = stream_hub.subscribe(key)
+            try:
+                yield f"--{BOUNDARY}\r\n".encode("ascii")
+                deadline = time.time() + STREAM_SECONDS
+                seq = 0
+                while time.time() < deadline:
+                    frame, seq = producer.next_frame(seq, timeout=1.0)
+                    if frame is None:
+                        continue
+                    yield (
+                        f"Content-Type: {frame.mime}\r\n"
+                        f"Content-Length: {len(frame.payload)}\r\n"
+                        f"X-Screen-Width: {frame.screen_width}\r\n"
+                        f"X-Screen-Height: {frame.screen_height}\r\n"
+                        # Where this frame sits in the desktop when a single
+                        # monitor is cropped out. The panel maps clicks using
+                        # the monitor index it asked for rather than these,
+                        # but they make a captured stream self-describing when
+                        # debugging a click that landed on the wrong screen.
+                        f"X-Offset-X: {frame.offset_x}\r\n"
+                        f"X-Offset-Y: {frame.offset_y}\r\n\r\n"
+                    ).encode("ascii") + frame.payload + f"\r\n--{BOUNDARY}\r\n".encode("ascii")
+            finally:
+                stream_hub.unsubscribe(producer)
 
         return Response(
             frames(),

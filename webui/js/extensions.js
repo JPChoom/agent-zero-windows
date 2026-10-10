@@ -1,5 +1,6 @@
 import * as api from "./api.js";
 import * as cache from "./cache.js";
+import { createBackoff } from "./backoff.js";
 
 /**
  * @typedef {string} WebuiExtension
@@ -25,9 +26,25 @@ export const API_EXTENSION_EXCLUDED_ENDPOINTS = new Set([
   "/api/load_webui_extensions",
 ]);
 
+// Failed loads are not cached (a later attempt may succeed), so without this
+// every extension call retried the request at once: a page that lost access
+// sent load_webui_extensions on every UI event (152 times in 11 minutes in
+// the 2026-10-09 audit log). Each extension point now waits before retrying.
+const loadFailures = new Map();
+
+function failureBackoff(key) {
+  let backoff = loadFailures.get(key);
+  if (!backoff) {
+    backoff = createBackoff({ baseMs: 5000, maxMs: 5 * 60 * 1000 });
+    loadFailures.set(key, backoff);
+  }
+  return backoff;
+}
+
 export function clearCache() {
   cache.clear(JS_CACHE_AREA);
   cache.clear(HTML_CACHE_AREA);
+  loadFailures.clear();
 }
 
 /**
@@ -58,12 +75,20 @@ export async function loadJsExtensions(extensionPoint) {
   try {
     const cached = cache.get(JS_CACHE_AREA, extensionPoint, null);
     if (cached != null) return cached;
+    if (!failureBackoff(`js:${extensionPoint}`).ready()) return [];
 
     /** @type {LoadWebuiExtensionsResponse} */
-    const response = await api.callJsonApi(`/api/load_webui_extensions`, {
-      extension_point: extensionPoint,
-      filters: ["*.js", "*.mjs"],
-    });
+    let response;
+    try {
+      response = await api.callJsonApi(`/api/load_webui_extensions`, {
+        extension_point: extensionPoint,
+        filters: ["*.js", "*.mjs"],
+      });
+    } catch (error) {
+      failureBackoff(`js:${extensionPoint}`).fail();
+      throw error;
+    }
+    failureBackoff(`js:${extensionPoint}`).succeed();
     /** @type {JsExtensionImport[]} */
     const imports = await Promise.all(
       response.extensions.map(async (path) => ({
@@ -165,12 +190,20 @@ export async function importHtmlExtensions(extensionPoint, targetElement) {
       targetElement.innerHTML = cachedHtml;
       return;
     }
+    if (!failureBackoff(`html:${extensionPoint}`).ready()) return;
 
     /** @type {LoadWebuiExtensionsResponse} */
-    const response = await api.callJsonApi(`/api/load_webui_extensions`, {
-      extension_point: extensionPoint,
-      filters: ["*.html", "*.htm", "*.xhtml"],
-    });
+    let response;
+    try {
+      response = await api.callJsonApi(`/api/load_webui_extensions`, {
+        extension_point: extensionPoint,
+        filters: ["*.html", "*.htm", "*.xhtml"],
+      });
+    } catch (error) {
+      failureBackoff(`html:${extensionPoint}`).fail();
+      throw error;
+    }
+    failureBackoff(`html:${extensionPoint}`).succeed();
     let combinedHTML = "";
     for (const extension of response.extensions) {
       const path = normalizePath(extension);

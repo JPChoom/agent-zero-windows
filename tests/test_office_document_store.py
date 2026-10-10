@@ -111,27 +111,127 @@ def test_file_browser_can_register_runtime_root_markdown(office_state, monkeypat
     assert doc["path"] == str(path)
 
 
+def _file_browser_policy(monkeypatch, *roots, calls=None):
+    from helpers import file_access
+
+    def policy_for(remote, config=None):
+        if calls is not None:
+            calls.append(remote)
+        return file_access.Policy("test", remote, False, False, [str(r) for r in roots])
+
+    monkeypatch.setattr(file_access, "policy_for", policy_for)
+
+
+LOCAL_REQUEST = types.SimpleNamespace(headers={}, host_url="http://localhost/", remote_addr="127.0.0.1")
+
+
 def test_editor_file_browser_source_opens_runtime_root_markdown(office_state, monkeypatch):
     runtime_root = office_state.state.parent / "runtime-root"
     runtime_root.mkdir()
     path = runtime_root / "AGENTS.md"
     path.write_text("# Runtime Instructions\n", encoding="utf-8")
     monkeypatch.setattr(document_store.files, "get_base_dir", lambda: str(runtime_root))
+    _file_browser_policy(monkeypatch, runtime_root)
     handler = EditorSession(app=None, thread_lock=None)
-    request = types.SimpleNamespace(headers={}, host_url="http://localhost/")
 
-    blocked = asyncio.run(handler.process({"action": "open", "path": str(path)}, request))
+    blocked = asyncio.run(handler.process({"action": "open", "path": str(path)}, LOCAL_REQUEST))
     opened = asyncio.run(handler.process({
         "action": "open",
         "path": str(path),
         "source": "file-browser",
-    }, request))
+    }, LOCAL_REQUEST))
 
     assert blocked["ok"] is False
     assert "active project or workdir" in blocked["error"]
     assert opened["ok"] is True
     assert opened["title"] == "AGENTS.md"
     assert opened["text"] == "# Runtime Instructions\n"
+
+
+def test_editor_file_browser_open_outside_policy_is_refused(office_state, monkeypatch):
+    elsewhere = office_state.state.parent / "elsewhere"
+    elsewhere.mkdir()
+    path = elsewhere / "notes.md"
+    path.write_text("secret plans", encoding="utf-8")
+    _file_browser_policy(monkeypatch, office_state.workdir)
+    handler = EditorSession(app=None, thread_lock=None)
+
+    result = asyncio.run(handler.process(
+        {"action": "open", "path": str(path), "source": "file-browser"}, LOCAL_REQUEST
+    ))
+
+    assert result["ok"] is False
+    assert "outside what the File Browser may open" in result["error"]
+
+
+def test_editor_file_browser_open_uses_the_remote_policy_for_remote_requests(office_state, monkeypatch):
+    folder = office_state.state.parent / "anywhere"
+    folder.mkdir()
+    path = folder / "a.txt"
+    path.write_text("x", encoding="utf-8")
+    calls = []
+    _file_browser_policy(monkeypatch, folder, calls=calls)
+    handler = EditorSession(app=None, thread_lock=None)
+    tunnel = types.SimpleNamespace(
+        headers={"CF-Connecting-IP": "203.0.113.7"}, host_url="http://localhost/", remote_addr="127.0.0.1"
+    )
+
+    asyncio.run(handler.process({"action": "open", "path": str(path), "source": "file-browser"}, tunnel))
+    asyncio.run(handler.process({"action": "open", "path": str(path), "source": "file-browser"}, LOCAL_REQUEST))
+
+    assert calls == [True, False]
+
+
+def test_editor_save_rechecks_the_file_browser_policy(office_state, monkeypatch):
+    folder = office_state.state.parent / "outside-roots"
+    folder.mkdir()
+    path = folder / "todo.md"
+    path.write_text("one", encoding="utf-8")
+    _file_browser_policy(monkeypatch, folder)
+    handler = EditorSession(app=None, thread_lock=None)
+    opened = asyncio.run(handler.process(
+        {"action": "open", "path": str(path), "source": "file-browser"}, LOCAL_REQUEST
+    ))
+    assert opened["ok"] is True
+
+    saved = asyncio.run(handler.process(
+        {"action": "save", "session_id": opened["session_id"], "text": "two"}, LOCAL_REQUEST
+    ))
+    assert saved["ok"] is True
+    assert path.read_text(encoding="utf-8") == "two"
+
+    _file_browser_policy(monkeypatch, office_state.workdir)  # policy narrowed
+    refused = asyncio.run(handler.process(
+        {"action": "save", "session_id": opened["session_id"], "text": "three"}, LOCAL_REQUEST
+    ))
+    assert refused["ok"] is False
+    assert path.read_text(encoding="utf-8") == "two"
+
+
+def test_editor_save_as_outside_roots_follows_the_policy(office_state, monkeypatch):
+    allowed = office_state.state.parent / "allowed"
+    denied = office_state.state.parent / "denied"
+    allowed.mkdir()
+    denied.mkdir()
+    source = office_state.workdir / "draft.md"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("draft", encoding="utf-8")
+    _file_browser_policy(monkeypatch, allowed, office_state.workdir)
+    handler = EditorSession(app=None, thread_lock=None)
+    opened = asyncio.run(handler.process({"action": "open", "path": str(source)}, LOCAL_REQUEST))
+    assert opened["ok"] is True
+
+    refused = asyncio.run(handler.process({
+        "action": "save_as", "session_id": opened["session_id"], "path": str(denied / "copy.md"),
+    }, LOCAL_REQUEST))
+    assert refused["ok"] is False
+    assert not (denied / "copy.md").exists()
+
+    saved = asyncio.run(handler.process({
+        "action": "save_as", "session_id": opened["session_id"], "path": str(allowed / "copy.md"),
+    }, LOCAL_REQUEST))
+    assert saved["ok"] is True
+    assert (allowed / "copy.md").read_text(encoding="utf-8") == "draft"
 
 
 @pytest.mark.parametrize(

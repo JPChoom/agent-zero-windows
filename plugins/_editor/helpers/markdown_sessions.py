@@ -25,6 +25,9 @@ class MarkdownSession:
     base_version: str = ""
     external_modified: bool = False
     external_version: str = ""
+    # Opened by the user through the File Browser access policy rather than
+    # the document roots (workdir/projects); see api/editor_session.py.
+    policy_checked: bool = False
     opened_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     last_active_at: float = field(default_factory=time.time)
@@ -37,7 +40,14 @@ class MarkdownSessionManager:
         self._sessions: dict[str, MarkdownSession] = {}
         self._active_by_context: dict[str, str] = {}
 
-    def open(self, doc: dict[str, Any], sid: str = "", context_id: str = "", refresh: bool = False) -> dict[str, Any]:
+    def open(
+        self,
+        doc: dict[str, Any],
+        sid: str = "",
+        context_id: str = "",
+        refresh: bool = False,
+        policy_checked: bool = False,
+    ) -> dict[str, Any]:
         ext = str(doc["extension"]).lower()
         if ext not in document_store.EDITOR_TEXT_EXTENSIONS:
             raise ValueError(f"Editor does not support .{ext} files.")
@@ -45,7 +55,9 @@ class MarkdownSessionManager:
         normalized_context = str(context_id or "")
         if refresh:
             try:
-                doc = document_store.register_document(doc["path"], context_id=normalized_context)
+                doc = document_store.register_document(
+                    doc["path"], context_id=normalized_context, policy_checked=policy_checked
+                )
             except Exception:
                 pass
 
@@ -54,6 +66,7 @@ class MarkdownSessionManager:
                 continue
             if sid:
                 session.sid = sid
+            session.policy_checked = session.policy_checked or policy_checked
             doc_sha = str(doc.get("sha256") or "")
             should_reload = not session.dirty and (refresh or (doc_sha and doc_sha != session.base_sha256))
             if should_reload:
@@ -78,6 +91,7 @@ class MarkdownSessionManager:
             path=doc["path"],
             title=doc["basename"],
             text=document_store.read_text_for_editor(doc),
+            policy_checked=policy_checked,
         )
         _set_session_base(session, doc)
         self._sessions[session.session_id] = session
@@ -123,7 +137,13 @@ class MarkdownSessionManager:
             "version": document_store.item_version(updated),
         }
 
-    def save_as(self, session_id: str, path: str, text: str | None = None) -> dict[str, Any]:
+    def save_as(
+        self,
+        session_id: str,
+        path: str,
+        text: str | None = None,
+        policy_checked: bool = False,
+    ) -> dict[str, Any]:
         session = self._require(session_id)
         if text is not None:
             session.text = str(text)
@@ -133,7 +153,9 @@ class MarkdownSessionManager:
             path,
             session.text,
             context_id=session.context_id,
+            policy_checked=policy_checked,
         )
+        session.policy_checked = policy_checked
         old_file_id = session.file_id
         session.file_id = updated["file_id"]
         session.updated_at = time.time()
@@ -203,7 +225,9 @@ class MarkdownSessionManager:
                 continue
             session = sessions[0]
             try:
-                doc = document_store.register_document(session.path, context_id=session.context_id)
+                doc = document_store.register_document(
+                    session.path, context_id=session.context_id, policy_checked=session.policy_checked
+                )
             except Exception:
                 try:
                     doc = document_store.get_document(file_id)
@@ -270,6 +294,9 @@ class MarkdownSessionManager:
         safe_limit = max(1, int(limit or 20))
         return result[:safe_limit]
 
+    def get_session(self, session_id: str) -> MarkdownSession | None:
+        return self._sessions.get(str(session_id or "").strip())
+
     def close(self, session_id: str) -> dict[str, Any]:
         session = self._sessions.pop(str(session_id or ""), None)
         if not session:
@@ -312,7 +339,9 @@ class MarkdownSessionManager:
 
         if expected_sha and current_sha != expected_sha:
             if current_exists and desired_sha == current_sha:
-                updated = document_store.register_document(path, context_id=session.context_id)
+                updated = document_store.register_document(
+                    path, context_id=session.context_id, policy_checked=session.policy_checked
+                )
                 session.dirty = False
                 session.path = updated["path"]
                 session.title = updated["basename"]
@@ -329,7 +358,9 @@ class MarkdownSessionManager:
                     "version": document_store.item_version(updated),
                 }
 
-            latest_doc = _refresh_registered_doc(doc, context_id=session.context_id)
+            latest_doc = _refresh_registered_doc(
+                doc, context_id=session.context_id, policy_checked=session.policy_checked
+            )
             _mark_session_external(session, latest_doc)
             return {
                 "ok": False,
@@ -445,11 +476,15 @@ def _mark_session_external(session: MarkdownSession, doc: dict[str, Any]) -> Non
         session.external_version = ""
 
 
-def _refresh_registered_doc(doc: dict[str, Any], context_id: str = "") -> dict[str, Any]:
+def _refresh_registered_doc(
+    doc: dict[str, Any], context_id: str = "", policy_checked: bool = False
+) -> dict[str, Any]:
     try:
         path = Path(doc["path"])
         if path.exists():
-            return document_store.register_document(path, context_id=context_id)
+            return document_store.register_document(
+                path, context_id=context_id, policy_checked=policy_checked
+            )
     except Exception:
         pass
     return doc

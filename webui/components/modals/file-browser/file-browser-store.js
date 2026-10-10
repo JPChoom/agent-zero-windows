@@ -682,7 +682,7 @@ const model = {
         const { store: surfaceStore } = await import(module);
         const session = await surfaceStore.openPath(entry.path, { source: "file-browser" });
         if (!session || session.ok === false) {
-          throw new Error(surfaceStore.error || "This file can't be opened there (only files in the workdir or a project).");
+          throw new Error(surfaceStore.error || "This file can't be opened there.");
         }
       }
       if (this.closePromise) window.closeModal(MODAL_PATH);

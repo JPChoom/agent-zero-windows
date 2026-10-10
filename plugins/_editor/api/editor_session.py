@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+from helpers import access_control, file_access
 from helpers.api import ApiHandler, Request
 from plugins._editor.helpers import markdown_sessions
 from plugins._office.helpers import document_store
@@ -54,23 +55,33 @@ class EditorSession(ApiHandler):
             return await self._open_document(doc, input, request, context_id=context_id)
         if action == "open":
             file_id = str(input.get("file_id") or "").strip()
+            path = str(input.get("path") or "").strip()
+            # Files the user opens from the File Browser follow the File
+            # Browser's access policy (Settings > Security, stricter when
+            # remote), not just the workdir/project document roots.
+            policy_checked = bool(not file_id and path and str(input.get("source") or "") == "file-browser")
             try:
-                doc = (
-                    document_store.get_document(file_id)
-                    if file_id
-                    else document_store.register_document(
-                        str(input.get("path") or ""),
-                        context_id=context_id,
-                        allow_base_dir=self._allow_base_dir_open(input),
+                if file_id:
+                    doc = document_store.get_document(file_id)
+                elif policy_checked:
+                    real = file_access.resolve(path, self._policy(request))
+                    doc = document_store.register_document(
+                        real, context_id=context_id, policy_checked=True
                     )
-                )
+                else:
+                    doc = document_store.register_document(path, context_id=context_id)
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}
-            return await self._open_document(doc, input, request, context_id=context_id)
+            return await self._open_document(
+                doc, input, request, context_id=context_id, policy_checked=policy_checked
+            )
         if action == "save":
             session_id = str(input.get("session_id") or "").strip()
             if not session_id:
                 return {"ok": False, "error": "session_id is required."}
+            denied = self._recheck_policy(session_id, request)
+            if denied:
+                return denied
             return markdown_sessions.get_manager().save(session_id, text=input.get("text"))
         if action == "save_as":
             session_id = str(input.get("session_id") or "").strip()
@@ -80,7 +91,17 @@ class EditorSession(ApiHandler):
             if not path:
                 return {"ok": False, "error": "path is required."}
             try:
-                result = markdown_sessions.get_manager().save_as(session_id, path, text=input.get("text"))
+                policy_checked = False
+                try:
+                    document_store.normalize_path(path, context_id=context_id)
+                except PermissionError:
+                    # Outside the document roots: allowed only where the
+                    # File Browser may write.
+                    path = str(file_access.resolve(path, self._policy(request), must_exist=False))
+                    policy_checked = True
+                result = markdown_sessions.get_manager().save_as(
+                    session_id, path, text=input.get("text"), policy_checked=policy_checked
+                )
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}
             document_store.close_session(session_id=str(input.get("store_session_id") or "").strip())
@@ -106,6 +127,7 @@ class EditorSession(ApiHandler):
         input: dict,
         request: Request,
         context_id: str = "",
+        policy_checked: bool = False,
     ) -> dict:
         if str(doc.get("extension") or "").lower() not in document_store.EDITOR_TEXT_EXTENSIONS:
             return {
@@ -128,6 +150,7 @@ class EditorSession(ApiHandler):
                 sid="",
                 context_id=context_id,
                 refresh=input.get("refresh") is True,
+                policy_checked=policy_checked,
             )
         except ValueError as exc:
             document_store.close_session(session_id=store_session["session_id"])
@@ -171,10 +194,23 @@ class EditorSession(ApiHandler):
         origin = request.headers.get("Origin") or request.host_url.rstrip("/")
         return origin.rstrip("/")
 
-    def _allow_base_dir_open(self, input: dict) -> bool:
-        if str(input.get("source") or "").strip() != "file-browser":
-            return False
-        return bool(str(input.get("path") or "").strip())
+    def _policy(self, request: Request) -> file_access.Policy:
+        remote = not access_control.is_local_request(
+            getattr(request, "remote_addr", None), getattr(request, "headers", {}) or {}
+        )
+        return file_access.policy_for(remote)
+
+    def _recheck_policy(self, session_id: str, request: Request) -> dict | None:
+        """A file opened through the File Browser policy is saved only while that
+        policy (for this request: local or remote) still allows it."""
+        session = markdown_sessions.get_manager().get_session(session_id)
+        if not session or not session.policy_checked:
+            return None
+        try:
+            file_access.resolve(session.path, self._policy(request))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        return None
 
 
 def _public_doc(doc: dict) -> dict:

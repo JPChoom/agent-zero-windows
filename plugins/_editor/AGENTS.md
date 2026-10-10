@@ -20,6 +20,7 @@
 - Keep Editor Open wired through the File Browser text picker so users can open one or more Markdown or plain text files with an obvious confirmation action.
 - Keep Save As distinct from Rename: Save As writes the current editor text to a chosen `.md` or `.txt` path and retargets the active session without removing the original file.
 - Preserve source chat context ids when opening Markdown files from tool-result canvas handoffs.
+- Files the user opens from the File Browser (`source: "file-browser"`) follow the File Browser access policy (`helpers/file_access.py`, the stricter remote policy for tunnel requests), not only the document roots; such sessions are marked `policy_checked`, saving re-checks the policy for the current request, and Save As outside the document roots is allowed only where the policy allows. Other opens (no source, WebSocket, agent paths) keep the workdir/project roots.
 
 ## Work Guidance
 

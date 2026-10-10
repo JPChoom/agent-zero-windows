@@ -359,11 +359,21 @@ def _load_ip_history() -> dict[str, dict]:
     return history
 
 
+def _local_time(now: datetime) -> str:
+    """`now` in the user's configured timezone (Settings), else the OS's."""
+    try:
+        from helpers.localization import Localization
+
+        return now.astimezone(Localization.get().get_tzinfo()).isoformat()
+    except Exception:
+        return now.astimezone().isoformat()
+
+
 def audit(event: str, **fields) -> None:
     now = datetime.now(timezone.utc)
     record = {
         "time": now.isoformat(),
-        "local_time": now.astimezone().isoformat(),
+        "local_time": _local_time(now),
         "event": event,
         **fields,
     }

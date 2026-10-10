@@ -32,6 +32,7 @@
 
 - Important called helpers/classes observed in the source: `get_dotenv_value`, `pytz.timezone`, `datetime.now`, `now_in_tz.utcoffset`, `self.now.isoformat`, `self.get_tzinfo`, `cls`, `self.set_timezone`, `self._compute_offset_minutes`, `self.apply_process_timezone`, `tzinfo.localize`, `PrintStyle.debug`, `save_dotenv_value`, `localtime_str.strip.replace`, `local_datetime_obj.astimezone`, `utc_dt.astimezone`, `local_datetime_obj.isoformat`, `dt.astimezone`, `local_dt.isoformat`, `time.tzset`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
+- `apply_process_timezone` sets `TZ` only where `time.tzset` exists (POSIX). On Windows it never sets an IANA `TZ` and removes an inherited one: the C runtime misparses it and local time becomes UTC+01:00 with DST. User-facing times use `get_tzinfo()`.
 
 ## Work Guidance
 

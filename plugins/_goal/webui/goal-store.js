@@ -1,5 +1,6 @@
 import { createStore } from "/js/AlpineStore.js";
 import { callJsonApi } from "/js/api.js";
+import { createBackoff } from "/js/backoff.js";
 import { store as chatsStore } from "/components/sidebar/chats/chats-store.js";
 import {
   toastFrontendError,
@@ -7,6 +8,9 @@ import {
 } from "/components/notifications/notification-store.js";
 
 const GOAL_API_PATH = "/plugins/_goal/goal";
+
+// Polling slows down while requests fail (see /js/backoff.js).
+const pollBackoff = createBackoff({ baseMs: 3000 });
 
 const model = {
   goal: null,
@@ -119,6 +123,7 @@ const model = {
       return;
     }
     if (!force && this.loading) return;
+    if (!force && !pollBackoff.ready()) return;
 
     this.loading = true;
     try {
@@ -130,8 +135,10 @@ const model = {
       this.now = Date.now();
       this.lastContextId = contextId;
       if (!this.goal) this.editing = false;
+      pollBackoff.succeed();
     } catch (error) {
-      console.error("Failed to load goal:", error);
+      pollBackoff.fail();
+      if (pollBackoff.failures === 1) console.error("Failed to load goal:", error);
       this.goal = null;
       this.lastContextId = contextId;
     } finally {

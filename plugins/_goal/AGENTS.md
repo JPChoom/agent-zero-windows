@@ -19,7 +19,8 @@
 ## Local Contracts
 
 - This is a port of upstream `agent0ai/agent-zero`'s `_goal` plugin - see
-  `README.md` for the one adaptation made (icon markup). Otherwise
+  `README.md` for the adaptations made (icon markup; `webui/goal-store.js`
+  polling backs off while requests fail, via `/js/backoff.js`). Otherwise
   verbatim; every dependency was checked against this fork's actual code
   before porting, not assumed.
 - Goal state lives in `usr/plugins/_goal/goals/<context_id>.json`, one file

@@ -13,6 +13,13 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - App ownership is checked against the process's start time, so a reused process id can never make the agent "own" an unrelated program.
 - Terminal sessions now end when their chat is deleted or reset, when a parallel worker finishes, and when a sub-agent is replaced, instead of whenever garbage collection ran.
 - The main Settings save can no longer change the File Browser access settings, and every Bypass-password check shares one wrong-attempt limit.
+- Only one Desktop icon in the side rail on Windows (the Linux desktop surface was always registered as well).
+- The Editor can open, save and Save As any file the File Browser may open (same *Settings > Security* policy, stricter for remote sessions), instead of failing outside the workdir and projects.
+- Local times in the access log and the server log file names are correct on Windows (they were an hour ahead of UTC instead of local time when a timezone was set).
+- A page that loses access (expired session, blocked address, restart) backs off instead of retrying background requests every few seconds.
+
+### Changed
+- Desktop viewers share one capture loop, unchanged frames are not re-sent, and an idle screen is captured about once a second (full speed returns on any change or input).
 
 ## v1.2.1
 

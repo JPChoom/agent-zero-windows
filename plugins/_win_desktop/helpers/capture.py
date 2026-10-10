@@ -1,9 +1,10 @@
 """Windows desktop capture.
 
 Uses PIL's ImageGrab rather than adding a capture dependency (mss, dxcam):
-measured on this fork's target hardware at 1920x1080, a full grab costs
-~29ms and a resize+JPEG(q60) to 1280px costs ~50ms, i.e. ~12fps end to end
-and ~70KB per frame. That is comfortably enough for both uses here - a
+measured at 1920x1080, a full grab costs ~29ms and a resize+JPEG(q60) to
+1280px ~50ms, i.e. ~12fps end to end and ~70KB per frame. On a three-monitor
+5760x1080 desktop (2026-10-10) the grab dominates: ~66ms grab, ~24ms resize
+to 1920px, ~3ms encode, ~55KB per frame. That is comfortably enough for both uses here - a
 model reading a screen, and a human watching a monitoring panel - so the
 extra dependency isn't justified.
 
@@ -82,6 +83,21 @@ def _grab(all_screens: bool = True):
     return ImageGrab.grab(all_screens=all_screens)
 
 
+@dataclass
+class PreparedImage:
+    """A grabbed, cropped and scaled frame that has not been encoded yet.
+
+    The stream hub compares these before paying for an encode and a send,
+    so an unchanged screen costs a grab and a checksum, not a new frame.
+    """
+
+    image: object
+    screen_width: int
+    screen_height: int
+    offset_x: int = 0
+    offset_y: int = 0
+
+
 def capture_frame(
     max_edge: int = 1280,
     jpeg_quality: int = 60,
@@ -98,6 +114,22 @@ def capture_frame(
 
     max_edge <= 0 keeps native resolution.
     """
+    prepared = prepare_image(
+        max_edge=max_edge,
+        all_screens=all_screens,
+        monitor=monitor,
+        show_cursor=show_cursor,
+    )
+    return encode_image(prepared, jpeg_quality)
+
+
+def prepare_image(
+    max_edge: int = 1280,
+    all_screens: bool = True,
+    monitor: int | None = None,
+    show_cursor: bool = True,
+) -> PreparedImage:
+    """Grab, crop to `monitor`, draw the cursor and scale - everything but the encode."""
     from PIL import Image
 
     image = _grab(all_screens)
@@ -140,6 +172,17 @@ def capture_frame(
     if image.mode not in ("RGB", "L"):
         image = image.convert("RGB")
 
+    return PreparedImage(
+        image=image,
+        screen_width=screen_width,
+        screen_height=screen_height,
+        offset_x=offset_x,
+        offset_y=offset_y,
+    )
+
+
+def encode_image(prepared: PreparedImage, jpeg_quality: int = 60) -> CapturedFrame:
+    image = prepared.image
     buffer = io.BytesIO()
     image.save(buffer, "JPEG", quality=max(1, min(95, int(jpeg_quality))))
 
@@ -148,10 +191,10 @@ def capture_frame(
         mime=JPEG_MIME,
         width=image.width,
         height=image.height,
-        screen_width=screen_width,
-        screen_height=screen_height,
-        offset_x=offset_x,
-        offset_y=offset_y,
+        screen_width=prepared.screen_width,
+        screen_height=prepared.screen_height,
+        offset_x=prepared.offset_x,
+        offset_y=prepared.offset_y,
     )
 
 

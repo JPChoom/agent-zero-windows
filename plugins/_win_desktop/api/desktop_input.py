@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from helpers import audit_log, kill_switch
 from helpers.api import ApiHandler, Request
-from plugins._win_desktop.helpers import capture, input_control
+from plugins._win_desktop.helpers import capture, input_control, stream_hub
 
 
 class DesktopInput(ApiHandler):
@@ -68,6 +68,8 @@ class DesktopInput(ApiHandler):
 
         try:
             result = self._dispatch(action, input)
+            # The viewer is about to see the effect: leave the idle frame rate now.
+            stream_hub.poke()
             if action == "clipboard_get":
                 return {"ok": True, "text": result}
             return {"ok": True, "message": result}

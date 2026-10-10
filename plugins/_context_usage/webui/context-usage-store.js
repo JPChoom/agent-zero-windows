@@ -1,7 +1,10 @@
 import { createStore } from "/js/AlpineStore.js";
 import { callJsonApi } from "/js/api.js";
+import { createBackoff } from "/js/backoff.js";
 
 const POLL_INTERVAL_MS = 5000;
+// Polling slows down while requests fail (see /js/backoff.js).
+const pollBackoff = createBackoff({ baseMs: POLL_INTERVAL_MS });
 
 function formatTokens(value) {
   const number = Number(value) || 0;
@@ -42,8 +45,10 @@ const model = {
       this.available = false;
       return;
     }
+    if (!pollBackoff.ready()) return;
     try {
       const result = await callJsonApi("plugins/_context_usage/context_usage_get", { context: contextId });
+      pollBackoff.succeed();
       if (!result?.ok) {
         this.available = false;
         return;
@@ -53,6 +58,7 @@ const model = {
       this.percent = result.percent;
       this.available = this.maxTokens > 0;
     } catch {
+      pollBackoff.fail();
       this.available = false;
     }
   },

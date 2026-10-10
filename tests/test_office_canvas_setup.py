@@ -39,10 +39,16 @@ def test_modals_are_generic_and_surfaces_own_live_surface_paths():
     assert "modalSurfaceMetadata" in surfaces_js
     assert "closeSurfaceGroupModals" in surfaces_js
     assert 'id: "browser"' in surfaces_js
-    assert 'id: "desktop"' in surfaces_js
+    # Desktop is registered by its OS-specific plugin, never as a core surface.
+    assert 'id: "desktop"' not in surfaces_js
     assert 'id: "editor"' in surfaces_js
     assert "/plugins/_browser/webui/main.html" in surfaces_js
-    assert "/plugins/_desktop/webui/main.html" in surfaces_js
+    desktop_register = (
+        PROJECT_ROOT / "plugins" / "_desktop" / "extensions" / "webui"
+        / "surfaces_register" / "register-desktop.js"
+    ).read_text(encoding="utf-8")
+    assert 'id: "desktop"' in desktop_register
+    assert "/plugins/_desktop/webui/main.html" in desktop_register
     assert "/plugins/_editor/webui/main.html" in surfaces_js
     assert "LEGACY_SURFACE_IDS" in surfaces_js
     assert '["office", "desktop"]' in surfaces_js

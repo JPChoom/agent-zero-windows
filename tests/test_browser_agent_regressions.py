@@ -960,9 +960,8 @@ def test_surface_buttons_keep_modal_and_canvas_entry_points_separate():
     assert "const safeMinWidth = Math.min(minWidth, maxWidth)" in surfaces_js
     assert "grid-auto-flow: column" in surfaces_css
     assert 'id: "browser"' in surfaces_js
-    assert 'id: "desktop"' in surfaces_js
+    assert 'id: "desktop"' not in surfaces_js
     assert "/plugins/_browser/webui/main.html" in surfaces_js
-    assert "/plugins/_desktop/webui/main.html" in surfaces_js
 
 
 def test_browser_tool_does_not_auto_open_canvas_policy_is_documented():

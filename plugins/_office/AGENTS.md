@@ -13,6 +13,7 @@
 
 ## Local Contracts
 
+- `document_store.normalize_path`/`register_document`/`save_text_document_as` keep paths inside the document roots unless `policy_checked=True`, which only the Editor passes after resolving a user-initiated path through the File Browser policy. Agent document tools never pass it.
 - Preserve document storage integrity and live session synchronization.
 - Keep LibreOffice operations bounded to intended workspaces and artifact paths.
 - Do not expose document contents or temporary files beyond intended UI/tool flows.

@@ -10,6 +10,8 @@ const registeredSurfaces = new Map();
 const urlHandlers = new Set();
 const SURFACE_MODAL_ACTION_GROUPS = ["surfaces", "window", "new"];
 
+// Desktop surfaces come from their OS-specific plugins (_desktop on Linux,
+// _win_desktop on Windows), so only one appears in the rail.
 export const CORE_SURFACES = [
   {
     id: "files",
@@ -40,13 +42,6 @@ export const CORE_SURFACES = [
     icon: "language",
     order: 10,
     modalPath: "/plugins/_browser/webui/main.html",
-  },
-  {
-    id: "desktop",
-    title: "Desktop",
-    icon: "desktop_windows",
-    order: 20,
-    modalPath: "/plugins/_desktop/webui/main.html",
   },
   {
     id: "editor",

@@ -70,13 +70,25 @@ class Localization:
         return self._offset_minutes
 
     def apply_process_timezone(self) -> None:
-        """Apply the configured timezone to this process and child processes."""
+        """Apply the configured timezone to this process and child processes.
+
+        Only where time.tzset exists (POSIX). The Windows C runtime does not
+        understand IANA names: TZ=America/New_York set at runtime is parsed
+        as a malformed POSIX rule, and local time silently becomes UTC+01:00
+        with DST (reproduced 2026-10-10) - which corrupted audit-log
+        local_time values and log file names. On Windows the OS timezone is
+        used for local time, user-facing times go through get_tzinfo(), and
+        an IANA TZ inherited from elsewhere is removed for the same reason.
+        """
+        if not hasattr(time, "tzset"):
+            if "/" in os.environ.get("TZ", ""):
+                os.environ.pop("TZ", None)
+            return
         os.environ["TZ"] = self.timezone
-        if hasattr(time, "tzset"):
-            try:
-                time.tzset()
-            except Exception as e:
-                PrintStyle.error(f"Error applying timezone {self.timezone}: {e}")
+        try:
+            time.tzset()
+        except Exception as e:
+            PrintStyle.error(f"Error applying timezone {self.timezone}: {e}")
 
     def now(self) -> datetime:
         """Return the current datetime in the user's configured timezone."""

@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -72,7 +73,11 @@ def test_invalid_timezone_preserves_current_user_timezone(isolated_localization)
     localization.set_timezone("Mars/Olympus")
 
     assert localization.get_timezone() == "Europe/Rome"
-    assert os.environ["TZ"] == "Europe/Rome"
+    if hasattr(time, "tzset"):
+        assert os.environ["TZ"] == "Europe/Rome"
+    else:
+        # Windows: an IANA TZ corrupts the C runtime's local time.
+        assert "/" not in os.environ.get("TZ", "")
     assert not any(item == ("DEFAULT_USER_TIMEZONE", "UTC") for item in saved)
     assert not any(item == ("DEFAULT_USER_TIMEZONE", "Mars/Olympus") for item in saved)
 
@@ -346,3 +351,40 @@ def test_desktop_timezone_sync_restarts_active_system_desktop(
         "timezone": "America/New_York",
     }
     assert restarted == [old_session]
+
+
+@pytest.mark.skipif(hasattr(time, "tzset"), reason="Windows C runtime behaviour")
+def test_windows_local_time_is_not_corrupted_by_the_user_timezone():
+    # The bug only shows in a fresh process: an IANA TZ set before the C
+    # runtime's first local-time call made it report UTC+01:00 with DST.
+    import subprocess
+
+    probe = (
+        "import time; from helpers.localization import Localization; "
+        "loc = Localization.__new__(Localization); loc.timezone = 'America/New_York'; "
+        "loc.apply_process_timezone(); t = time.localtime(); "
+        "print(t.tm_gmtoff, t.tm_isdst)"
+    )
+    baseline = "import time; t = time.localtime(); print(t.tm_gmtoff, t.tm_isdst)"
+    env = {k: v for k, v in os.environ.items() if k != "TZ"}
+
+    def run(code):
+        return subprocess.run(
+            [sys.executable, "-c", code], cwd=str(PROJECT_ROOT), env=env,
+            capture_output=True, text=True, check=True, timeout=60,
+        ).stdout.strip()
+
+    assert run(probe) == run(baseline)
+
+
+def test_audit_local_time_uses_the_configured_timezone(isolated_localization, monkeypatch, tmp_path):
+    from helpers import access_control
+
+    set_test_timezone("Asia/Tokyo")
+    monkeypatch.setattr(access_control, "_audit_path", lambda: str(tmp_path / "audit.jsonl"))
+    access_control.audit("test_event")
+    import json
+
+    record = json.loads((tmp_path / "audit.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert record["local_time"].endswith("+09:00")
+    assert record["time"].endswith("+00:00")

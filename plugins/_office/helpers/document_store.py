@@ -192,9 +192,22 @@ def _settings() -> Any:
     return settings
 
 
-def normalize_path(path: str | Path, context_id: str = "", allow_base_dir: bool = False) -> Path:
+def normalize_path(
+    path: str | Path,
+    context_id: str = "",
+    allow_base_dir: bool = False,
+    policy_checked: bool = False,
+) -> Path:
+    """Resolve a document path and keep it inside the document roots.
+
+    policy_checked=True is only for user-initiated Editor actions whose path
+    the caller has already resolved through the File Browser access policy
+    (helpers/file_access.py); the agent's document tools never pass it.
+    """
     candidate = _path_from_a0(path)
     resolved = candidate.resolve(strict=False)
+    if policy_checked:
+        return resolved
     roots = allowed_roots(context_id, allow_base_dir=allow_base_dir)
     if not any(_is_relative_to(resolved, root) for root in roots):
         raise PermissionError("Document artifacts must stay inside the active project or workdir.")
@@ -278,8 +291,11 @@ def register_document(
     owner_id: str = "a0",
     context_id: str = "",
     allow_base_dir: bool = False,
+    policy_checked: bool = False,
 ) -> dict[str, Any]:
-    resolved = normalize_path(path, context_id=context_id, allow_base_dir=allow_base_dir)
+    resolved = normalize_path(
+        path, context_id=context_id, allow_base_dir=allow_base_dir, policy_checked=policy_checked
+    )
     if not resolved.exists():
         raise FileNotFoundError(str(resolved))
     ext = normalize_extension(resolved.suffix.lstrip("."))
@@ -552,8 +568,9 @@ def save_text_document_as(
     path: str | Path,
     content: str,
     context_id: str = "",
+    policy_checked: bool = False,
 ) -> dict[str, Any]:
-    target = normalize_path(path, context_id=context_id)
+    target = normalize_path(path, context_id=context_id, policy_checked=policy_checked)
     ext = normalize_extension(target.suffix.lstrip("."))
     if ext not in EDITOR_TEXT_EXTENSIONS:
         raise ValueError("Editor Save As only supports Markdown (.md) and text (.txt) files.")

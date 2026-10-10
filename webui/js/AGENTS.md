@@ -11,6 +11,7 @@
 - `api.js` owns CSRF-aware HTTP helpers.
 - `websocket.js` owns browser WebSocket client behavior.
 - `extensions.js` owns frontend extension loading.
+- `backoff.js` owns `createBackoff()`, the exponential backoff for repeated background calls (polling, lazy loads).
 - `components.js` owns `<x-component>` loading, component caching, module injection, nested component processing, and `globalThis.xAttrs`.
 - `modals.js` owns the stacked modal shell, `openModal`, `closeModal`, `scrollModal`, footer relocation, backdrop, and modal z-index behavior.
 - `surfaces.js` owns shared surface registration, right-canvas/modal mode routing, surface modal action rails, and reusable draggable/focus modal chrome.
@@ -36,6 +37,8 @@
 - Click-outside close requires both `mousedown` and `mouseup` on the outer `.modal` container.
 - `scrollModal(id)` scrolls inside the top modal's `.modal-scroll`.
 - Keep extension loader cache keys and extension point names stable for plugins.
+- Failed extension loads are not cached but back off per extension point (`createBackoff`), so a page that lost access never re-requests on every UI event; background polling stores should do the same.
+- `surfaces.js` `CORE_SURFACES` holds only OS-neutral surfaces (Files, Browser, Editor); Desktop surfaces are registered by their OS-specific plugins.
 - HTML extension loading turns discovered HTML files into `<x-component>` tags; JavaScript extensions must export a default function.
 - `<x-component>` loading must process component `style`, `script`, and stylesheet-link assets only once, even when a component keeps its scoped `<style>` inside `<body>`.
 - Frontend extension hooks such as `confirm_dialog_after_render` and `get_tool_message_handler` must preserve their mutable context contracts.
