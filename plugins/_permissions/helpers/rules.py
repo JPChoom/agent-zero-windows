@@ -80,7 +80,7 @@ _READ_ACTIONS = {
     "skills": {"list", "search", "read_file"},
     "ytdlp": {"info", "formats"},
     "desktop_control": {"focus"},
-    "computer_use": {"apps", "windows", "inspect", "screenshot", "status"},
+    "computer_use": {"apps", "windows", "inspect", "screenshot", "status", "hand_over"},
     "skill_learn": {"list"},
     "windows_setting": {"list", "get"},
 }

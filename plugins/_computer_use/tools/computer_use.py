@@ -59,6 +59,7 @@ class ComputerUse(Tool):
             "menu": self._menu,
             "focus": self._focus,
             "close": self._close,
+            "hand_over": self._hand_over,
             "stop_driver": self._stop_driver,
         }
         handler = handlers.get(action)
@@ -120,11 +121,15 @@ class ComputerUse(Tool):
             return ""
         return ""
 
+    def _context_id(self) -> str:
+        return str(getattr(self.agent.context, "id", ""))
+
     def _owned(self, pid) -> bool:
-        """Whether this chat owns the app: it launched it (or a parallel worker
-        it started did) and that same process is still running. Ownership lives
-        in helpers/workspace.py so it survives a worker's temporary context."""
-        return workspace.owns_app(str(getattr(self.agent.context, "id", "")), pid)
+        """Whether this agent owns the app: it (or a sub-agent under it, or a
+        parallel job it started) launched it and that same process is still
+        running. Apps of the agents above it are not its own. Ownership lives in
+        helpers/workspace.py so it survives a worker's temporary context."""
+        return workspace.owns_app(self._context_id(), pid, int(getattr(self.agent, "number", 0) or 0))
 
     async def _guard(self, action: str, pid, *, keys=None, element_label: str = "",
                      foreground: bool = False, args: dict | None = None) -> None:
@@ -138,7 +143,11 @@ class ComputerUse(Tool):
         if pid in (None, ""):
             reasons.append("it acts on the whole desktop rather than a window the agent opened")
         elif not self._owned(pid):
-            reasons.append(f"{proc or 'pid ' + str(pid)} was not opened by the agent in this chat, so it may hold the user's own work")
+            entry = workspace.find_app(pid)
+            if entry and entry.state == workspace.ACTIVE and entry.owner_context == self._context_id():
+                reasons.append(f"{proc or 'pid ' + str(pid)} belongs to {entry.owner_agent or 'A0'}, an agent above this one in the chat")
+            else:
+                reasons.append(f"{proc or 'pid ' + str(pid)} was not opened by the agent in this chat, so it may hold the user's own work")
         if foreground:
             reasons.append("foreground delivery takes focus and moves the real pointer")
         if action == "hotkey" and policy.risky_hotkey(keys):
@@ -402,6 +411,24 @@ class ComputerUse(Tool):
         data = await self._call("kill_app", {"pid": int(pid)})
         workspace.forget_app(pid)
         return self._msg(self._summary(data))
+
+    async def _hand_over(self, cfg, pid=None, to="", **kwargs) -> Response:
+        """Give an app this agent owns to a sub-agent below it (bookkeeping only:
+        nothing is sent to the app), so the sub-agent can work in it without
+        an approval for every input."""
+        if pid in (None, "") or not str(to or "").strip():
+            raise RepairableException("hand_over needs `pid` and `to` (a sub-agent such as A1).")
+        names = {a.agent_name for a in workspace.iter_agents(self.agent.context)}
+        target = f"A{workspace.agent_number(to)}"
+        if target not in names:
+            raise RepairableException(
+                f"{to} is not an agent in this chat. Start the sub-agent first (call_subordinate), then hand it over."
+            )
+        try:
+            entry = workspace.hand_over(self._context_id(), pid, int(getattr(self.agent, "number", 0) or 0), target)
+        except ValueError as exc:
+            raise RepairableException(f"[computer_use] {exc}")
+        return self._msg(f"{entry.label} (pid {pid}) now belongs to {target}; you still own it too.")
 
     async def _stop_driver(self, cfg, **kwargs) -> Response:
         return self._msg(driver.stop(driver.find_executable(cfg)) or "Stopped.")

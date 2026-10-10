@@ -41,7 +41,18 @@
                 <div class="ws-main">
                   <div class="ws-label">
                     <span class="ws-name" x-text="item.label"></span>
-                    <span class="ws-tag" x-show="item.owner_agent" x-text="item.owner_agent" title="The agent that owns it"></span>
+                    <template x-if="ws.agentsOf(item).length > 1">
+                      <select class="ws-owner" :value="item.owner_agent || 'A0'" :disabled="ws.busy"
+                              title="Which agent owns it: it and the agents above it may use it without asking"
+                              @change="ws.assign(item, $event.target.value)">
+                        <template x-for="name in ws.agentsOf(item)" :key="name">
+                          <option :value="name" :selected="name === (item.owner_agent || 'A0')" x-text="name"></option>
+                        </template>
+                      </select>
+                    </template>
+                    <template x-if="ws.agentsOf(item).length <= 1">
+                      <span class="ws-tag" x-show="item.owner_agent" x-text="item.owner_agent" title="The agent that owns it"></span>
+                    </template>
                     <span class="ws-tag ws-tag-warn" x-show="item.state === 'orphaned'">orphaned</span>
                   </div>
                   <div class="ws-detail" x-show="item.detail || item.note" x-text="[item.detail, item.note].filter(Boolean).join('  -  ')"></div>
@@ -136,12 +147,17 @@
     .ws-kind { opacity: 0.75; flex: 0 0 auto; }
     .ws-main { flex: 1 1 auto; min-width: 0; }
     .ws-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .ws-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ws-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 40px; }
     .ws-detail { font-size: 0.76rem; opacity: 0.65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ws-age { font-size: 0.76rem; opacity: 0.6; white-space: nowrap; }
     .ws-tag {
       flex: 0 0 auto; padding: 0 7px; border-radius: 999px; font-size: 0.7rem; line-height: 1.5;
       background: color-mix(in srgb, var(--color-primary) 18%, transparent); color: var(--color-primary);
+    }
+    .ws-owner {
+      flex: 0 0 auto; width: auto !important; min-width: 0; max-width: 72px; height: 22px; padding: 0 4px; border-radius: 999px; font: inherit; font-size: 0.72rem;
+      border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent); color: var(--color-primary);
+      background: color-mix(in srgb, var(--color-primary) 12%, transparent); cursor: pointer;
     }
     .ws-tag-warn { background: color-mix(in srgb, var(--color-warning, #eab308) 20%, transparent); color: var(--color-warning, #eab308); }
     .ws-actions { display: flex; gap: 4px; flex: 0 0 auto; }

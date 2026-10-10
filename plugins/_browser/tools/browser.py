@@ -26,6 +26,18 @@ async def get_runtime(context_id: str, create: bool = True, agent: Any | None = 
 
 
 class Browser(Tool):
+    def _record_opener(self, result) -> None:
+        """Remember which agent opened the tab, for the Workspace view only;
+        it must never affect the browser action itself."""
+        try:
+            from plugins._browser.helpers import workspace_provider
+
+            workspace_provider.record_opener(
+                self.agent.context.id, (result or {}).get("id"), getattr(self.agent, "agent_name", "")
+            )
+        except Exception:
+            pass
+
     async def execute(
         self,
         action: str = "",
@@ -88,6 +100,7 @@ class Browser(Tool):
         try:
             if action == "open":
                 result = await runtime.call("open", url or "")
+                self._record_opener(result)
             elif action == "screenshot":
                 result = await runtime.call(
                     "screenshot_file",

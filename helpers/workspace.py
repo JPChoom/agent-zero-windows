@@ -14,6 +14,12 @@ context ends, what it launched passes to the chat that started it; when a
 normal chat is deleted its apps are marked orphaned (still running, listed,
 never closed automatically: they may hold unsaved work).
 
+Inside one chat, agents form a chain (A0 delegates to A1, A1 to A2, ...).
+An agent owns the apps it launched and those of the sub-agents under it, but
+not those of the agents above it: a sub-agent must be handed a superior's
+app (`hand_over`) or ask the user. A replaced sub-agent's apps pass up to
+its superior.
+
 Process ids are reused by Windows, so every app entry records the process's
 start time and is trusted only while that same process is still running.
 """
@@ -38,6 +44,8 @@ PROVIDERS = (
 )
 
 PARALLEL_PARENT_KEY = "_parallel_parent_context_id"  # helpers.parallel_tools
+PARALLEL_PARENT_AGENT_KEY = "_parallel_parent_agent"  # helpers.parallel_tools
+MAIN_AGENT = "A0"
 MAX_ENTRIES = 500
 
 _lock = threading.RLock()
@@ -146,10 +154,68 @@ def find_app(pid) -> Resource | None:
     return None
 
 
-def owns_app(context_id: str, pid) -> bool:
-    """Whether this chat owns the (still running) app with that pid."""
+def agent_number(name) -> int:
+    """`A3` -> 3. An empty or unknown owner counts as the chat's main agent (0)."""
+    text = str(name or "").strip().upper()
+    return int(text[1:]) if text.startswith("A") and text[1:].isdigit() else 0
+
+
+def owns_app(context_id: str, pid, agent_no: int | None = None) -> bool:
+    """Whether this chat owns the (still running) app with that pid. With
+    `agent_no`, whether that agent does: it owns its own apps and those of the
+    sub-agents under it (higher numbers), never those of agents above it."""
     resource = find_app(pid)
-    return bool(resource and resource.state == ACTIVE and resource.owner_context == context_id)
+    if not (resource and resource.state == ACTIVE and resource.owner_context == context_id):
+        return False
+    return agent_no is None or agent_number(resource.owner_agent) >= int(agent_no)
+
+
+def hand_over(context_id: str, pid, from_no: int, to_name: str, by: str = "") -> Resource:
+    """An agent gives one of its apps to a sub-agent below it in the same chat.
+    Raises ValueError when it may not."""
+    resource = find_app(pid)
+    if not owns_app(context_id, pid, from_no):
+        raise ValueError("Only an app you (or a sub-agent of yours) launched can be handed over.")
+    if agent_number(to_name) <= int(from_no):
+        raise ValueError("Hand an app only to a sub-agent below you; the agents above you already own it.")
+    with _lock:
+        previous = resource.owner_agent
+        resource.owner_agent = f"A{agent_number(to_name)}"
+        resource.changed_at = time.time()
+        resource.note = f"Handed to {resource.owner_agent} by A{int(from_no)}"
+    _audit("workspace_handover", by=by or f"A{int(from_no)}", resource=resource.id, label=resource.label,
+           pid=resource.handle.get("pid"), context=context_id, from_agent=previous, to_agent=resource.owner_agent)
+    return resource
+
+
+def pass_up(context_id: str, from_no: int) -> int:
+    """Sub-agent `from_no` (and those below it) is being replaced: its apps
+    pass to the agent above it."""
+    to_name = f"A{max(0, int(from_no) - 1)}"
+    moved = 0
+    with _lock:
+        for resource in _resources.values():
+            if (resource.owner_context == context_id and resource.state == ACTIVE
+                    and agent_number(resource.owner_agent) >= int(from_no)):
+                resource.owner_agent, resource.changed_at = to_name, time.time()
+                resource.note = f"Passed up to {to_name} when its sub-agent was replaced"
+                moved += 1
+    return moved
+
+
+def assign(resource_id: str, context_id: str, agent_name: str, by: str = "") -> Resource | None:
+    """The user moves an app to another agent of the chat that owns it."""
+    with _lock:
+        resource = _resources.get(resource_id)
+        if not resource or resource.owner_context != context_id or _same_process(resource.handle) is False:
+            return None
+        previous = resource.owner_agent
+        resource.owner_agent = f"A{agent_number(agent_name)}"
+        resource.state, resource.changed_at = ACTIVE, time.time()
+        resource.note = f"Given to {resource.owner_agent} by the user"
+    _audit("workspace_assign", by=by or "local", resource=resource_id, label=resource.label,
+           pid=resource.handle.get("pid"), context=context_id, from_agent=previous, to_agent=resource.owner_agent)
+    return resource
 
 
 def forget_app(pid) -> None:
@@ -187,20 +253,27 @@ def apps(context_id: str | None = None) -> list[Resource]:
 
 def parent_context_id(context_id: str) -> str:
     """The chat that started this context as a parallel worker, if it is still alive."""
+    return _parent_of(context_id)[0]
+
+
+def _parent_of(context_id: str) -> tuple[str, str]:
+    """(parent chat id, agent in it that started the job) for a parallel worker."""
     try:
         from agent import AgentContext
 
         context = AgentContext.get(context_id)
         parent_id = context.get_data(PARALLEL_PARENT_KEY) if context else None
-        return parent_id if parent_id and AgentContext.get(parent_id) else ""
+        if parent_id and AgentContext.get(parent_id):
+            return parent_id, str(context.get_data(PARALLEL_PARENT_AGENT_KEY) or MAIN_AGENT)
     except Exception:
-        return ""
+        pass
+    return "", ""
 
 
 def release_context(context_id: str) -> dict:
     """A context is ending. A parallel worker's apps pass to the chat that
     started it; any other chat's apps become orphans (kept running)."""
-    parent = parent_context_id(context_id)
+    parent, parent_agent = _parent_of(context_id)
     handed = orphaned = 0
     with _lock:
         for resource in list(_resources.values()):
@@ -211,11 +284,11 @@ def release_context(context_id: str) -> dict:
                 continue
             resource.changed_at = time.time()
             if parent:
-                resource.owner_context, resource.owner_agent = parent, ""
-                resource.note = f"Handed over when {resource.origin_agent or 'a worker'}'s parallel job ended"
+                resource.owner_context, resource.owner_agent = parent, parent_agent
+                resource.note = f"Handed back to {parent_agent} when its parallel job ended"
                 handed += 1
                 _audit("workspace_handover", resource=resource.id, kind=resource.kind, label=resource.label,
-                       pid=resource.handle.get("pid"), from_context=context_id, to_context=parent)
+                       pid=resource.handle.get("pid"), from_context=context_id, to_context=parent, to_agent=parent_agent)
             else:
                 resource.state = ORPHANED
                 resource.note = "Its chat was deleted; the app is still running"
@@ -225,7 +298,7 @@ def release_context(context_id: str) -> dict:
     return {"handed_over": handed, "orphaned": orphaned, "to": parent}
 
 
-def adopt(resource_id: str, context_id: str, agent_name: str = "", by: str = "") -> Resource | None:
+def adopt(resource_id: str, context_id: str, agent_name: str = MAIN_AGENT, by: str = "") -> Resource | None:
     """Give a listed app to a chat (the user does this from the Workspace view)."""
     with _lock:
         resource = _resources.get(resource_id)
@@ -233,7 +306,7 @@ def adopt(resource_id: str, context_id: str, agent_name: str = "", by: str = "")
             _resources.pop(resource_id, None)
             return None
         previous = resource.owner_context
-        resource.owner_context, resource.owner_agent = context_id, agent_name
+        resource.owner_context, resource.owner_agent = context_id, f"A{agent_number(agent_name)}"
         resource.state, resource.changed_at = ACTIVE, time.time()
         resource.note = "Adopted by the user"
     _audit("workspace_adopt", by=by or "local", resource=resource_id, label=resource.label,
@@ -271,9 +344,13 @@ def iter_agents(context):
 
 
 def end_agent(agent) -> None:
-    """An agent (and its subordinates) is being replaced: let each provider end
-    what it opened now (terminal shells), instead of whenever garbage
-    collection runs. Never raises."""
+    """An agent (and its subordinates) is being replaced: its apps pass up to
+    the agent above it, and each provider ends what it opened (terminal
+    shells) now instead of whenever garbage collection runs. Never raises."""
+    try:
+        pass_up(str(agent.context.id), int(agent.number))
+    except Exception:
+        pass
     for module_name in PROVIDERS:
         try:
             end = getattr(importlib.import_module(module_name), "end_agent", None)
@@ -306,4 +383,19 @@ async def snapshot() -> dict:
         except Exception:
             continue
     contexts = sorted({str(i.get("owner_context") or "") for i in items} - {""})
-    return {"resources": items, "contexts": {cid: context_label(cid) for cid in contexts}}
+    return {
+        "resources": items,
+        "contexts": {cid: context_label(cid) for cid in contexts},
+        "agents": {cid: agent_names(cid) for cid in contexts},
+    }
+
+
+def agent_names(context_id: str) -> list[str]:
+    """The agent chain of a chat (A0, A1, ...), empty when the chat is gone."""
+    try:
+        from agent import AgentContext
+
+        context = AgentContext.get(context_id)
+        return [a.agent_name for a in iter_agents(context)] if context else []
+    except Exception:
+        return []

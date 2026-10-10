@@ -6,7 +6,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ### New
 - **File Browser rebuilt** as a Windows Explorer-style browser (address bar, Quick access, drives, sorting, multi-select, shortcuts, cut/copy/paste, drag-and-drop upload of files and folders, drag-out download, previews, built-in text editor, Recycle Bin deletes, ZIP downloads). *Settings > Security* chooses what it may open (Agent Zero user folder, Agent Zero folder, or the whole Windows drive; other and removable drives separately; a stricter limit for remote sessions); Agent Zero's own secrets are never shown. The old work-dir file endpoints were removed.
-- **Agent Workspace**: a Workspace view of which agent owns which apps, terminals and browser tabs, with Adopt / Release / Close.
+- **Agent Workspace**: a Workspace view of which agent owns which apps, terminals and browser tabs, with Adopt / Release / Close and an owner picker. Inside a chat, ownership follows the agent chain: an agent may use its own and its sub-agents' apps without asking, but must be handed (`computer_use` `hand_over`) or ask before using a superior's. A replaced sub-agent's apps pass up; a parallel job's apps go back to the agent that started it. Browser tabs show which agent opened them.
 
 ### Fixed
 - An app a parallel agent launched through Computer Use was forgotten when the job ended, so the chat that started the job could not close it or type into it without an approval, and nothing listed it. Apps now pass to that chat; deleted chats leave their apps listed as orphans (never closed automatically).

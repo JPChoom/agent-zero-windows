@@ -21,6 +21,8 @@
 
 ## Runtime Contracts
 
+- `ParallelJob.parent_agent` is the agent (A0, A1, ...) that started the job; both worker runners store it in the worker context as `PARALLEL_WORKER_PARENT_AGENT_KEY`, so `helpers/workspace.py` can hand the worker's apps back to that agent when its context ends.
+
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Wrapped tool-call items must use the same shape as normal tool calls: a tool name plus arguments.
 - Normalization accepts full agent-reply-shaped objects when `tool_name` and `tool_args` are present; non-contract planning fields such as `thoughts` or `headline` are ignored.

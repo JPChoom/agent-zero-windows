@@ -16,7 +16,8 @@
 - Group by chat, current chat first; orphaned apps (their chat was deleted) form their own group on top.
 - Closing an app asks first, is disabled while Computer Use input is off, and the explanation is shown; apps are never closed automatically.
 - Releasing explains that the app becomes the user's own again.
-- Adopt is offered only for apps and only when a chat is open; it assigns the app to that chat.
+- Adopt is offered only for apps and only when a chat is open; it assigns the app to that chat's A0.
+- When the owning chat has more than one agent, an app's owner chip is a picker (`assign`); the tooltip explains that the owner and the agents above it may use it without asking.
 - Keep the A0W look of the File Browser (same command bar / status bar language); narrow containers stack row actions under the row.
 
 ## Verification

@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 
 # Actions that only look. Everything else changes the desktop.
-READ_ACTIONS = frozenset({"apps", "windows", "inspect", "screenshot", "status"})
+# hand_over only changes which agent owns an app (helpers/workspace.py); nothing reaches the app.
+READ_ACTIONS = frozenset({"apps", "windows", "inspect", "screenshot", "status", "hand_over"})
 
 # Actions that send input into a window.
 INPUT_ACTIONS = frozenset({"type", "key", "hotkey", "set_value"})

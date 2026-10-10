@@ -11,6 +11,7 @@ const KIND_NAMES = { app: "Apps", terminal: "Terminals", browser: "Browser tabs"
 export const store = createStore("workspace", {
   resources: [],
   contexts: {},
+  agents: {},
   controlEnabled: false,
   loaded: false,
   error: "",
@@ -44,6 +45,7 @@ export const store = createStore("workspace", {
   _apply(state) {
     this.resources = state.resources || [];
     this.contexts = state.contexts || {};
+    this.agents = state.agents || {};
     this.controlEnabled = Boolean(state.control_enabled);
     this.loaded = true;
     this.error = "";
@@ -116,6 +118,17 @@ export const store = createStore("workspace", {
     if (seconds < 5400) return `${Math.round(seconds / 60)} min`;
     if (seconds < 172800) return `${Math.round(seconds / 3600)} h`;
     return `${Math.round(seconds / 86400)} d`;
+  },
+
+  // The agents of the chat that owns an app (A0, A1, ...); a picker is shown
+  // when there is more than one, so the user can move the app between them.
+  agentsOf(item) {
+    return item.kind === "app" && item.state === "active" ? this.agents[item.owner_context] || [] : [];
+  },
+
+  assign(item, agent) {
+    if (!agent || agent === item.owner_agent) return;
+    return this.run("Workspace", "assign", { id: item.id, agent });
   },
 
   canAdopt(item) {

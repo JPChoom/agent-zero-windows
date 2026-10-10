@@ -4,4 +4,5 @@ args: `action`, optional `pid`, `window_id`, `element_token`, `text`, `value`, `
 look: `apps`, `windows`, `inspect` (`token | role | label | value`), `screenshot`; act (pass `pid`): `launch` (`app`), `click`/`set_value` (`element_token`), `type`, `key`, `hotkey`, `scroll`, `menu` (`path`), `focus`, `close` (own apps)
 - inspect, act by token, inspect again; tokens expire at the next inspect
 - an already-running app is the user's (unsaved work): prefer windows you launched; acting on theirs asks them
+- before delegating work in one of your apps: `hand_over` (`pid`, `to` sub-agent e.g. A1)
 - `delivery` "foreground" only after a result says background failed (asks the user); terminals, sign-in/password windows and fields are refused

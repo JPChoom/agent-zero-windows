@@ -21,6 +21,9 @@ PARALLEL_JOBS_KEY = "_parallel_jobs"
 PARALLEL_WORKER_PARENT_CONTEXT_KEY = "_parallel_parent_context_id"
 PARALLEL_WORKER_JOB_KEY = "_parallel_job_id"
 PARALLEL_WORKER_KIND_KEY = "_parallel_worker_kind"
+# The agent (A0, A1, ...) in the parent chat that started the job; apps the
+# worker launched are handed back to it when the job ends (helpers/workspace.py).
+PARALLEL_WORKER_PARENT_AGENT_KEY = "_parallel_parent_agent"
 
 CHILD_PARENT_CONTEXT_ID_KEY = "parent_context_id"
 CHILD_PARENT_CONTEXT_KIND_KEY = "parent_context_kind"
@@ -53,6 +56,7 @@ class ParallelJob:
     tool_name: str
     tool_args: dict[str, Any]
     kind: JobKind
+    parent_agent: str = ""
     state: JobState = "pending"
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
@@ -208,6 +212,7 @@ async def start_parallel_jobs(
             tool_name=call.tool_name,
             tool_args=call.tool_args,
             kind=kind,
+            parent_agent=str(getattr(agent, "agent_name", "") or ""),
         )
         job_store[job.id] = job
         jobs.append(job)
@@ -439,6 +444,7 @@ async def _run_subordinate_context_job(parent_context_id: str, job: ParallelJob)
     worker_context.set_data(PARALLEL_WORKER_PARENT_CONTEXT_KEY, parent_context.id)
     worker_context.set_data(PARALLEL_WORKER_JOB_KEY, job.id)
     worker_context.set_data(PARALLEL_WORKER_KIND_KEY, job.kind)
+    worker_context.set_data(PARALLEL_WORKER_PARENT_AGENT_KEY, job.parent_agent)
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_ID_KEY, parent_context.id)
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_KIND_KEY, "parallel")
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_LABEL_KEY, child_name)
@@ -482,6 +488,7 @@ async def _run_direct_tool_job(parent_context_id: str, job: ParallelJob) -> str:
         worker_context.set_data(PARALLEL_WORKER_PARENT_CONTEXT_KEY, parent_context_id)
         worker_context.set_data(PARALLEL_WORKER_JOB_KEY, job.id)
         worker_context.set_data(PARALLEL_WORKER_KIND_KEY, job.kind)
+        worker_context.set_data(PARALLEL_WORKER_PARENT_AGENT_KEY, job.parent_agent)
         job.worker_context_id = worker_context.id
         _copy_project(parent_context, worker_context)
 

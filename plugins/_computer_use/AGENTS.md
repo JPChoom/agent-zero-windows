@@ -18,6 +18,7 @@
 - Input needs `control_enabled` (default false) and an untripped kill switch, and is audited before it runs.
 - Policy refusals are final in every mode. Outside Bypass, input into windows the agent did not launch in this chat, foreground delivery and risky hotkeys go through `_permissions/helpers/ask.request_approval` unless the permission gate already asked for the call.
 - `launch` passes `creates_new_application_instance: true` and marks a pid as owned only when it was not running before the launch.
+- Ownership follows the agent chain of the chat (`helpers/workspace.owns_app` with the agent's number): an agent may act without the extra approval on apps it or a sub-agent under it launched; a superior's app asks, with that reason. `hand_over` (`pid`, `to`) gives an owned app to a sub-agent below; it is bookkeeping only (nothing reaches the app), so it is a read action in `policy.READ_ACTIONS` and `_permissions` `_READ_ACTIONS`.
 - `close` only ends owned pids. Screenshots go to `tmp/computer_use/`, never into the chat as base64.
 
 ## Work Guidance

@@ -9,6 +9,7 @@ class WorkspaceApi(ApiHandler):
     actions:
       list                       -> {resources, contexts, control_enabled}
       adopt {id, context_id}     -> give a tracked app to a chat
+      assign {id, agent}         -> move a tracked app to another agent (A0, A1, ...) of its chat
       release {id}               -> stop tracking an app (it is "the user's" again)
       close {id}                 -> end an app (needs Computer Use input enabled and
                                     the kill switch untripped, audited) or a terminal
@@ -32,6 +33,16 @@ class WorkspaceApi(ApiHandler):
                 return {"ok": False, "error": "Choose an open chat to give it to."}
             if not workspace.adopt(rid, context_id, by=who):
                 return {"ok": False, "error": "That app is no longer running."}
+            return {"ok": True, **await self._state()}
+
+        if action == "assign":
+            entry = next((r for r in workspace.apps() if r.id == rid), None)
+            agent = str(input.get("agent") or "")
+            if entry is None:
+                return {"ok": False, "error": "That app is no longer running or no longer tracked."}
+            if f"A{workspace.agent_number(agent)}" not in workspace.agent_names(entry.owner_context):
+                return {"ok": False, "error": f"{agent or 'That agent'} is not an agent of the chat that owns this app."}
+            workspace.assign(rid, entry.owner_context, agent, by=who)
             return {"ok": True, **await self._state()}
 
         if action == "release":

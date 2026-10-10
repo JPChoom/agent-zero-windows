@@ -117,7 +117,7 @@ def test_a_worker_ending_hands_its_apps_to_the_chat_that_started_the_job(proc, c
     assert workspace.owns_app(parent.id, p.pid)
     [entry] = workspace.apps()
     assert entry.state == workspace.ACTIVE and entry.origin_context == worker.id and "job-1" == entry.origin_job
-    assert "Handed over" in entry.note and p.poll() is None  # never closed
+    assert entry.owner_agent == "A0" and "Handed back to A0" in entry.note and p.poll() is None  # never closed
 
 
 def test_a_deleted_chat_orphans_its_apps_without_closing_them(proc, contexts):
@@ -425,3 +425,199 @@ async def test_api_closes_a_terminal_and_rejects_unknown_actions(api, contexts):
     result = await api.call(action="close", id=f"terminal:{chat.id}:0:0")
     assert result["ok"] and shells[0].session.closed == 1
     assert (await api.call(action="explode"))["ok"] is False
+
+
+# -- phase 2: ownership along the agent chain inside one chat -----------------------
+
+def _chain(contexts, depth=2):
+    """A chat whose A0 has delegated to A1 (and A1 to A2, ...)."""
+    from agent import Agent
+    from initialize import initialize_agent
+
+    chat = contexts("chat")
+    agents = [chat.agent0]
+    for number in range(1, depth):
+        sub = Agent(number, initialize_agent(), chat)
+        agents[-1].set_data(Agent.DATA_NAME_SUBORDINATE, sub)
+        agents.append(sub)
+    return chat, agents
+
+
+def test_an_agent_owns_its_sub_agents_apps_but_not_those_above_it(proc, contexts):
+    chat, _ = _chain(contexts, 3)
+    p = proc()
+    workspace.register_app(p.pid, "excel", context_id=chat.id, agent_name="A1")
+    assert workspace.owns_app(chat.id, p.pid, 0)  # A0 supervises A1
+    assert workspace.owns_app(chat.id, p.pid, 1)
+    assert not workspace.owns_app(chat.id, p.pid, 2)  # A2 must be handed it
+    assert workspace.owns_app(chat.id, p.pid)  # chat-level question
+
+
+def test_hand_over_gives_an_app_to_a_sub_agent_and_only_downwards(proc, contexts):
+    chat, _ = _chain(contexts, 3)
+    p, q = proc(), proc()
+    workspace.register_app(p.pid, "excel", context_id=chat.id, agent_name="A0")
+    workspace.register_app(q.pid, "notes", context_id=chat.id, agent_name="A1")
+
+    entry = workspace.hand_over(chat.id, p.pid, 0, "A2")
+    assert entry.owner_agent == "A2" and "Handed to A2 by A0" in entry.note
+    assert workspace.owns_app(chat.id, p.pid, 2) and workspace.owns_app(chat.id, p.pid, 0)
+
+    with pytest.raises(ValueError, match="sub-agent below you"):
+        workspace.hand_over(chat.id, q.pid, 1, "A0")  # upwards: A0 already owns it
+    with pytest.raises(ValueError, match="Only an app you"):
+        workspace.hand_over(chat.id, q.pid, 2, "A3")  # A2 does not own A1's app
+
+
+def test_a_replaced_sub_agents_apps_pass_up_to_its_superior(proc, contexts):
+    chat, agents = _chain(contexts, 3)
+    mine, theirs, deeper = proc(), proc(), proc()
+    workspace.register_app(mine.pid, "a0 app", context_id=chat.id, agent_name="A0")
+    workspace.register_app(theirs.pid, "a1 app", context_id=chat.id, agent_name="A1")
+    workspace.register_app(deeper.pid, "a2 app", context_id=chat.id, agent_name="A2")
+
+    workspace.end_agent(agents[1])  # call_subordinate(reset=true) replacing A1
+
+    owners = {r.label: r.owner_agent for r in workspace.apps()}
+    assert owners == {"a0 app": "A0", "a1 app": "A0", "a2 app": "A0"}
+    assert not workspace.owns_app(chat.id, theirs.pid, 1)  # the new A1 does not inherit them
+
+
+def test_a_parallel_job_hands_apps_back_to_the_agent_that_started_it(proc, contexts):
+    from agent import AgentContext
+
+    parent = contexts("parent")
+    worker = contexts("worker", parent)
+    worker.set_data(workspace.PARALLEL_PARENT_AGENT_KEY, "A1")
+    p = proc()
+    workspace.register_app(p.pid, "calc", context_id=worker.id, agent_name="A0")
+    AgentContext.remove(worker.id)
+    [entry] = workspace.apps()
+    assert entry.owner_context == parent.id and entry.owner_agent == "A1"
+    assert "Handed back to A1" in entry.note
+
+
+@pytest.mark.asyncio
+async def test_parallel_workers_record_which_agent_started_them(contexts, monkeypatch):
+    from helpers import parallel_tools
+
+    parent = contexts("parent")
+    seen = {}
+
+    async def fake_execute(agent, tool_name, tool_args):
+        seen["agent"] = agent.context.get_data(parallel_tools.PARALLEL_WORKER_PARENT_AGENT_KEY)
+        return "done"
+
+    monkeypatch.setattr(parallel_tools, "execute_tool_call", fake_execute)
+    job = parallel_tools.ParallelJob(id="job-x", parent_context_id=parent.id, index=0, tool_name="noop",
+                                     tool_args={}, kind="tool", parent_agent="A2")
+    assert await parallel_tools._run_direct_tool_job(parent.id, job) == "done"
+    assert seen["agent"] == "A2"
+
+
+@pytest.fixture
+def cu(monkeypatch):
+    """The real computer_use tool with the driver, approvals and audit faked."""
+    from plugins._computer_use.tools import computer_use as mod
+    import plugins._permissions.helpers.ask as ask_mod
+    import plugins._permissions.helpers.config as perm
+    from plugins._permissions.helpers import rules
+
+    approvals, calls = [], []
+
+    async def fake_call(agent, tool, args):
+        calls.append(tool)
+        if tool == "list_windows":
+            return {"windows": [{"pid": args.get("pid"), "app_name": "EXCEL.EXE"}]}
+        return {"summary": "ok"}
+
+    async def fake_approval(agent, tool_name, args, reason, mode, timeout, offer_rules=True):
+        approvals.append(reason)
+
+    async def noop(record):
+        return None
+
+    monkeypatch.setattr(mod.driver, "call", fake_call)
+    monkeypatch.setattr(mod.driver, "get_config", lambda agent=None: {**mod.driver.DEFAULTS, "control_enabled": True})
+    monkeypatch.setattr(mod.audit_log, "append_record", noop)
+    monkeypatch.setattr(mod.kill_switch, "is_tripped", lambda: False)
+    monkeypatch.setattr(ask_mod, "request_approval", fake_approval)
+    monkeypatch.setattr(perm, "get_config", lambda agent=None: {"mode": "auto", "ruleset": rules.Ruleset(), "approval_timeout_seconds": 5})
+
+    def tool(agent):
+        return mod.ComputerUse(agent=agent, name="computer_use", method=None, args={}, message="", loop_data=None)
+
+    return SimpleNamespace(tool=tool, approvals=approvals, calls=calls)
+
+
+@pytest.mark.asyncio
+async def test_a_sub_agent_asks_before_typing_into_its_superiors_app_until_handed_it(proc, contexts, cu):
+    chat, (a0, a1) = _chain(contexts, 2)
+    p = proc()
+    workspace.register_app(p.pid, "excel", context_id=chat.id, agent_name="A0")
+
+    await cu.tool(a1).execute(action="type", pid=p.pid, text="42")
+    assert cu.approvals and "belongs to A0, an agent above this one" in cu.approvals[0]
+
+    cu.approvals.clear()
+    await cu.tool(a0).execute(action="type", pid=p.pid, text="42")  # its own app
+    assert cu.approvals == []
+
+    resp = await cu.tool(a0).execute(action="hand_over", pid=p.pid, to="A1")
+    assert "now belongs to A1" in resp.message and "type_text" in cu.calls
+    await cu.tool(a1).execute(action="type", pid=p.pid, text="43")
+    assert cu.approvals == []
+
+
+@pytest.mark.asyncio
+async def test_hand_over_rejects_unknown_agents_and_needs_no_input_permission(proc, contexts, cu, monkeypatch):
+    from plugins._computer_use.helpers import policy
+    from plugins._computer_use.tools import computer_use as mod
+    from plugins._permissions.helpers import rules
+    from helpers.errors import RepairableException
+
+    chat, (a0, _) = _chain(contexts, 2)
+    p = proc()
+    workspace.register_app(p.pid, "excel", context_id=chat.id, agent_name="A0")
+    monkeypatch.setattr(mod.driver, "get_config", lambda agent=None: dict(mod.driver.DEFAULTS))  # input off
+
+    assert "hand_over" in policy.READ_ACTIONS
+    assert rules.decide("computer_use", {"action": "hand_over"}, "plan").decision == "allow"
+    with pytest.raises(RepairableException, match="not an agent in this chat"):
+        await cu.tool(a0).execute(action="hand_over", pid=p.pid, to="A5")
+    resp = await cu.tool(a0).execute(action="hand_over", pid=p.pid, to="A1")  # bookkeeping only
+    assert "now belongs to A1" in resp.message
+
+
+@pytest.mark.asyncio
+async def test_browser_tabs_show_which_agent_opened_them(contexts, monkeypatch):
+    from plugins._browser.helpers import runtime
+    from plugins._browser.helpers import workspace_provider as wp
+
+    chat = contexts("chat")
+    wp._openers.clear()
+    wp.record_opener(chat.id, 1, "A1")
+    wp.record_opener(chat.id, 9, "A0")  # a tab that has since closed
+    monkeypatch.setattr(runtime, "peek_pages", lambda: [
+        {"context_id": chat.id, "browser_id": 1, "url": "https://example.com/"},
+        {"context_id": chat.id, "browser_id": 2, "url": "https://example.com/popup"},
+    ])
+    owners = {r["id"]: r["owner_agent"] for r in await wp.resources()}
+    assert owners == {f"browser:{chat.id}:1": "A1", f"browser:{chat.id}:2": ""}
+    assert (chat.id, 9) not in wp._openers
+
+
+@pytest.mark.asyncio
+async def test_api_assign_moves_an_app_to_another_agent_of_its_chat(api, proc, contexts):
+    chat, _ = _chain(contexts, 2)
+    p = proc()
+    entry = workspace.register_app(p.pid, "excel", context_id=chat.id, agent_name="A0")
+
+    listed = await api.call(action="list")
+    assert listed["agents"][chat.id] == ["A0", "A1"]
+
+    assert "not an agent" in (await api.call(action="assign", id=entry.id, agent="A7"))["error"]
+    result = await api.call(action="assign", id=entry.id, agent="A1")
+    assert result["ok"] and workspace.apps()[0].owner_agent == "A1"
+    assert ("workspace_assign", "local") in api.events
+    assert "no longer" in (await api.call(action="assign", id="res-gone", agent="A0"))["error"]
