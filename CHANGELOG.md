@@ -7,6 +7,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 ### Security
 - Remote (tunnel) access is refused while no WebUI login is set, even from an allowlisted address, and Remote Control cannot be started without one: without a login nothing asks for authentication.
 - WebSocket connections that are not signed in are refused at connect, before they are registered or see any server or connection details.
+- The `input` tool, which types into the same terminal as `code_execution_tool`, now passes the command safety floor too. Before, a denied command sent through it ran unchecked in Auto or Bypass mode.
 - Telegram webhook mode always uses a secret (a random one when none is configured), and updates without the matching secret are refused.
 - The access log stores header values only for a list of known-safe headers; any other header (for example a custom one carrying a token) is recorded as present only. Secret-looking query values in the referer are redacted too.
 

@@ -1,5 +1,6 @@
 """Denies or holds-for-approval destructive/high-risk code_execution_tool
-calls before they run.
+calls (and `input` tool keystrokes, which reach the same shell) before
+they run.
 
 Fires on tool_execute_before - the same, already-proven interception point
 used by extensions/python/tool_execute_before/_20_block_parallel_recursion.py
@@ -45,11 +46,28 @@ def _format_network_destination_note(decision) -> str:
     return f" Destination host: {decision.network_destination} ({known})."
 
 
+def _as_code_execution(tool_name: str, tool_args: dict) -> dict | None:
+    """The call as code_execution_tool arguments, or None if it runs no code.
+
+    Every tool that sends text to a shell must be classified here, or it is
+    a way around this floor: the separate `input` tool types `keyboard` into
+    the same terminal session that code_execution_tool's runtime=input does.
+    """
+    if tool_name == "code_execution_tool":
+        return tool_args
+    if tool_name == "input":
+        return {"runtime": "terminal", "code": str(tool_args.get("keyboard", ""))}
+    return None
+
+
 class SafetyCommandPolicy(Extension):
     FAIL_LOUD = True  # its refusal is a raised exception; isolating it would let the command run
 
     async def execute(self, tool_name: str = "", tool_args: dict | None = None, **kwargs):
-        if tool_name != "code_execution_tool" or not self.agent or not tool_args:
+        if not self.agent or not tool_args:
+            return
+        tool_args = _as_code_execution(tool_name, tool_args)
+        if tool_args is None:
             return
 
         runtime = str(tool_args.get("runtime", "")).strip().lower()

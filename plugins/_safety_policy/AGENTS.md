@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- Own the deterministic deny/approve floor for high-risk `code_execution_tool` calls, the download-host allowlist, and the shared Allow/Deny approval registry.
+- Own the deterministic deny/approve floor for high-risk `code_execution_tool` calls (and `input` tool keystrokes, which reach the same shell; `_as_code_execution` in `_05_command_policy.py` must classify every tool that sends text to a shell), the download-host allowlist, and the shared Allow/Deny approval registry.
 
 ## Ownership
 
