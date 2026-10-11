@@ -28,6 +28,64 @@
         </template>
 
 
+        <!-- Single model -->
+        <div class="model-section">
+          <div class="section-title">Single model</div>
+          <div class="section-description">Use the Main model for everything: the Utility model setting is ignored and there is no separate vision model (the Main model's own vision setting decides). Embeddings stay separate. Handy with one local model (LM Studio or the llama.cpp server).</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Use the Main model for all slots</div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="config.single_model_mode" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sampling -->
+        <template x-if="config.sampling">
+        <div class="model-section">
+          <div class="section-title">Sampling</div>
+          <div class="section-description">For the Main and Utility models. Leave a value empty to use the provider's default. Values set in a model's own extra parameters win. Top K and repeat penalty only reach local servers (llama.cpp, LM Studio, Ollama, vLLM).</div>
+          <template x-for="item in [
+              { key: 'temperature', title: 'Temperature', hint: 'Lower = more focused, higher = more varied (0-2).', step: '0.05' },
+              { key: 'top_p', title: 'Top P', hint: 'Nucleus sampling (0-1).', step: '0.01' },
+              { key: 'top_k', title: 'Top K', hint: 'Consider only the K most likely tokens.', step: '1' },
+              { key: 'repeat_penalty', title: 'Repeat penalty', hint: 'Above 1 discourages repetition.', step: '0.05' }
+            ]" :key="item.key">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title" x-text="item.title"></div>
+                <div class="field-description" x-text="item.hint"></div>
+              </div>
+              <div class="field-control" style="display:flex;gap:10px;align-items:center">
+                <input type="number" min="0" :step="item.step" placeholder="default" x-model="config.sampling[item.key]" style="max-width:120px" />
+                <label class="sampling-lock" :title="'Lock: the experimental dynamic adjustment never changes this value'">
+                  <input type="checkbox" x-init="config.sampling.locks = config.sampling.locks || {}" x-model="config.sampling.locks[item.key]" />
+                  <span>Lock</span>
+                </label>
+              </div>
+            </div>
+          </template>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Dynamic adjustment <span class="experimental-badge">Experimental</span></div>
+              <div class="field-description">Nudges the unlocked values per call: more focused while the agent is coding, more varied for creative writing. Off by default; it has no measured benefit yet and different models react differently.</div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="config.sampling.dynamic"
+                       @change="if ($event.target.checked && !confirm('Experimental feature.\n\nDynamic sampling changes temperature, top P and repeat penalty on every call based on what the agent is doing. It is not proven to help and can make some models worse. Locked values are never changed.\n\nTurn it on?')) { config.sampling.dynamic = false; $event.target.checked = false; }" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        </template>
+
         <!-- Per-Chat Override -->
         <div class="model-section">
           <div class="section-title">Per-Chat Override</div>
@@ -87,6 +145,22 @@
   }
   .override-presets-link {
     margin-top: 4px;
+  }
+  .sampling-lock {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    font-size: 0.8rem;
+    opacity: 0.85;
+  }
+  .experimental-badge {
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 6px;
+    background: color-mix(in srgb, var(--color-warning, #d9a400) 25%, transparent);
+    border: 1px solid var(--color-warning, #d9a400);
+    vertical-align: middle;
   }
   .override-presets-link .text-button {
     font-size: 0.78rem !important;

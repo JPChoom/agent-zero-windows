@@ -502,8 +502,30 @@ def get_chat_model_config(agent=None) -> dict:
     return cfg.get("chat_model", {})
 
 
+# Fields that define which model a slot uses; single-model mode copies these
+# from the Main slot into the Utility slot.
+_MODEL_IDENTITY_FIELDS = ("provider", "name", "api_base", "api_key", "kwargs", "ctx_length", "vision")
+
+
+def is_single_model_mode(agent=None) -> bool:
+    return bool(get_config(agent).get("single_model_mode"))
+
+
 def get_utility_model_config(agent=None) -> dict:
-    """Get utility model config, with per-chat override if active."""
+    """Get utility model config, with per-chat override if active. In
+    single-model mode the Main model is used (keeping the Utility slot's own
+    context-input share and rate limits)."""
+    if is_single_model_mode(agent):
+        utility = dict(_get_utility_model_config(agent))
+        chat = get_chat_model_config(agent)
+        for key in _MODEL_IDENTITY_FIELDS:
+            if key in chat:
+                utility[key] = deepcopy(chat[key])
+        return utility
+    return _get_utility_model_config(agent)
+
+
+def _get_utility_model_config(agent=None) -> dict:
     cfg = get_config(agent)
     override = _resolve_override(agent)
     if override:
@@ -553,6 +575,10 @@ def get_vision_model_config(agent=None) -> dict:
 
 
 def is_vision_model_configured(agent=None) -> bool:
+    # Single-model mode has no separate sidecar: the Main model's own vision
+    # setting decides.
+    if is_single_model_mode(agent):
+        return False
     model_cfg = get_vision_model_config(agent)
     return bool(str(model_cfg.get("provider") or "").strip()) and bool(
         str(model_cfg.get("name") or "").strip()
@@ -622,9 +648,57 @@ def build_model_config(cfg: dict, model_type: models.ModelType) -> models.ModelC
     )
 
 
+# Sampling parameters only local OpenAI-compatible servers accept; cloud APIs
+# may reject unknown parameters, so they get temperature and top_p only.
+LOCAL_SAMPLING_PROVIDERS = {"llama_cpp", "lm_studio", "ollama", "vllm"}
+SAMPLING_KEYS = ("temperature", "top_p", "top_k", "repeat_penalty")
+
+
+def get_sampling(agent=None) -> dict:
+    sampling = get_config(agent).get("sampling")
+    return sampling if isinstance(sampling, dict) else {}
+
+
+def sampling_kwargs(values: dict, provider: str) -> dict:
+    """LiteLLM kwargs for these sampling values (None = provider default)."""
+    out: dict = {}
+    local = str(provider or "").strip().lower() in LOCAL_SAMPLING_PROVIDERS
+    for key in SAMPLING_KEYS:
+        value = values.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if key in ("temperature", "top_p"):
+            out[key] = number
+        elif local:
+            out.setdefault("extra_body", {})[key] = int(number) if key == "top_k" else number
+    return out
+
+
+def apply_sampling(cfg: dict, sampling: dict) -> dict:
+    """The slot config with sampling merged into its kwargs; the slot's own
+    kwargs win (a value set on the model is more specific than the preset)."""
+    extra = sampling_kwargs(sampling or {}, cfg.get("provider", ""))
+    if not extra:
+        return cfg
+    merged = dict(cfg)
+    kwargs = dict(cfg.get("kwargs") or {})
+    body = dict(extra.pop("extra_body", {}))
+    for key, value in extra.items():
+        kwargs.setdefault(key, value)
+    if body:
+        existing = kwargs.get("extra_body") if isinstance(kwargs.get("extra_body"), dict) else {}
+        kwargs["extra_body"] = {**body, **existing}
+    merged["kwargs"] = kwargs
+    return merged
+
+
 def build_chat_model(agent=None):
     """Build and return a LiteLLMChatWrapper from config."""
-    cfg = get_chat_model_config(agent)
+    cfg = apply_sampling(get_chat_model_config(agent), get_sampling(agent))
     mc = build_model_config(cfg, models.ModelType.CHAT)
     return models.get_chat_model(
         mc.provider, mc.name, model_config=mc, **mc.build_kwargs()
@@ -633,7 +707,7 @@ def build_chat_model(agent=None):
 
 def build_utility_model(agent=None):
     """Build and return a LiteLLMChatWrapper for utility tasks."""
-    cfg = get_utility_model_config(agent)
+    cfg = apply_sampling(get_utility_model_config(agent), get_sampling(agent))
     mc = build_model_config(cfg, models.ModelType.CHAT)
     return models.get_chat_model(
         mc.provider, mc.name, model_config=mc, **mc.build_kwargs()

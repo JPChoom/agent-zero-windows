@@ -65,3 +65,39 @@ vision_model:
   rl_input: 0
   rl_output: 0
   kwargs: {}
+
+# Use the Main model for the Utility slot too, and no separate vision
+# sidecar (the Main model's own vision setting decides). Embeddings stay
+# separate. Handy with one local model (LM Studio or the llama.cpp server).
+single_model_mode: false
+
+# Sampling for the Main and Utility models. Empty (null) = the provider's
+# default. A model's own kwargs (in its settings) win over these.
+# temperature and top_p go to every provider; top_k and repeat_penalty only
+# to local OpenAI-compatible servers (llama.cpp, LM Studio, Ollama, vLLM).
+sampling:
+  temperature: null
+  top_p: null
+  top_k: null
+  repeat_penalty: null
+  # Locked values are never changed by the experimental dynamic adjustment.
+  locks:
+    temperature: false
+    top_p: false
+    top_k: false
+    repeat_penalty: false
+  # EXPERIMENTAL, off by default: adjust the unlocked values per call from
+  # what the agent is doing (coding / creative writing / everything else).
+  # No measured benefit yet - see the Windows workflow benchmark.
+  dynamic: false
+  dynamic_rules:
+    # Tools whose recent use means "coding".
+    code_tools: [code_execution_tool, code_execution_remote, input, text_editor, coding_gate]
+    # Words in the user's message that mean "creative writing".
+    creative_words: [story, poem, poetry, lyrics, brainstorm, creative, fiction, slogan, novel]
+    # Offsets from the base values (the preset, or the defaults below).
+    offsets:
+      code: {temperature: -0.3, top_p: -0.02, repeat_penalty: 0.1}
+      creative: {temperature: 0.3, top_p: 0.04, repeat_penalty: 0.4}
+      reasoning: {}
+    base: {temperature: 0.6, top_p: 0.95, repeat_penalty: 1.0}

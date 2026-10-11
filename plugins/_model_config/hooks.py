@@ -20,11 +20,19 @@ def get_plugin_config(default=None, **kwargs):
     endpoints), so this is the one place that reliably fixes it for all of
     them.
     """
-    if not isinstance(default, dict) or "vision_model" in default:
+    if not isinstance(default, dict):
+        return default
+    missing = [key for key in BACKFILLED_KEYS if key not in default]
+    if not missing:
         return default
 
     from helpers import plugins
 
     default_cfg = plugins.get_default_plugin_config("_model_config") or {}
-    default["vision_model"] = default_cfg.get("vision_model", {})
+    for key in missing:
+        default[key] = default_cfg.get(key, {} if key != "single_model_mode" else False)
     return default
+
+
+# Top-level keys added after configs were first saved (see the docstring above).
+BACKFILLED_KEYS = ("vision_model", "single_model_mode", "sampling")

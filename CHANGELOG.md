@@ -8,6 +8,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **llama.cpp server plugin**: Agent Zero starts, watches and stops its own `llama-server.exe`, so LM Studio is no longer required (it keeps working as a provider). Download the official build from the plugin's settings (installed only if its SHA-256 matches the one GitHub publishes), pick a GGUF model, Start. It listens on 127.0.0.1 only, checks that the model you chose is the one loaded, refuses to start when an NVIDIA GPU clearly lacks memory, restarts after a crash, and never leaves a stray server behind. The llama.cpp provider now defaults to it (`http://127.0.0.1:8090/v1`).
 
 ### Improved
+- **Models**: *Use the Main model for all slots* (single-model mode) and **Sampling** settings (temperature, top P, top K, repeat penalty; each can be locked) in *Settings > Agent > Models*. An **Experimental**, off-by-default dynamic adjustment nudges the unlocked values per call (more focused while coding, more varied for creative writing); it asks before turning on and has no measured benefit yet.
 - **Agent Workspace**: every app keeps a history of which agent controlled it (hover its name in the Workspace view), every ownership change is in the access log, and a hand-over can no longer overwrite an owner change that happened a moment earlier.
 
 ### Security
