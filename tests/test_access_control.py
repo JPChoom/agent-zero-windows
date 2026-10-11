@@ -384,3 +384,19 @@ def test_failure_count_tracks_the_window():
     t.record_failure("ip", now=101)
     assert t.failure_count("ip", now=102) == 2
     assert t.failure_count("ip", now=100 + t.WINDOW + 5) == 0
+
+
+def test_blocked_burst_from_an_open_page_is_worded_as_such():
+    # Investigation finding F10: a signed-in tab on a new address, not a scanner.
+    recent = [{"ip": "203.0.113.20", "path": p} for p in (
+        "/api/plugins/_goal/goal", "/api/plugins/_context_usage/context_usage_get",
+        "/api/load_webui_extensions", "/api/plugins/_goal/goal", "/socket.io/")]
+    title, message, detail = ac.block_burst_notice(recent)
+    assert "open Agent Zero page" in title and "203.0.113.20" in message
+    assert "another network" in detail
+
+
+def test_blocked_burst_from_a_scanner_keeps_the_plain_wording():
+    recent = [{"ip": "203.0.113.30", "path": p} for p in ("/", "/wp-login.php", "/.env", "/admin", "/")]
+    title, message, _ = ac.block_burst_notice(recent)
+    assert title == "Blocked remote access attempts" and "203.0.113.30" in message

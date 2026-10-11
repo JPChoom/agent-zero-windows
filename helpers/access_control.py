@@ -495,21 +495,51 @@ def _maybe_notify_block_burst() -> None:
         if now - _last_block_notice < 600 or len(recent) < 5:
             return
         _last_block_notice = now
+    title, message, detail = block_burst_notice(recent)
     try:
         from helpers.notification import NotificationManager, NotificationPriority, NotificationType
 
         NotificationManager.send_notification(
             type=NotificationType.WARNING,
             priority=NotificationPriority.HIGH,
-            title="Blocked remote access attempts",
-            message="Requests from addresses not on the tunnel allowlist were blocked.",
-            detail="See Settings > Security for the blocked addresses.",
+            title=title,
+            message=message,
+            detail=detail,
             display_time=10,
             group="access_control",
             id="access_control_blocked_burst",
         )
     except Exception:
         pass
+
+
+# Paths only an already-open Agent Zero page requests (its polling and lazy
+# loads). A blocked burst of these means a signed-in tab is talking from an
+# address not on the allowlist - usually your own device on another network
+# (investigation finding F10), not a scanner.
+_OPEN_PAGE_PATHS = (
+    "/api/plugins/_goal/", "/api/plugins/_context_usage/", "/api/load_webui_extensions",
+    "/api/poll", "/socket.io", "/api/csrf_token", "/api/banners",
+)
+
+
+def block_burst_notice(recent: list[dict]) -> tuple[str, str, str]:
+    paths = [str(b.get("path", "")) for b in recent]
+    page_like = sum(1 for p in paths if p.startswith(_OPEN_PAGE_PATHS))
+    ips = sorted({str(b.get("ip", "?")) for b in recent})
+    where = ", ".join(ips[:3]) + (" ..." if len(ips) > 3 else "")
+    if paths and page_like * 2 >= len(paths):
+        return (
+            "An open Agent Zero page was blocked",
+            f"A page that is already signed in is calling from {where}, which is not on the allowlist.",
+            "Is this you on another network (phone, second internet line, VPN)? If so, add the address in "
+            "Settings > Security. If not, it was refused and nothing reached Agent Zero.",
+        )
+    return (
+        "Blocked remote access attempts",
+        f"Requests from {where} (not on the tunnel allowlist) were blocked.",
+        "See Settings > Security > Access log for details.",
+    )
 
 
 def flask_request_details(request) -> dict:

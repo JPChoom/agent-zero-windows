@@ -29,6 +29,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - The WebSocket test harness and event console (Settings > Developer) are off unless `A0_DEV_HARNESS=1` is set in `usr/.env`; the event console could show other sessions' WebSocket traffic.
 - Every HTTP endpoint that skips the CSRF check is now listed and justified in a test, so a new exemption cannot slip in unreviewed.
 - Docs and Settings say plainly that the File Browser access setting limits the File Browser and Editor, not what the agent's terminal can reach.
+- When requests from an address not on the allowlist look like an already signed-in Agent Zero page (its regular background calls), the notification says so and asks whether it is you on another network, instead of a generic "blocked" warning.
 - Telegram webhook mode always uses a secret (a random one when none is configured), and updates without the matching secret are refused.
 - The access log stores header values only for a list of known-safe headers; any other header (for example a custom one carrying a token) is recorded as present only. Secret-looking query values in the referer are redacted too.
 
