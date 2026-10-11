@@ -130,7 +130,7 @@ export const ONBOARDING_PROVIDER_OVERRIDES = {
     logo: "/plugins/_onboarding/webui/assets/provider-logos/llama-cpp.svg",
     setup_url: "https://github.com/ggml-org/llama.cpp",
     docs_url: "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md",
-    default_api_base: "http://host.docker.internal:8080/v1",
+    default_api_base: "http://127.0.0.1:8090/v1",
     api_key_mode: "none",
     model_list_autoload: true,
     short_description: "Run GGUF models with llama-server.",

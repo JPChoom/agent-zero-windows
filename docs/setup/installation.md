@@ -625,14 +625,14 @@ brew install llama.cpp
 Start a server with a downloaded GGUF model:
 
 ```bash
-llama-server -m ~/models/model.gguf --port 8080 --alias local-gguf
+llama-server -m ~/models/model.gguf --port 8090 --alias local-gguf
 ```
 
-By default, Agent Zero expects llama.cpp at `http://host.docker.internal:8080/v1`. The model name can be the model path returned by `/v1/models`, but using `--alias` gives you a short stable name such as `local-gguf`.
+On Windows, Agent Zero can run llama-server for you: enable the **llama.cpp server** plugin (*Settings > Agent > llama.cpp server*), download the official build from there, pick a GGUF model and click Start. It listens on `http://127.0.0.1:8090/v1`, which is also the llama.cpp provider's default address. If you run llama-server yourself instead, start it with `--port 8090` or change the provider's API base URL. The model name can be the model path returned by `/v1/models`, but using `--alias` gives you a short stable name such as `local-gguf` (the managed server uses the model file's name).
 
 ### Configuring llama.cpp in Agent Zero
 
-1. Start `llama-server` and confirm `http://localhost:8080/v1/models` returns your model.
+1. Start `llama-server` (or the managed server) and confirm `http://127.0.0.1:8090/v1/models` returns your model.
 2. In Agent Zero Settings, choose **llama.cpp** as the Chat model, Utility model, or Embedding model provider.
 3. Use the model ID shown by `/v1/models`, or the alias you passed with `--alias`.
 4. Override the API base URL only if you started `llama-server` on another host or port.

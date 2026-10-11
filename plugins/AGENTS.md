@@ -88,6 +88,7 @@ Direct child DOX files:
 | [_error_retry/AGENTS.md](_error_retry/AGENTS.md) | Critical exception retry lifecycle hooks. |
 | [_infection_check/AGENTS.md](_infection_check/AGENTS.md) | Prompt-injection safety analysis before tool execution. |
 | [_kokoro_tts/AGENTS.md](_kokoro_tts/AGENTS.md) | Kokoro text-to-speech integration. |
+| [_llama_server/AGENTS.md](_llama_server/AGENTS.md) | Managed local llama.cpp server (llama-server.exe): supervision, model identity, download, settings. |
 | [_memory/AGENTS.md](_memory/AGENTS.md) | Optional persistent recall plugin, knowledge import, tools, and dashboard; do not assume it is enabled outside this plugin. |
 | [_model_config/AGENTS.md](_model_config/AGENTS.md) | Model selection, presets, API-key checks, and scoped overrides. |
 | [_oauth/AGENTS.md](_oauth/AGENTS.md) | OAuth-backed model-provider connections and local proxy routes. |

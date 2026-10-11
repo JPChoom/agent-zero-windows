@@ -1,0 +1,11 @@
+name: _llama_server
+title: llama.cpp server
+description: Agent Zero starts, watches and stops its own local llama.cpp server (llama-server.exe) as one more model provider - no separate LM Studio needed. LM Studio and other providers keep working.
+version: 1.0.0
+always_enabled: false
+os_support:
+  - windows
+settings_sections:
+  - agent
+per_project_config: false
+per_agent_config: false

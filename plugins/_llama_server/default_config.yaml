@@ -1,0 +1,40 @@
+# Start the server automatically when Agent Zero starts (and keep it running).
+autostart: false
+
+# llama-server.exe. Empty = usr/llama-cpp/bin/llama-server.exe (where the
+# Download button puts it).
+binary_path: ""
+
+# The GGUF model file to serve. Models are never bundled; put them in
+# usr/llama-cpp/models/ (listed in the settings) or anywhere else.
+model_path: ""
+
+# Listens on 127.0.0.1 only. The llama_cpp provider in Settings > Agent
+# defaults to http://127.0.0.1:8090/v1 - keep them in sync.
+port: 8090
+
+context_size: 8192
+
+# Layers offloaded to the GPU (-ngl). 99 = as many as fit / all, 0 = CPU only.
+gpu_layers: 99
+
+# CPU threads (-t). 0 = llama-server decides.
+threads: 0
+
+# Parallel request slots (-np). Agent Zero serializes model calls by default
+# (max_concurrent_model_calls: 1), so 1 is enough.
+parallel: 1
+
+# Extra llama-server arguments, e.g. "--flash-attn on". Host, port, model and
+# alias are set by Agent Zero and cannot be overridden here.
+extra_args: ""
+
+# Refuse to start when an NVIDIA GPU clearly lacks free memory for the model
+# (checked with nvidia-smi; skipped when it is not available or gpu_layers is 0).
+vram_check: true
+
+startup_timeout_seconds: 300
+
+# Which llama.cpp build the Download button fetches: cuda, vulkan or cpu.
+# Empty = cuda when an NVIDIA GPU is found, otherwise cpu.
+download_variant: ""

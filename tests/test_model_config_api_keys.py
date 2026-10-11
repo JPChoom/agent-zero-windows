@@ -326,12 +326,13 @@ def test_local_provider_defaults_are_docker_friendly():
         "http://host.docker.internal:1234"
     )
     assert provider_config["chat"]["llama_cpp"]["litellm_provider"] == "hosted_vllm"
+    # The managed llama.cpp server (plugins/_llama_server) listens here.
     assert provider_config["chat"]["llama_cpp"]["kwargs"]["api_base"] == (
-        "http://host.docker.internal:8080/v1"
+        "http://127.0.0.1:8090/v1"
     )
     assert provider_config["chat"]["llama_cpp"]["kwargs"]["api_key"] == "llama-cpp"
     assert provider_config["chat"]["llama_cpp"]["models_list"]["default_base"] == (
-        "http://host.docker.internal:8080"
+        "http://127.0.0.1:8090"
     )
     assert provider_config["chat"]["llama_cpp"]["models_list"]["endpoint_url"] == "/v1/models"
     assert provider_config["chat"]["ollama"]["kwargs"]["api_base"] == (
@@ -364,7 +365,7 @@ def test_local_provider_defaults_are_docker_friendly():
     assert provider_config["embedding"]["lm_studio"]["kwargs"]["api_key"] == "lm-studio"
     assert provider_config["embedding"]["llama_cpp"]["litellm_provider"] == "hosted_vllm"
     assert provider_config["embedding"]["llama_cpp"]["kwargs"]["api_base"] == (
-        "http://host.docker.internal:8080/v1"
+        "http://127.0.0.1:8090/v1"
     )
     assert provider_config["embedding"]["llama_cpp"]["kwargs"]["api_key"] == "llama-cpp"
     assert provider_config["embedding"]["ollama"]["kwargs"]["api_base"] == (
@@ -406,12 +407,12 @@ def test_local_provider_runtime_defaults_and_overrides(monkeypatch):
 
     llama_cpp_chat = models.get_chat_model("llama_cpp", "local-chat-model")
     assert llama_cpp_chat.model_name == "hosted_vllm/local-chat-model"
-    assert llama_cpp_chat.kwargs["api_base"] == "http://host.docker.internal:8080/v1"
+    assert llama_cpp_chat.kwargs["api_base"] == "http://127.0.0.1:8090/v1"
     assert llama_cpp_chat.kwargs["api_key"] == "llama-cpp"
 
     llama_cpp_embedding = models.get_embedding_model("llama_cpp", "local-embedding-model")
     assert llama_cpp_embedding.model_name == "hosted_vllm/local-embedding-model"
-    assert llama_cpp_embedding.kwargs["api_base"] == "http://host.docker.internal:8080/v1"
+    assert llama_cpp_embedding.kwargs["api_base"] == "http://127.0.0.1:8090/v1"
     assert llama_cpp_embedding.kwargs["api_key"] == "llama-cpp"
 
     ollama_embedding = models.get_embedding_model("ollama", "nomic-embed-text")
