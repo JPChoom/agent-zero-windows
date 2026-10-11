@@ -346,6 +346,7 @@ Direct child DOX files:
 | [docker/AGENTS.md](docker/AGENTS.md) | Docker build contexts, image definitions, and runtime compose files. |
 | [docs/AGENTS.md](docs/AGENTS.md) | Human-facing documentation, developer guides, screenshots, and agent deep dives. |
 | [extensions/AGENTS.md](extensions/AGENTS.md) | Core lifecycle extension hook implementations for backend and WebUI surfaces. |
+| [installer/AGENTS.md](installer/AGENTS.md) | Per-user Windows installer, uninstaller and tray launcher. |
 | [helpers/AGENTS.md](helpers/AGENTS.md) | Shared backend framework utilities and cross-cutting runtime services. |
 | [knowledge/AGENTS.md](knowledge/AGENTS.md) | Built-in agent self-knowledge and indexed reference material. |
 | [lib/AGENTS.md](lib/AGENTS.md) | Lightweight browser-side helper scripts outside the main WebUI bundle. |

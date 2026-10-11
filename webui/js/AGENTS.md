@@ -16,6 +16,7 @@
 - `modals.js` owns the stacked modal shell, `openModal`, `closeModal`, `scrollModal`, footer relocation, backdrop, and modal z-index behavior.
 - `surfaces.js` owns shared surface registration, right-canvas/modal mode routing, surface modal action rails, and reusable draggable/focus modal chrome.
 - `theme-boot.js` is a classic blocking script in `index.html` `<head>`: it applies the saved accent (`--accent`) and material (`<html data-material>`) from localStorage keys `accentColor`/`materialStyle` before first paint. Keep its keys and validation in sync with `components/sidebar/bottom/preferences/preferences-store.js`.
+- `initializer.js` also opens a modal named by the address hash (`HASH_MODALS`, e.g. `#settings`), used by the tray launcher.
 - `initFw.js` owns Alpine bootstrap and custom directives such as `x-create`, `x-destroy`, periodic `x-every-*` hooks, and `x-keep-in-view` (shifts a shown absolute popover left via the standalone `translate` property so it never runs past the viewport's right edge).
 - Other modules own focused UI utilities such as modals, messages, safe markdown, shortcuts, TTS/STT, surfaces, and initialization.
 

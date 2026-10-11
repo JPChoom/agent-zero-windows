@@ -1,0 +1,117 @@
+"""The per-user installer (installer/), the dependency lock and the tray launcher.
+
+The installer itself clones from GitHub, so it is exercised up to that point;
+the uninstaller runs for real against a fake install and test-only registry
+keys (never the real Start menu or Apps entries).
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+import uuid
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+INSTALLER = ROOT / "installer"
+pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows installer")
+
+
+def ps(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
+    return subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", *args],
+                          capture_output=True, text=True, timeout=timeout)
+
+
+@pytest.mark.parametrize("script", ["install.ps1", "uninstall.ps1"])
+def test_scripts_parse(script):
+    path = INSTALLER / script
+    result = ps("-Command", f"$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('{path}', [ref]$null, [ref]$e); $e.Count")
+    assert result.stdout.strip() == "0", result.stdout + result.stderr
+
+
+def test_installer_refuses_a_non_release_tag_before_downloading(tmp_path):
+    result = ps("-File", str(INSTALLER / "install.ps1"), "-Version", "main; rm -rf /", "-InstallDir", str(tmp_path / "x"))
+    out = result.stdout + result.stderr
+    if "Python 3.12 not found" in out or "Git not found" in out:
+        pytest.skip("this machine lacks the installer's prerequisites")
+    assert result.returncode == 1 and "Not a release tag" in out
+    assert not (tmp_path / "x").exists()
+
+
+@pytest.fixture
+def fake_install(tmp_path):
+    app = tmp_path / "AgentZeroWindows"
+    for rel in ("run_ui.py", "agent.py", "helpers/x.py", ".venv/Scripts/python.exe", "usr/settings.json", "usr/memory/m.json"):
+        path = app / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x", encoding="utf-8")
+    start_menu = tmp_path / "StartMenu"
+    start_menu.mkdir()
+    (start_menu / "Agent Zero for Windows.lnk").write_text("x", encoding="utf-8")
+    test_key = f"HKCU:\\Software\\AgentZeroInstallerTest-{uuid.uuid4().hex[:8]}"
+    ps("-Command", f"New-Item -Path '{test_key}\\Uninstall' -Force | Out-Null; New-Item -Path '{test_key}\\Run' -Force | Out-Null;"
+                   f"Set-ItemProperty -Path '{test_key}\\Run' -Name AgentZero -Value 'pythonw.exe \"{app}\\launch.pyw\"';"
+                   f"Set-ItemProperty -Path '{test_key}\\Run' -Name OtherApp -Value 'C:\\Other\\other.exe'")
+    yield app, start_menu, test_key
+    ps("-Command", f"Remove-Item -Path '{test_key}' -Recurse -Force -ErrorAction SilentlyContinue")
+
+
+def _uninstall(app, start_menu, key, *extra):
+    return ps("-File", str(INSTALLER / "uninstall.ps1"), "-InstallDir", str(app), "-Yes",
+              "-StartMenuDir", str(start_menu), "-UninstallKey", f"{key}\\Uninstall", "-RunKey", f"{key}\\Run", *extra)
+
+
+def test_uninstall_keeps_user_data_by_default(fake_install):
+    app, start_menu, key = fake_install
+    result = _uninstall(app, start_menu, key)
+    assert result.returncode == 0, result.stderr
+    assert (app / "usr" / "settings.json").exists() and (app / "usr" / "memory" / "m.json").exists()
+    assert not (app / "run_ui.py").exists() and not (app / ".venv").exists() and not (app / "helpers").exists()
+    assert not (start_menu / "Agent Zero for Windows.lnk").exists()
+    run = ps("-Command", f"(Get-ItemProperty -Path '{key}\\Run').PSObject.Properties.Name -join ','").stdout
+    assert "OtherApp" in run and "AgentZero" not in run  # only entries pointing at this install
+    assert ps("-Command", f"Test-Path '{key}\\Uninstall'").stdout.strip() == "False"
+
+
+def test_clean_uninstall_removes_everything(fake_install):
+    app, start_menu, key = fake_install
+    assert _uninstall(app, start_menu, key, "-Clean").returncode == 0
+    assert not app.exists()
+
+
+def test_uninstall_refuses_a_folder_that_is_not_agent_zero(tmp_path):
+    other = tmp_path / "Documents"
+    other.mkdir()
+    (other / "precious.txt").write_text("keep", encoding="utf-8")
+    result = ps("-File", str(INSTALLER / "uninstall.ps1"), "-InstallDir", str(other), "-Yes", "-Clean")
+    assert result.returncode == 1 and (other / "precious.txt").exists()
+
+
+def test_lock_matches_every_pin_in_requirements():
+    lock = {}
+    for line in (ROOT / "requirements.lock.txt").read_text(encoding="utf-8").splitlines():
+        if "==" in line and not line.startswith("#"):
+            name, version = line.split("==", 1)
+            lock[re.sub(r"[-_.]+", "-", name).lower()] = version.strip()
+    for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        spec = line.split("#", 1)[0].strip()
+        match = re.match(r"^([A-Za-z0-9._-]+)(?:\[[^\]]+\])?==([^\s;]+)", spec)
+        if match:
+            name = re.sub(r"[-_.]+", "-", match.group(1)).lower()
+            assert lock.get(name) == match.group(2), f"{name}: requirements.txt pins {match.group(2)}, lock has {lock.get(name)}"
+
+
+def test_lock_never_contains_personal_or_plugin_only_packages():
+    text = (ROOT / "requirements.lock.txt").read_text(encoding="utf-8").lower()
+    for name in ("yt-dlp", "yt_dlp", "aiogram", "blender"):
+        assert name not in text
+
+
+def test_tray_launcher_shows_and_closes():
+    pythonw = Path(sys.executable)
+    result = subprocess.run([str(pythonw), str(INSTALLER / "tray_launcher.pyw"), "--no-server", "--smoke"],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr

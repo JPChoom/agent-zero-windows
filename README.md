@@ -103,6 +103,16 @@ Other projects in this space put the weight elsewhere: some focus on being reach
 
 ## Install
 
+**Installer (Windows 11, per user, no admin rights)** - needs Python 3.12 and Git (`winget install --id Python.Python.3.12 -e` and `winget install --id Git.Git -e`). Download `installer\install.ps1` from the repository and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+It installs the latest release into `%LOCALAPPDATA%\Programs\AgentZeroWindows` with the exact package versions it was tested with (`requirements.lock.txt`), adds **Agent Zero for Windows** to the Start menu (a tray icon opens it in your browser) and to *Settings > Apps*. Uninstalling keeps your data (`usr\`) unless you choose a clean uninstall. Updates use *Settings > Check for updates* as before.
+
+**Manual install:**
+
 ```powershell
 git clone https://github.com/JPChoom/agent-zero-windows.git
 cd agent-zero-windows
