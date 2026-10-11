@@ -24,8 +24,57 @@ from plugins._coding_controller.helpers import checkpoint, diagnostician, diagno
 from plugins._coding_controller.helpers.config import get_config, get_config_for_root
 
 
+_DECISIONS_KEY = "_coding_gate_project_decisions"
+
+
 class CodingCompletionGate(Extension):
     FAIL_LOUD = True  # it blocks a premature "done" by raising; isolating it would let the response through
+
+    async def _may_run_project_commands(self, root: str, kind: str) -> bool:
+        """Whether the chat's permissions allow running this project's own
+        build/test commands (npm test, dotnet build, pytest...). They execute
+        whatever the project defines, so they are treated like any command:
+        Plan never runs them, Manual and Accept-edits ask once per project per
+        chat, Auto and Bypass run them (enforcement audit E5; they used to
+        run with no check, also in Accept-edits where commands should ask).
+        """
+        try:
+            from plugins._permissions.helpers import ask, rules
+            from plugins._permissions.helpers.config import get_config as get_permissions
+        except Exception:
+            return True  # no permission system installed: previous behaviour
+        context = getattr(self.agent, "context", None)
+        decisions = context.get_data(_DECISIONS_KEY) if hasattr(context, "get_data") else None
+        if not isinstance(decisions, dict):
+            decisions = {}
+            if hasattr(context, "set_data"):
+                context.set_data(_DECISIONS_KEY, decisions)
+        if root in decisions:
+            return decisions[root]
+
+        try:
+            perms = get_permissions(self.agent)
+        except Exception:
+            from plugins._permissions.helpers.config import fallback_config
+
+            perms = fallback_config()
+        call_args = {"root": root, "kind": kind}
+        verdict = rules.decide("coding_completion_gate", call_args, perms["mode"], perms["ruleset"])
+        if verdict.decision == "deny":
+            return False
+        if verdict.decision == "allow":
+            decisions[root] = True
+            return True
+        try:
+            await ask.request_approval(
+                self.agent, "coding_completion_gate", call_args,
+                reason=f"run this {kind} project's own build and test commands in {root}",
+                mode=perms["mode"], timeout=perms["approval_timeout_seconds"],
+            )
+            decisions[root] = True
+        except Exception:
+            decisions[root] = False  # declined or timed out: not asked again in this chat
+        return decisions[root]
 
     async def execute(self, response=None, tool_name: str = "", **kwargs):
         if tool_name != "response" or not self.agent or response is None:
@@ -44,6 +93,9 @@ class CodingCompletionGate(Extension):
         passed_clean = []  # (root, result) - passed this turn, eligible for review
         reverted = []  # roots where a worse repair attempt was rolled back
         for root, kind in dirty.items():
+            if not await self._may_run_project_commands(root, kind):
+                session_state.clear_dirty(self.agent, root)
+                continue
             # A project's own coding.yaml (if present) overrides build-
             # command fields for its own gate run - see config.py's
             # get_config_for_root() docstring for exactly which fields

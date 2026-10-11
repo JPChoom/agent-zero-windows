@@ -74,6 +74,11 @@ async def test_worsening_repair_attempt_is_rolled_back_on_disk(tmp_path: Path, m
     # so it's patched to return the same fixed cfg regardless of root.
     monkeypatch.setattr(gate_ext, "get_config_for_root", lambda agent, root: cfg)
 
+    async def allowed(self, root, kind):  # as in Auto mode; the permission check has its own tests
+        return True
+
+    monkeypatch.setattr(gate_ext.CodingCompletionGate, "_may_run_project_commands", allowed)
+
     # Turn-by-turn scripted gate results: (turn 1) first failure -> baseline;
     # (turn 2) a new failure beyond baseline -> repair requested, checkpoint
     # saved; (turn 3) worse than the checkpoint -> rollback, gate re-run
