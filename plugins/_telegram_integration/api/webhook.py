@@ -1,3 +1,5 @@
+import hmac
+
 from helpers.api import ApiHandler, Request, Response
 from helpers.print_style import PrintStyle
 from plugins._telegram_integration.helpers.dependencies import ensure_dependencies
@@ -33,9 +35,13 @@ class TelegramWebhook(ApiHandler):
         if not instance:
             return Response(f"Bot not found: {bot_name}", 404)
 
-        # Verify webhook secret if configured
+        # Telegram sends the secret registered with set_webhook (always set:
+        # setup_webhook generates one when none is configured). Without an
+        # active secret this bot is not in webhook mode, so nothing is accepted.
         secret_header = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-        if instance.webhook_secret and secret_header != instance.webhook_secret:
+        if not instance.webhook_secret or not hmac.compare_digest(
+            secret_header.encode("utf-8"), instance.webhook_secret.encode("utf-8")
+        ):
             return Response("Invalid secret token", 403)
 
         # Parse and feed the update to aiogram

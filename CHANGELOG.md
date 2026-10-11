@@ -2,6 +2,14 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Security
+- Remote (tunnel) access is refused while no WebUI login is set, even from an allowlisted address, and Remote Control cannot be started without one: without a login nothing asks for authentication.
+- WebSocket connections that are not signed in are refused at connect, before they are registered or see any server or connection details.
+- Telegram webhook mode always uses a secret (a random one when none is configured), and updates without the matching secret are refused.
+- The access log stores header values only for a list of known-safe headers; any other header (for example a custom one carrying a token) is recorded as present only. Secret-looking query values in the referer are redacted too.
+
 ## v1.3
 
 A Windows Explorer-style File Browser, the Agent Workspace, and a faster, lighter Desktop view.

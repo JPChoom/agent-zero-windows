@@ -304,17 +304,15 @@ const model = {
         hasAuth = Boolean(auth_login && auth_password);
       }
 
-      // If no authentication is set, warn the user
+      // Remote requests are refused while no login is set (the server
+      // enforces this too), so a tunnel without one would be useless.
       if (!hasAuth) {
-        const proceed = confirm(
-          "Remote Control works best with sign-in enabled.\n\n" +
-            "Without a login, anyone with the URL can reach this Agent Zero instance.\n\n" +
-            "Turn on authentication in Settings before sharing this link. Continue anyway?"
+        alert(
+          "Set a login first (Settings > External > Authentication).\n\n" +
+            "Without one, remote requests are refused, because anyone reaching " +
+            "the tunnel address would control this PC."
         );
-
-        if (!proceed) {
-          return; // User cancelled
-        }
+        return;
       }
     } catch (error) {
       console.error("Error checking authentication status:", error);

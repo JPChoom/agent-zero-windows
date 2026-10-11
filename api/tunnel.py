@@ -15,6 +15,9 @@ async def process(input: dict) -> dict | Response:
         return {"success": True}
     
     if action == "create":
+        refused = login_required_response()
+        if refused:
+            return refused
         port = runtime.get_web_ui_port()
         provider = input.get("provider", "serveo")  # Default to serveo
         tunnel_url = tunnel_manager.start_tunnel(port, provider)
@@ -56,6 +59,21 @@ async def process(input: dict) -> dict | Response:
         "success": False,
         "error": "Invalid action. Use 'create', 'stop', 'get', or 'notifications'."
     } 
+
+LOGIN_REQUIRED_MESSAGE = (
+    "Set a login first (Settings > External > Authentication). "
+    "Without one, remote requests are refused, because anyone reaching the "
+    "tunnel address would control this PC."
+)
+
+
+def login_required_response() -> dict | None:
+    from helpers.access_control import login_configured
+
+    if login_configured():
+        return None
+    return {"success": False, "tunnel_url": None, "message": LOGIN_REQUIRED_MESSAGE}
+
 
 def stop():
     tunnel_manager = TunnelManager.get_instance()

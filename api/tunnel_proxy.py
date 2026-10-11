@@ -9,6 +9,13 @@ class TunnelProxy(ApiHandler):
         return await process(input)
 
 async def process(input: dict) -> dict | Response:
+    if input.get("action") == "create":
+        from api.tunnel import login_required_response
+
+        refused = login_required_response()
+        if refused:
+            return refused
+
     # Get configuration from environment
     tunnel_api_port = (
         runtime.get_arg("tunnel_api_port")

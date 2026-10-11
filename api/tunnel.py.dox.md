@@ -16,9 +16,11 @@
 - Top-level functions:
 - `async process(input: dict) -> dict | Response`
 - `stop()`
+- `login_required_response() -> dict | None`
 
 ## Runtime Contracts
 
+- `create` is refused with `LOGIN_REQUIRED_MESSAGE` while no WebUI login is set (`access_control.login_configured`); `api/tunnel_proxy.py` applies the same check before forwarding to the tunnel service.
 - HTTP handlers must derive from `helpers.api.ApiHandler`; WebSocket handlers must derive from `helpers.ws.WsHandler`.
 - Update this file whenever request payloads, authentication or CSRF requirements, response shapes, route side effects, or WebSocket event contracts change.
 - `Tunnel` is an `ApiHandler`.

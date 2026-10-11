@@ -45,6 +45,7 @@
 - `WsHandler` defines `requires_loopback(...)`.
 - Observed side-effect areas: filesystem reads, filesystem deletion, network calls, WebSocket state, plugin state, settings/state persistence, secret handling.
 - Imported dependency areas include: `abc`, `dataclasses`, `flask`, `helpers`, `helpers.errors`, `helpers.network`, `helpers.print_style`, `os`, `pathlib`, `socketio`, `threading`, `typing`, `urllib.parse`, `uuid`.
+- The namespace `connect` handler refuses a socket whose session is not signed in (when a login is set) before it is stored, registered with the manager (runtime id, lifecycle broadcast) or given handlers; `_session_authenticated` is the check. Every handler requires auth, so nothing legitimate connects unauthenticated.
 - `_SecurityContext.proxied` is set from the connect request's headers; `requires_loopback` handlers reject proxied (tunnel) connections. Auth, CSRF and API-key checks are constant-time. Plugin handlers of review-pending plugins are not resolved.
 
 ## Key Concepts

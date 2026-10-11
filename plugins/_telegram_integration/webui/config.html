@@ -271,7 +271,7 @@
                       <div class="field" x-show="bot.mode === 'webhook'">
                         <div class="field-label">
                           <div class="field-title">Webhook secret</div>
-                          <div class="field-description">Optional shared secret for webhook verification.</div>
+                          <div class="field-description">Shared secret Telegram sends with every update. Leave empty to have a random one generated each time the webhook is registered.</div>
                         </div>
                         <div class="field-control">
                           <input type="password" x-model="bot.webhook_secret" />

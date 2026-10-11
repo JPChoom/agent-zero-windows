@@ -59,11 +59,21 @@ AUDIT_KEEP_FILES = 20
 REMOTE_VISIT_GAP_SECONDS = 30 * 60
 _SETTINGS_TTL_SECONDS = 2.0
 
-# Recorded as present, never stored: they carry the session, CSRF token or credentials.
-SENSITIVE_HEADERS = frozenset({
-    "cookie", "set-cookie", "authorization", "proxy-authorization",
-    "x-csrf-token", "x-api-key", "x-auth-token",
+# Headers whose values are stored in the access log. Everything else is
+# recorded as present but not stored: an allowlist, because a denylist of
+# known secret headers (cookie, authorization...) misses a custom header that
+# carries a token.
+SAFE_HEADERS = frozenset({
+    "accept", "accept-encoding", "accept-language", "cache-control", "cdn-loop",
+    "cf-connecting-ip", "cf-ipcountry", "cf-ray", "cf-visitor", "cf-worker",
+    "connection", "content-length", "content-type", "dnt", "forwarded", "host",
+    "origin", "pragma", "priority", "referer", "sec-gpc", "sec-websocket-extensions",
+    "sec-websocket-version", "te", "true-client-ip", "upgrade",
+    "upgrade-insecure-requests", "user-agent", "via", "x-forwarded-for",
+    "x-forwarded-host", "x-forwarded-port", "x-forwarded-proto", "x-real-ip",
+    "x-requested-with",
 })
+SAFE_HEADER_PREFIXES = ("sec-ch-", "sec-fetch-")
 _SENSITIVE_QUERY_KEY = re.compile(r"token|key|secret|pass|auth|session|sig|code", re.IGNORECASE)
 _MAX_HEADER_VALUE = 500
 
@@ -210,13 +220,27 @@ def invalidate_policy_cache() -> None:
         _settings_cache = None
 
 
+def login_configured() -> bool:
+    """Whether a WebUI login is set. Fails closed: an error counts as no login."""
+    try:
+        from helpers import login
+
+        return bool(login.get_credentials_hash())
+    except Exception:
+        return False
+
+
 def check_access(remote_addr: str | None, headers) -> tuple[bool, str, str]:
     """(allowed, client_ip, reason)."""
     h = _lower_headers(headers)
     if is_local_request(remote_addr, h):
         return True, str(remote_addr or ""), "local"
-    enabled, networks = _current_policy()
     ip = client_ip(remote_addr, h)
+    # Without a login every handler skips authentication, so a remote
+    # visitor - even an allowlisted one - would control this PC unchallenged.
+    if not login_configured():
+        return False, ip, "no login configured"
+    enabled, networks = _current_policy()
     if not enabled:
         return True, ip, "allowlist disabled"
     if ip_in_allowlist(ip, networks):
@@ -234,6 +258,16 @@ def _redact_query(query: str) -> str:
         return query[:300]
     cleaned = [(k, "[redacted]" if _SENSITIVE_QUERY_KEY.search(k) else v) for k, v in pairs]
     return urlencode(cleaned)[:300]
+
+
+def _header_safe(name: str) -> bool:
+    return name in SAFE_HEADERS or name.startswith(SAFE_HEADER_PREFIXES)
+
+
+def _redact_url(url: str) -> str:
+    """A URL with secret-looking query values redacted (for the referer)."""
+    base, sep, query = str(url or "").partition("?")
+    return (base + sep + _redact_query(query))[:_MAX_HEADER_VALUE] if sep else base[:_MAX_HEADER_VALUE]
 
 
 def describe_request(
@@ -265,7 +299,11 @@ def describe_request(
     else:
         via = "direct"
     recorded_headers = {
-        name: ("[present, not stored]" if name in SENSITIVE_HEADERS else value[:_MAX_HEADER_VALUE])
+        name: (
+            (_redact_url(value) if name == "referer" else value[:_MAX_HEADER_VALUE])
+            if _header_safe(name)
+            else "[present, not stored]"
+        )
         for name, value in sorted(h.items())
     }
     return {
@@ -279,7 +317,7 @@ def describe_request(
         "cf_ray": h.get("cf-ray", ""),
         "user_agent": h.get("user-agent", "")[:_MAX_HEADER_VALUE],
         "accept_language": h.get("accept-language", "")[:200],
-        "referer": h.get("referer", "")[:_MAX_HEADER_VALUE],
+        "referer": _redact_url(h.get("referer", "")),
         "origin": h.get("origin", "")[:200],
         "host": h.get("host", "")[:200],
         "kind": kind,

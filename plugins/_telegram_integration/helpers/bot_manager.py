@@ -193,12 +193,21 @@ async def stop_polling(instance: BotInstance):
 # Webhook
 
 async def setup_webhook(instance: BotInstance, webhook_url: str, secret: str = ""):
-    """Register webhook with Telegram. Updates are received via the API handler."""
+    """Register webhook with Telegram. Updates are received via the API handler.
+
+    A webhook is always registered with a secret: without one, anyone who
+    learns the URL could post fake updates as any Telegram user. When none is
+    configured a random one is generated for this registration (Telegram
+    accepts 1-256 of A-Z, a-z, 0-9, _ and -, which token_urlsafe produces).
+    """
+    import secrets
+
+    secret = secret or secrets.token_urlsafe(32)
     full_url = f"{webhook_url.rstrip('/')}/api/plugins/_telegram_integration/webhook?bot={instance.name}"
 
     await instance.bot.set_webhook(
         url=full_url,
-        secret_token=secret or None,
+        secret_token=secret,
     )
 
     instance.webhook_active = True

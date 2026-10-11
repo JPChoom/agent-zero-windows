@@ -397,6 +397,17 @@ def _is_proxied(headers) -> bool:
     return is_proxied(headers)
 
 
+def _session_authenticated(ctx: _SecurityContext) -> bool:
+    """Whether the connecting browser session is signed in (or no login is set)."""
+    from helpers import login
+    from helpers.access_control import constant_time_equals
+
+    user_pass_hash = login.get_credentials_hash()
+    if not user_pass_hash:
+        return True
+    return bool(ctx.auth_hash) and constant_time_equals(ctx.auth_hash, user_pass_hash)
+
+
 def _check_security(handler_cls: type[WsHandler], ctx: _SecurityContext) -> dict[str, Any] | None:
     """Return an error payload dict if the check fails, or ``None`` on success."""
 
@@ -512,6 +523,13 @@ def register_ws_namespace(
                 proxied=_is_proxied(request.headers),
             )
             user_id = session.get("user_id") or "single_user"
+
+            # Every handler requires a signed-in session, so a socket without
+            # one is refused here - before it is registered, learns the
+            # runtime id, or triggers a lifecycle broadcast to other sockets.
+            if not _session_authenticated(ctx):
+                PrintStyle.warning(f"WS connect rejected for {sid}: not signed in")
+                return False
 
             with _contexts_lock:
                 _ws_contexts[sid] = ctx

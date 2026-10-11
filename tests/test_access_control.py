@@ -12,6 +12,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from helpers import access_control as ac
 
+REAL_LOGIN_CONFIGURED = ac.login_configured
+
 ALLOWED = "203.0.113.114"
 CF = {"cf-connecting-ip": ALLOWED, "cf-ray": "abc"}
 
@@ -23,6 +25,8 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(ac, "_maybe_notify_block_burst", lambda: None)
     ac._recent_blocks.clear()
     ac.invalidate_policy_cache()
+    # Remote access needs a login (finding F2); tests opt out where relevant.
+    monkeypatch.setattr(ac, "login_configured", lambda: True)
 
 
 def _policy(monkeypatch, text=ALLOWED + "  # offsite", enabled=True):
@@ -82,6 +86,57 @@ def test_check_access_tunnel_allowed_and_blocked(monkeypatch):
     assert ac.check_access("127.0.0.1", CF)[0] is True
     assert ac.check_access("127.0.0.1", {"cf-connecting-ip": "8.8.8.8"})[0] is False
     assert ac.check_access("127.0.0.1", {})[0] is True  # this PC
+
+
+def test_no_login_refuses_all_remote_even_allowlisted(monkeypatch):
+    _policy(monkeypatch)
+    monkeypatch.setattr(ac, "_active_tunnel_provider", lambda: "cloudflared")
+    monkeypatch.setattr(ac, "login_configured", lambda: False)
+    allowed, ip, reason = ac.check_access("127.0.0.1", CF)
+    assert allowed is False and ip == ALLOWED and reason == "no login configured"
+    assert ac.check_access("127.0.0.1", {})[0] is True  # this PC still works
+
+
+def test_no_login_refuses_remote_with_allowlist_disabled(monkeypatch):
+    _policy(monkeypatch, enabled=False)
+    monkeypatch.setattr(ac, "_active_tunnel_provider", lambda: "cloudflared")
+    monkeypatch.setattr(ac, "login_configured", lambda: False)
+    assert ac.check_access("127.0.0.1", {"cf-connecting-ip": "8.8.8.8"})[0] is False
+
+
+def test_login_check_fails_closed(monkeypatch):
+    from helpers import login
+
+    def broken():
+        raise OSError("cannot read .env")
+
+    monkeypatch.setattr(login, "get_credentials_hash", broken)
+    assert REAL_LOGIN_CONFIGURED() is False
+
+
+@pytest.mark.asyncio
+async def test_middleware_blocks_remote_without_login(monkeypatch, tmp_path):
+    _policy(monkeypatch)
+    monkeypatch.setattr(ac, "_active_tunnel_provider", lambda: "cloudflared")
+    monkeypatch.setattr(ac, "login_configured", lambda: False)
+    reached = []
+
+    async def app(scope, receive, send):
+        reached.append(scope["path"])
+
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    async def receive():
+        return {"type": "http.request"}
+
+    scope = {"type": "http", "path": "/", "client": ("127.0.0.1", 50000),
+             "headers": [(b"cf-connecting-ip", ALLOWED.encode())]}
+    await ac.AccessControlMiddleware(app)(scope, receive, send)
+    assert reached == []
+    assert sent[0]["status"] == 404
 
 
 def test_spoofed_xff_cannot_impersonate_allowed_ip(monkeypatch):
@@ -228,6 +283,25 @@ def test_describe_request_records_details_but_never_secrets(monkeypatch, _fresh_
     assert "abc123" not in d["query"] and "next=%2F" in d["query"]
     blob = str(d)
     assert "SECRET" not in blob and "TOKEN" not in blob
+
+
+def test_unknown_headers_are_recorded_as_present_not_stored(monkeypatch, _fresh_history):
+    # Allowlist, not denylist: a custom header carrying a token must not be logged.
+    _policy(monkeypatch)
+    monkeypatch.setattr(ac, "_active_tunnel_provider", lambda: "cloudflared")
+    d = ac.describe_request(
+        "127.0.0.1",
+        {**CF, "x-custom-auth": "CUSTOMSECRET", "x-amz-security-token": "AWSSECRET",
+         "sec-ch-ua-platform": '"Windows"', "sec-fetch-site": "same-origin",
+         "referer": "https://example.com/cb?code=OAUTHCODE&page=2"},
+    )
+    assert d["headers"]["x-custom-auth"] == "[present, not stored]"
+    assert d["headers"]["x-amz-security-token"] == "[present, not stored]"
+    assert d["headers"]["sec-ch-ua-platform"] == '"Windows"'
+    assert d["headers"]["sec-fetch-site"] == "same-origin"
+    assert "page=2" in d["referer"] and "page=2" in d["headers"]["referer"]
+    blob = str(d)
+    assert "CUSTOMSECRET" not in blob and "AWSSECRET" not in blob and "OAUTHCODE" not in blob
 
 
 def test_local_request_is_described_as_local(monkeypatch, _fresh_history):
