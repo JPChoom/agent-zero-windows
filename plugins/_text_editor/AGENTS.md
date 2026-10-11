@@ -13,6 +13,8 @@
 
 ## Local Contracts
 
+- Writes (write, patch, exact replace) never go to a Startup folder, in every access tier (`file_ops.confine_for_write`): files there run at sign-in, which the command safety floor denies for shell commands.
+
 - Preserve stale-read protection before patch operations.
 - Validate patch structures before applying edits.
 - Read back changed regions after writes or patches where the tool contract requires confirmation.

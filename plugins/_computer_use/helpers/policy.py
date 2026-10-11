@@ -118,3 +118,29 @@ def refusal(action: str, process_name: str = "", keys=None, element_label: str =
             "enters passwords, PINs or codes; ask the user to type it."
         )
     return ""
+
+
+_NON_APP_SUFFIXES = {
+    ".bat", ".cmd", ".ps1", ".psm1", ".psd1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
+    ".hta", ".lnk", ".url", ".msi", ".msp", ".msix", ".appx", ".scr", ".com", ".pif", ".cpl",
+    ".reg", ".jar", ".py", ".pyw", ".sh", ".inf", ".application", ".appref-ms",
+}
+
+
+def launch_refusal(app: str, is_path: bool) -> str:
+    """Why `launch` refuses this target, or "" if it may start it.
+
+    `launch` starts applications. A path must be an .exe, and a name must not
+    end in a script, shortcut or installer extension: opening one here would
+    run it without the command safety floor that code_execution_tool applies
+    (enforcement audit E8). Names may contain dots ("Paint.NET").
+    """
+    import os
+
+    suffix = os.path.splitext(str(app or "").strip().strip('"'))[1].lower()
+    if (is_path and suffix != ".exe") or (not is_path and suffix in _NON_APP_SUFFIXES):
+        return (
+            f"launch only starts applications (.exe or an app name), not {suffix or 'this kind of'} files. "
+            "Run scripts and installers with code_execution_tool so the command safety checks apply."
+        )
+    return ""

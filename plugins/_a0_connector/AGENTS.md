@@ -14,6 +14,7 @@
 
 ## Local Contracts
 
+- `computer_use_remote` refuses A0W's hard-blocked key combos (`plugins/_computer_use/helpers/policy.blocked_hotkey`) and checks the kill switch for input actions before contacting the CLI host.
 - `code_execution_remote` passes the command safety floor (`plugins/_safety_policy`) and the kill switch like `code_execution_tool`: checked at `tool_execute_before` and again inside the tool for terminal/python/nodejs/input.
 
 - Preserve session-auth and `auth.handlers` activation assumptions.

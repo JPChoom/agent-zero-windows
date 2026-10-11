@@ -305,6 +305,9 @@ class ComputerUse(Tool):
         before = await self._call("list_apps", {})
         running = {a.get("pid") for a in before.get("apps") or [] if a.get("running")}
         key = "path" if (":" in app or "\\" in app or "/" in app) else "name"
+        refused = policy.launch_refusal(app, is_path=key == "path")
+        if refused:
+            raise RepairableException(refused)
         await audit_log.append_record({"tool": "computer_use", "action": "launch", "app": app,
                                        "context": getattr(self.agent.context, "id", "")})
         data = await self._call("launch_app", {key: app, "creates_new_application_instance": True})

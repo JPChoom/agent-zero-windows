@@ -13,6 +13,8 @@
 
 ## Local Contracts
 
+- `launch` starts applications only: a path must be an `.exe`, a name must not end in a script, shortcut or installer extension (`policy.launch_refusal`); those go through `code_execution_tool` and its safety floor.
+
 - Never download or update the driver from code; installing it is a manual, user-approved step (README).
 - Read actions (`apps`, `windows`, `inspect`, `screenshot`, `status`) need no `control_enabled`; they are listed in `_permissions/helpers/rules.py _READ_ACTIONS` - keep both in sync with `policy.READ_ACTIONS`.
 - Input needs `control_enabled` (default false) and an untripped kill switch, and is audited before it runs.

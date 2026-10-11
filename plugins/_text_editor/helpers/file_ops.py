@@ -98,6 +98,30 @@ def confine_to_workdir(path: str) -> str:
         raise PathNotAllowedError(str(exc)) from exc
 
 
+# Locations Windows runs files from at sign-in. The command safety floor
+# denies shell commands that write there; without this check the editor was
+# a way around it whenever access_tier is "unrestricted" (enforcement audit
+# E9). Refused for writes in every tier.
+_AUTORUN_PARTS = (
+    "\\start menu\\programs\\startup\\",
+)
+
+
+def is_autorun_location(path: str) -> bool:
+    real = os.path.normcase(os.path.realpath(str(path or ""))).replace("/", "\\") + "\\"
+    return any(part in real.lower() for part in _AUTORUN_PARTS)
+
+
+def confine_for_write(path: str) -> str:
+    """confine_to_workdir, and never a location Windows auto-runs files from."""
+    resolved = confine_to_workdir(path)
+    if is_autorun_location(resolved):
+        raise PathNotAllowedError(
+            "Writing to a Startup folder is not allowed: files there run automatically at sign-in."
+        )
+    return resolved
+
+
 # ------------------------------------------------------------------
 # Line-ending preservation
 #
@@ -313,7 +337,7 @@ def write_file(path: str, content: str | None) -> WriteResult:
     if content is None:
         content = ""
     try:
-        path = confine_to_workdir(path)
+        path = confine_for_write(path)
     except PathNotAllowedError as exc:
         return WriteResult(total_lines=0, error=str(exc))
     try:
@@ -497,7 +521,7 @@ def apply_patch(path: str, edits: list[dict]) -> int:
 def patch_file(path: str, edits: list | None) -> PatchResult:
     """Validate and apply edits to a file."""
     try:
-        path = confine_to_workdir(path)
+        path = confine_for_write(path)
     except PathNotAllowedError as exc:
         return PatchResult(total_lines=0, edit_count=0, error=str(exc))
     if not os.path.isfile(path):
@@ -517,7 +541,7 @@ def patch_file(path: str, edits: list | None) -> PatchResult:
 
 def apply_context_patch_file(path: str, patch_text: str) -> ContextPatchFileResult:
     """Apply a context patch to an existing text file."""
-    path = confine_to_workdir(path)
+    path = confine_for_write(path)
     if not os.path.isfile(path):
         raise FileNotFoundError("file not found")
 
@@ -551,7 +575,7 @@ def apply_exact_replace_file(
     path: str, old_text: str, new_text: str
 ) -> ExactReplaceFileResult:
     """Replace exactly one text span in an existing text file."""
-    path = confine_to_workdir(path)
+    path = confine_for_write(path)
     if not os.path.isfile(path):
         raise FileNotFoundError("file not found")
     if not old_text:

@@ -236,3 +236,23 @@ def test_caps_take_the_safer_mode_and_never_allow_bypass():
     assert perm_config.channel_cap({"channel_mode_caps": {"telegram": "bypass"}}, "telegram") == "manual"
     assert perm_config.channel_cap({"channel_mode_caps": {"telegram": "everything"}}, "telegram") == "manual"
     assert perm_config.channel_cap({"channel_mode_caps": {"slack": "plan"}}, "slack") == "plan"
+
+
+# --- enforcement audit E8: launch starts applications only -------------
+
+@pytest.mark.parametrize("app,is_path,refused", [
+    ("notepad", False, False),
+    ("Paint.NET", False, False),
+    (r"C:\Windows\System32\notepad.exe", True, False),
+    (r"C:\Users\x\workdir\run.bat", True, True),
+    (r"C:\Users\x\workdir\setup.ps1", True, True),
+    (r"C:\Users\x\Desktop\Tool.lnk", True, True),
+    (r"C:\Users\x\Downloads\installer.msi", True, True),
+    (r"C:\Users\x\workdir\noextension", True, True),
+    ("evil.bat", False, True),
+    ("payload.vbs", False, True),
+])
+def test_launch_only_starts_applications(app, is_path, refused):
+    from plugins._computer_use.helpers import policy as cu_policy
+
+    assert bool(cu_policy.launch_refusal(app, is_path=is_path)) is refused

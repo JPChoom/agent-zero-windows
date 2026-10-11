@@ -6,7 +6,7 @@ from pathlib import Path
 import uuid
 from typing import Any
 
-from helpers import chat_media, history, media_artifacts
+from helpers import chat_media, history, kill_switch, media_artifacts
 from helpers.print_style import PrintStyle
 from helpers.tool import Response, Tool
 from helpers.ws import NAMESPACE
@@ -55,6 +55,8 @@ _SETTLE_DELAY_GLOBAL_FOCUS = 0.45
 _SETTLE_DELAY_PLAIN_ENTER = 0.3
 _SETTLE_DELAY_SUBMIT = 0.45
 _FRESH_CAPTURE_TIMEOUT = 0.45
+_REMOTE_INPUT_ACTIONS = {"element_action", "ax_action", "uia_action", "move", "click", "scroll", "key", "type"}
+
 _SUPPORTED_ACTIONS = {
     "start_session",
     "status",
@@ -80,6 +82,9 @@ class ComputerUseRemote(Tool):
         self._latest_capture_content: list[dict[str, Any]] | None = None
         self._latest_capture_preview = ""
         action = str(self.args.get("action") or "").strip().lower()
+        refused = self._local_refusal(action)
+        if refused:
+            return Response(message=refused, break_loop=False)
         if action not in _SUPPORTED_ACTIONS:
             return Response(
                 message=(
@@ -292,6 +297,24 @@ class ComputerUseRemote(Tool):
         if keyset == {"enter"}:
             return _SETTLE_DELAY_PLAIN_ENTER
         return _SETTLE_DELAY_KEY
+
+    def _local_refusal(self, action: str) -> str:
+        """A0W's own limits, applied before anything is sent to the CLI host
+        (enforcement audit E10): the kill switch stops input actions, and
+        key combos A0W's Computer Use hard-blocks (lock, sign-out, Secure
+        Attention...) are refused here too, whatever the CLI allows."""
+        if action in _REMOTE_INPUT_ACTIONS and kill_switch.is_tripped():
+            return kill_switch.denial_message()
+        if action == "key":
+            from plugins._computer_use.helpers import policy as cu_policy
+
+            blocked = cu_policy.blocked_hotkey(self._requested_keys())
+            if blocked:
+                return (
+                    f"computer_use_remote: {blocked} is blocked (it can lock, sign out or "
+                    "otherwise take the session away). Ask the user to do it."
+                )
+        return ""
 
     def _requested_keys(self) -> list[str]:
         keys_value = self.args.get("keys")
