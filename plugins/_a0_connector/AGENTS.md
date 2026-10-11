@@ -14,6 +14,8 @@
 
 ## Local Contracts
 
+- `code_execution_remote` passes the command safety floor (`plugins/_safety_policy`) and the kill switch like `code_execution_tool`: checked at `tool_execute_before` and again inside the tool for terminal/python/nodejs/input.
+
 - Preserve session-auth and `auth.handlers` activation assumptions.
 - Keep remote tool prompts synchronized with remote tool behavior and disclose
   them only from connected CLI metadata: no connected CLI hides all remote tool

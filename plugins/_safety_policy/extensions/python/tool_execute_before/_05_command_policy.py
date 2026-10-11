@@ -57,6 +57,13 @@ def _as_code_execution(tool_name: str, tool_args: dict) -> dict | None:
         return tool_args
     if tool_name == "input":
         return {"runtime": "terminal", "code": str(tool_args.get("keyboard", ""))}
+    if tool_name == "code_execution_remote":
+        # Runs on the machine a CLI connected from (which may be this PC).
+        runtime = str(tool_args.get("runtime", "")).strip().lower()
+        if runtime == "input":
+            keyboard = tool_args.get("keyboard")
+            return {"runtime": "input", "code": str(tool_args.get("code", "") if keyboard is None else keyboard)}
+        return {"runtime": runtime, "code": str(tool_args.get("code", ""))}
     return None
 
 

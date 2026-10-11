@@ -55,7 +55,7 @@
           x-init="killSwitchStatus().then(s => tripped = s.tripped)"
           @click="toggleKillSwitch(tripped).then(s => tripped = s.tripped)"
           :class="{ 'kill-switch-tripped': tripped }"
-          :title="tripped ? 'Kill switch ACTIVE - all code execution halted. Click to reset.' : 'Kill switch inactive. Click to halt all code execution.'"
+          :title="tripped ? 'Kill switch ACTIVE - the agent cannot act (only read-only tools work). Click to reset.' : 'Kill switch inactive. Click to stop the agent from acting (read-only tools keep working).'"
           :aria-label="tripped ? 'Kill switch active, click to reset' : 'Kill switch inactive, click to trip'"
           tabindex="-1"
         >

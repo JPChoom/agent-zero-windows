@@ -5,11 +5,13 @@ can't just wait out a restart to clear it.
 
 No tool exposes trip()/reset() to the model - the only callers are
 api/kill_switch.py (a small header UI control, not a chat action) and
-this module's own tests. Checked in two independent places for
-defense-in-depth (plugins/_safety_policy's command-policy extension, and
-directly inside plugins/_code_execution/tools/code_execution_tool.py's
-execute()), so disabling or misconfiguring the _safety_policy plugin
-doesn't silently bypass it.
+this module's own tests. Enforced for every tool by the core gate
+extensions/python/tool_execute_before/_01_kill_switch.py (only read-only
+tools, `response` and terminal output/reset pass while tripped), and checked
+again inside the tools that act on the machine (code execution, remote code
+execution, Computer Use, desktop control, the Windows tools) and in
+plugins/_safety_policy's command policy, so disabling a plugin never
+bypasses it.
 """
 
 import json

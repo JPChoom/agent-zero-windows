@@ -5,6 +5,7 @@ import asyncio
 import uuid
 from typing import Any
 
+from helpers import kill_switch
 from helpers.tool import Response, Tool
 from helpers.ws import NAMESPACE
 from helpers.ws_manager import ConnectionNotFoundError, get_shared_ws_manager
@@ -113,6 +114,11 @@ class CodeExecutionRemote(Tool):
                 ),
                 break_loop=False,
             )
+
+        # Second layer behind the core kill-switch gate and the safety floor
+        # (enforcement audit E2): checked in the tool itself as well.
+        if runtime in {"terminal", "python", "nodejs", "input"} and kill_switch.is_tripped():
+            return Response(message=kill_switch.denial_message(), break_loop=False)
 
         context_id = self.agent.context.id
         candidates = remote_tool_sids_for_context(context_id)

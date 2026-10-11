@@ -6,10 +6,13 @@
 
 ## Ownership
 
-- Ordered Python files own the host-bound secret guard (`_09_`), prior tool-output replacement and secret unmasking (`_10_`), parallel recursion guards (`_20_`), and audit capture (`_95_`).
+- Ordered Python files own the kill-switch gate (`_01_`), the host-bound secret guard (`_09_`), prior tool-output replacement and secret unmasking (`_10_`), parallel recursion guards (`_20_`), and audit capture (`_95_`).
 - `_09_secret_destination_guard.py` must run before `_10_unmask_secrets.py`: it refuses calls that would send a secret bound with a `# hosts:` comment (`helpers/secrets.py get_host_bindings`) anywhere but those hosts, including browser typing into a page on another host or an undeterminable destination. It is `FAIL_LOUD`.
 
 ## Local Contracts
+
+- `_01_kill_switch.py` refuses every tool while the kill switch is tripped, except read-only tools (`plugins/_permissions` `rules.classify`), `response`, and terminal `output`/`reset`. It is core on purpose (disabling a plugin must not disable it) and `FAIL_LOUD`; tools that act on the machine keep their own check as a second layer.
+- Extensions merge by file name across agent, user, plugin and core folders, and the first occurrence wins: a file with the same name elsewhere replaces a gate. Never reuse a gate's file name for anything else.
 
 - Unmask only values required by the target tool.
 - Preserve safety checks and do not expose secrets to logs or unrelated tools.
