@@ -11,7 +11,7 @@
 - Shared fixtures should be added only when multiple tests need them.
 - `conftest.py` (autouse) pins the per-chat permission default to `auto` and clears in-memory modes, so tests that run tools through the real `tool_execute_before` chain don't wait on approval prompts or depend on the developer's `usr/settings.json`. Permission tests patch `mode_state` explicitly (their patches win).
 - Runtime artifacts created during tests should use pytest temporary directories or existing isolated test helpers.
-- `tests/manual/` holds scripts that need a live local model or other local services (e.g. `windows_routing_eval.py`). They are not collected by pytest (no `test_` prefix) and are run by hand.
+- `tests/manual/` holds scripts that need a live local model or other local services (e.g. `windows_routing_eval.py`, and `windows_workflow_benchmark.py`, the v1.4 yardstick: realistic Windows tasks run by the real agent in Auto mode, scored on the end state, interventions and unintended effects; `--dynamic-sampling on|off` compares the experimental feature). They are not collected by pytest (no `test_` prefix) and are run by hand; `tests/test_workflow_benchmark_tasks.py` checks the benchmark's scoring without a model.
 
 ## Local Contracts
 
