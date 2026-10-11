@@ -12,7 +12,7 @@
 ## Local Contracts
 
 - `_01_kill_switch.py` refuses every tool while the kill switch is tripped, except read-only tools (`plugins/_permissions` `rules.classify`), `response`, and terminal `output`/`reset`. It is core on purpose (disabling a plugin must not disable it) and `FAIL_LOUD`; tools that act on the machine keep their own check as a second layer.
-- Extensions merge by file name across agent, user, plugin and core folders, and the first occurrence wins: a file with the same name elsewhere replaces a gate. Never reuse a gate's file name for anything else.
+- Extensions merge by file name across agent, user, plugin and core folders, and the first occurrence wins, except for the security gates in `helpers/extension.py PROTECTED_GATES`, which only load from where they ship (a same-named file elsewhere is skipped with a warning). Add every new refusing gate to that list.
 
 - Unmask only values required by the target tool.
 - Preserve safety checks and do not expose secrets to logs or unrelated tools.

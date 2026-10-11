@@ -376,6 +376,43 @@ def get_webui_extensions(
     return entries
 
 
+# Security gates that can never be overridden by a same-named file elsewhere:
+# (extension point, file name) -> the folder they ship in. If that folder is
+# not active (plugin disabled), the gate is simply absent - an override still
+# never loads in its place.
+PROTECTED_GATES: dict[tuple[str, str], str] = {
+    ("tool_execute_before", "_01_kill_switch"): "extensions/python/tool_execute_before",
+    ("tool_execute_before", "_05_command_policy"): "plugins/_safety_policy/extensions/python/tool_execute_before",
+    ("tool_execute_before", "_06_permissions"): "plugins/_permissions/extensions/python/tool_execute_before",
+    ("tool_execute_before", "_09_secret_destination_guard"): "extensions/python/tool_execute_before",
+    ("tool_execute_before", "_20_block_parallel_recursion"): "extensions/python/tool_execute_before",
+    ("tool_execute_before", "_50_infection_check"): "plugins/_infection_check/extensions/python/tool_execute_before",
+    ("tool_execute_after", "_80_completion_gate"): "plugins/_coding_controller/extensions/python/tool_execute_after",
+}
+
+_warned_overrides: set[tuple[str, str, str]] = set()
+
+
+def _same_folder(path: str, shipped: str) -> bool:
+    import os
+
+    def norm(p: str) -> str:
+        return os.path.normcase(os.path.normpath(files.get_abs_path(p)))
+
+    return norm(path) == norm(shipped)
+
+
+def _warn_override(extension_point: str, file: str, path: str) -> None:
+    key = (extension_point, file, path)
+    if key in _warned_overrides:
+        return
+    _warned_overrides.add(key)
+    PrintStyle.warning(
+        f"Ignoring {path}/{file}.py: it would replace the protected security gate "
+        f"{extension_point}/{file}. Rename it to load it as a separate extension."
+    )
+
+
 def _get_extension_classes(
     extension_point: str, agent: "Agent|None" = None, **kwargs
 ) -> list[Type[Extension]]:
@@ -389,13 +426,20 @@ def _get_extension_classes(
     # search for extension folders in all agent's paths
     paths = subagents.get_paths(agent, "extensions/python", extension_point)
 
-    all_exts = [cls for path in paths for cls in _get_extensions(path)]
-
-    # merge: first ocurrence of file name is the override
+    # merge: first ocurrence of file name is the override - except for the
+    # security gates in PROTECTED_GATES, which only ever load from where they
+    # ship (enforcement audit E11: a same-named file in a plugin, project or
+    # usr/ folder used to replace the gate silently).
     unique = {}
-    for cls in all_exts:
-        file = _get_file_from_module(cls.__module__)
-        if file not in unique:
+    for path in paths:
+        for cls in _get_extensions(path):
+            file = _get_file_from_module(cls.__module__)
+            if file in unique:
+                continue
+            shipped = PROTECTED_GATES.get((extension_point, file))
+            if shipped and not _same_folder(path, shipped):
+                _warn_override(extension_point, file, path)
+                continue
             unique[file] = cls
     classes = sorted(
         unique.values(), key=lambda cls: _get_file_from_module(cls.__module__)
