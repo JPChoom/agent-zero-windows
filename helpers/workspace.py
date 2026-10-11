@@ -22,6 +22,12 @@ its superior.
 
 Process ids are reused by Windows, so every app entry records the process's
 start time and is trusted only while that same process is still running.
+
+The registry is in memory on purpose. After a server restart nothing is
+owned by any agent: every running app counts as the user's, so agents must
+ask before typing into it and cannot close it - the safe direction. Each
+entry keeps a bounded history of who controlled it; every change is also
+written to the security audit log.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ import importlib
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 KIND_APP = "app"
 ACTIVE = "active"
@@ -47,6 +53,7 @@ PARALLEL_PARENT_KEY = "_parallel_parent_context_id"  # helpers.parallel_tools
 PARALLEL_PARENT_AGENT_KEY = "_parallel_parent_agent"  # helpers.parallel_tools
 MAIN_AGENT = "A0"
 MAX_ENTRIES = 500
+MAX_HISTORY = 30
 
 _lock = threading.RLock()
 _resources: dict[str, "Resource"] = {}
@@ -68,6 +75,8 @@ class Resource:
     state: str = ACTIVE
     note: str = ""
     changed_at: float = 0.0
+    # Who controlled it, oldest first (bounded): {time, event, context, agent, by}.
+    history: list = field(default_factory=list)
 
     def public(self) -> dict:
         return asdict(self)
@@ -110,8 +119,25 @@ def _audit(event: str, **fields) -> None:
         from helpers import access_control
 
         access_control.audit(event, **fields)
-    except Exception:
-        pass
+    except Exception as exc:
+        # The in-memory history still records the change; say the audit
+        # trail missed it instead of dropping it silently.
+        try:
+            from helpers.print_style import PrintStyle
+
+            PrintStyle.warning(f"Workspace: could not write audit event {event!r}: {exc}")
+        except Exception:
+            pass
+
+
+def _record(resource: "Resource", event: str, by: str = "") -> None:
+    """Append an ownership change to the resource's history (call under _lock)."""
+    resource.changed_at = time.time()
+    resource.history.append({
+        "time": resource.changed_at, "event": event,
+        "context": resource.owner_context, "agent": resource.owner_agent, "by": by,
+    })
+    del resource.history[:-MAX_HISTORY]
 
 
 def _trim() -> None:
@@ -128,8 +154,13 @@ def register_app(pid, label: str, *, context_id: str, agent_name: str = "", prof
     with _lock:
         for existing in _resources.values():
             if existing.kind == KIND_APP and existing.handle.get("pid") == handle["pid"] and _same_process(existing.handle) is not False:
+                previous = (existing.owner_context, existing.owner_agent)
                 existing.owner_context, existing.owner_agent = context_id, agent_name
-                existing.state, existing.changed_at = ACTIVE, time.time()
+                existing.state = ACTIVE
+                _record(existing, "registered again", by=agent_name)
+                if previous != (context_id, agent_name):
+                    _audit("workspace_reassigned", resource=existing.id, label=existing.label, pid=handle["pid"],
+                           from_context=previous[0], from_agent=previous[1], to_context=context_id, to_agent=agent_name)
                 return existing
         now = time.time()
         resource = Resource(
@@ -138,6 +169,7 @@ def register_app(pid, label: str, *, context_id: str, agent_name: str = "", prof
             origin_context=context_id, origin_agent=agent_name, origin_job=job_id,
             created_at=now, changed_at=now,
         )
+        _record(resource, "launched", by=agent_name)
         _resources[resource.id] = resource
         _trim()
     return resource
@@ -173,16 +205,18 @@ def owns_app(context_id: str, pid, agent_no: int | None = None) -> bool:
 def hand_over(context_id: str, pid, from_no: int, to_name: str, by: str = "") -> Resource:
     """An agent gives one of its apps to a sub-agent below it in the same chat.
     Raises ValueError when it may not."""
-    resource = find_app(pid)
-    if not owns_app(context_id, pid, from_no):
-        raise ValueError("Only an app you (or a sub-agent of yours) launched can be handed over.")
-    if agent_number(to_name) <= int(from_no):
-        raise ValueError("Hand an app only to a sub-agent below you; the agents above you already own it.")
+    # Checked and changed under one lock: otherwise another agent (or the
+    # user) could reassign the app between the ownership check and the change.
     with _lock:
+        if agent_number(to_name) <= int(from_no):
+            raise ValueError("Hand an app only to a sub-agent below you; the agents above you already own it.")
+        if not owns_app(context_id, pid, from_no):
+            raise ValueError("Only an app you (or a sub-agent of yours) launched can be handed over.")
+        resource = find_app(pid)
         previous = resource.owner_agent
         resource.owner_agent = f"A{agent_number(to_name)}"
-        resource.changed_at = time.time()
         resource.note = f"Handed to {resource.owner_agent} by A{int(from_no)}"
+        _record(resource, "handed over", by=by or f"A{int(from_no)}")
     _audit("workspace_handover", by=by or f"A{int(from_no)}", resource=resource.id, label=resource.label,
            pid=resource.handle.get("pid"), context=context_id, from_agent=previous, to_agent=resource.owner_agent)
     return resource
@@ -192,15 +226,20 @@ def pass_up(context_id: str, from_no: int) -> int:
     """Sub-agent `from_no` (and those below it) is being replaced: its apps
     pass to the agent above it."""
     to_name = f"A{max(0, int(from_no) - 1)}"
-    moved = 0
+    moved = []
     with _lock:
         for resource in _resources.values():
             if (resource.owner_context == context_id and resource.state == ACTIVE
                     and agent_number(resource.owner_agent) >= int(from_no)):
-                resource.owner_agent, resource.changed_at = to_name, time.time()
+                previous = resource.owner_agent
+                resource.owner_agent = to_name
                 resource.note = f"Passed up to {to_name} when its sub-agent was replaced"
-                moved += 1
-    return moved
+                _record(resource, "passed up", by=previous)
+                moved.append((resource, previous))
+    for resource, previous in moved:
+        _audit("workspace_pass_up", resource=resource.id, label=resource.label, pid=resource.handle.get("pid"),
+               context=context_id, from_agent=previous, to_agent=to_name)
+    return len(moved)
 
 
 def assign(resource_id: str, context_id: str, agent_name: str, by: str = "") -> Resource | None:
@@ -211,8 +250,9 @@ def assign(resource_id: str, context_id: str, agent_name: str, by: str = "") -> 
             return None
         previous = resource.owner_agent
         resource.owner_agent = f"A{agent_number(agent_name)}"
-        resource.state, resource.changed_at = ACTIVE, time.time()
+        resource.state = ACTIVE
         resource.note = f"Given to {resource.owner_agent} by the user"
+        _record(resource, "assigned", by=by or "user")
     _audit("workspace_assign", by=by or "local", resource=resource_id, label=resource.label,
            pid=resource.handle.get("pid"), context=context_id, from_agent=previous, to_agent=resource.owner_agent)
     return resource
@@ -282,16 +322,17 @@ def release_context(context_id: str) -> dict:
             if _same_process(resource.handle) is False:
                 del _resources[resource.id]
                 continue
-            resource.changed_at = time.time()
             if parent:
                 resource.owner_context, resource.owner_agent = parent, parent_agent
                 resource.note = f"Handed back to {parent_agent} when its parallel job ended"
+                _record(resource, "handed back", by="parallel job ended")
                 handed += 1
                 _audit("workspace_handover", resource=resource.id, kind=resource.kind, label=resource.label,
                        pid=resource.handle.get("pid"), from_context=context_id, to_context=parent, to_agent=parent_agent)
             else:
                 resource.state = ORPHANED
                 resource.note = "Its chat was deleted; the app is still running"
+                _record(resource, "orphaned", by="chat deleted")
                 orphaned += 1
                 _audit("workspace_orphaned", resource=resource.id, kind=resource.kind, label=resource.label,
                        pid=resource.handle.get("pid"), from_context=context_id)
@@ -307,8 +348,9 @@ def adopt(resource_id: str, context_id: str, agent_name: str = MAIN_AGENT, by: s
             return None
         previous = resource.owner_context
         resource.owner_context, resource.owner_agent = context_id, f"A{agent_number(agent_name)}"
-        resource.state, resource.changed_at = ACTIVE, time.time()
+        resource.state = ACTIVE
         resource.note = "Adopted by the user"
+        _record(resource, "adopted", by=by or "user")
     _audit("workspace_adopt", by=by or "local", resource=resource_id, label=resource.label,
            pid=resource.handle.get("pid"), from_context=previous, to_context=context_id)
     return resource

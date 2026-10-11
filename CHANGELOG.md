@@ -4,6 +4,9 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## Unreleased
 
+### Improved
+- **Agent Workspace**: every app keeps a history of which agent controlled it (hover its name in the Workspace view), every ownership change is in the access log, and a hand-over can no longer overwrite an owner change that happened a moment earlier.
+
 ### Security
 - Remote (tunnel) access is refused while no WebUI login is set, even from an allowlisted address, and Remote Control cannot be started without one: without a login nothing asks for authentication.
 - WebSocket connections that are not signed in are refused at connect, before they are registered or see any server or connection details.

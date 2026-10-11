@@ -12,6 +12,9 @@
 
 ## Runtime Contracts
 
+- Every ownership change (launch, re-registration, hand-over, pass-up, assign, hand-back, orphaning, adopt) is recorded in the resource's bounded `history` ({time, event, context, agent, by}; `MAX_HISTORY`) and written to the security audit log; a failed audit write is reported as a warning, never dropped silently.
+- `hand_over` checks ownership and changes it under one lock. The registry is in memory by design: after a restart nothing is agent-owned, so agents must ask before using any app.
+
 - In-memory only (lost on restart, like the apps' ownership used to be). Apps are the only kind stored here: terminals and browser tabs already belong to an agent/context, so they are read live from the `PROVIDERS` modules (`plugins/_code_execution/helpers/workspace_provider.py`, `plugins/_browser/helpers/workspace_provider.py`), each exposing `async resources()` and optionally `end_agent(agent)`.
 - An app entry records `{pid, started}` (psutil start time). Ownership is trusted only while the same process is running: if the process exited or the pid was reused, the entry is dropped. `owns_app(context_id, pid)` is true only for an `active` entry owned by that chat.
 - A resource has an owner (`owner_context`, `owner_agent` such as `A1`, `owner_profile`) and an origin (`origin_context`, `origin_agent`, `origin_job`) that never changes.

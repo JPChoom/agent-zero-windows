@@ -13,6 +13,8 @@
 
 ## Local Contracts
 
+- An app's name shows its ownership history (newest first) as a tooltip, from `history` in the API payload.
+
 - Group by chat, current chat first; orphaned apps (their chat was deleted) form their own group on top.
 - Closing an app asks first, is disabled while Computer Use input is off, and the explanation is shown; apps are never closed automatically.
 - Releasing explains that the app becomes the user's own again.

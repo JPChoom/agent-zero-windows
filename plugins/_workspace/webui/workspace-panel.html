@@ -40,7 +40,7 @@
                 <span class="material-symbols-outlined ws-kind" :title="item.kind" x-text="ws.icon(item)"></span>
                 <div class="ws-main">
                   <div class="ws-label">
-                    <span class="ws-name" x-text="item.label"></span>
+                    <span class="ws-name" x-text="item.label" :title="ws.historyTitle(item)"></span>
                     <template x-if="ws.agentsOf(item).length > 1">
                       <select class="ws-owner" :value="item.owner_agent || 'A0'" :disabled="ws.busy"
                               title="Which agent owns it: it and the agents above it may use it without asking"

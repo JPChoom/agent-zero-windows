@@ -120,6 +120,18 @@ export const store = createStore("workspace", {
     return `${Math.round(seconds / 86400)} d`;
   },
 
+  // Who controlled an app, newest first, as a tooltip (helpers/workspace.py history).
+  historyTitle(item) {
+    const history = Array.isArray(item.history) ? item.history : [];
+    if (!history.length) return item.label || "";
+    const lines = history.slice(-8).reverse().map((h) => {
+      const when = new Date((h.time || 0) * 1000).toLocaleTimeString();
+      const by = h.by ? ` (by ${h.by})` : "";
+      return `${when}  ${h.event}: ${h.agent || "?"}${by}`;
+    });
+    return `${item.label}\nWho controlled it:\n${lines.join("\n")}`;
+  },
+
   // The agents of the chat that owns an app (A0, A1, ...); a picker is shown
   // when there is more than one, so the user can move the app between them.
   agentsOf(item) {
