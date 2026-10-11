@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.3
+
+A Windows Explorer-style File Browser, the Agent Workspace, and a faster, lighter Desktop view.
 
 ### New
 - **File Browser rebuilt** as a Windows Explorer-style browser (address bar, Quick access, drives, sorting, multi-select, shortcuts, cut/copy/paste, drag-and-drop upload of files and folders, drag-out download, previews, built-in text editor, Recycle Bin deletes, ZIP downloads). *Settings > Security* chooses what it may open (Agent Zero user folder, Agent Zero folder, or the whole Windows drive; other and removable drives separately; a stricter limit for remote sessions); Agent Zero's own secrets are never shown. The old work-dir file endpoints were removed.
