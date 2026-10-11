@@ -212,6 +212,11 @@ class BaseTask(BaseModel):
     updated_at: datetime = Field(default_factory=_now)
     last_run: datetime | None = None
     last_result: str | None = None
+    # Messaging channel of the chat that created or last changed this task
+    # (helpers/channels.py). The task's own chat runs under that channel's
+    # permission cap, so a channel chat cannot schedule work that runs with
+    # more trust than the chat itself.
+    channel_origin: str = Field(default="")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -903,6 +908,15 @@ class TaskScheduler:
         return context
 
     async def _get_chat_context(self, task: Union[ScheduledTask, AdHocTask, PlannedTask]) -> AgentContext:
+        context = await self._get_chat_context_unmarked(task)
+        if task.channel_origin:
+            from helpers.channels import CHANNEL_ORIGIN_KEY, channel_of
+
+            if not channel_of(context):
+                context.set_data(CHANNEL_ORIGIN_KEY, task.channel_origin)
+        return context
+
+    async def _get_chat_context_unmarked(self, task: Union[ScheduledTask, AdHocTask, PlannedTask]) -> AgentContext:
         context = AgentContext.get(task.context_id) if task.context_id else None
 
         if context:

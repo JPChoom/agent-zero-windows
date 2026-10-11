@@ -263,6 +263,11 @@ class SchedulerTool(Tool):
         for field in ("name", "system_prompt", "prompt", "attachments"):
             if field in kwargs:
                 update_params[field] = kwargs[field]
+        # Changing a task from a messaging chat puts it under that chat's
+        # cap; it never removes an existing one.
+        origin = self._channel_origin()
+        if origin:
+            update_params["channel_origin"] = origin
 
         if "state" in kwargs:
             update_params["state"] = TaskState(kwargs.get("state", TaskState.IDLE))
@@ -300,6 +305,18 @@ class SchedulerTool(Tool):
             return Response(message=f"Task failed to update: {task_uuid}", break_loop=False)
 
         return Response(message=json.dumps(serialize_task(updated_task), indent=4), break_loop=False)
+
+    def _channel_origin(self) -> str:
+        """The messaging channel this chat (or the chat a parallel job runs for) belongs to."""
+        from helpers.channels import channel_of
+        from helpers.parallel_tools import governing_context
+
+        context, _ = governing_context(self.agent.context)
+        return channel_of(context)
+
+    async def _add_task(self, task) -> None:
+        task.channel_origin = self._channel_origin()
+        await TaskScheduler.get().add_task(task)
 
     async def create_scheduled_task(self, **kwargs) -> Response:
         # "name": "XXX",
@@ -341,7 +358,7 @@ class SchedulerTool(Tool):
             project_name=project_slug,
             project_color=project_color,
         )
-        await TaskScheduler.get().add_task(task)
+        await self._add_task(task)
         return Response(message=f"Scheduled task '{name}' created: {task.uuid}", break_loop=False)
 
     async def create_adhoc_task(self, **kwargs) -> Response:
@@ -364,7 +381,7 @@ class SchedulerTool(Tool):
             project_name=project_slug,
             project_color=project_color,
         )
-        await TaskScheduler.get().add_task(task)
+        await self._add_task(task)
         return Response(message=f"Adhoc task '{name}' created: {task.uuid}", break_loop=False)
 
     async def create_planned_task(self, **kwargs) -> Response:
@@ -393,7 +410,7 @@ class SchedulerTool(Tool):
             project_name=project_slug,
             project_color=project_color
         )
-        await TaskScheduler.get().add_task(task)
+        await self._add_task(task)
         return Response(message=f"Planned task '{name}' created: {task.uuid}", break_loop=False)
 
     async def wait_for_task(self, **kwargs) -> Response:

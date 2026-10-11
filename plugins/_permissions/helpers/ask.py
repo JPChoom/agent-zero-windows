@@ -31,7 +31,7 @@ async def request_approval(
     approval_id = str(uuid.uuid4())
     log_item = None
     try:
-        log_item = agent.context.log.log(
+        log_item = _visible_log(agent).log(
             type="permissions_approval_request",
             content=(
                 f"[permissions] {tool_name} needs approval - {reason}. "
@@ -73,6 +73,15 @@ async def request_approval(
             "ask what they would prefer instead."
         )
     _resolve(log_item, approved=True, outcome="approved")
+
+
+def _visible_log(agent):
+    """The log of the chat the user sees: a parallel worker's hidden context
+    is not shown, so its cards go to the chat that started the job."""
+    from helpers.parallel_tools import governing_context
+
+    context, _ = governing_context(agent.context)
+    return (context or agent.context).log
 
 
 def _resolve(log_item, approved: bool, outcome: str) -> None:

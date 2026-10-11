@@ -172,6 +172,27 @@ def is_parallel_worker(agent: "Agent | None") -> bool:
     return _parallel_worker_kind(agent) == "tool"
 
 
+def governing_context(context: "AgentContext | None") -> tuple["AgentContext | None", bool]:
+    """(the chat whose permissions apply, orphaned).
+
+    A parallel worker runs in its own hidden background context, but it acts
+    for the chat that started the job: that chat's permission mode and
+    messaging cap apply, and its approval cards must show there (background
+    contexts are not shown in the UI). `orphaned` is True when the worker's
+    parent chat no longer exists.
+    """
+    if context is None:
+        return None, False
+    data = getattr(context, "data", None)
+    parent_id = data.get(PARALLEL_WORKER_PARENT_CONTEXT_KEY) if isinstance(data, dict) else None
+    if not parent_id:
+        return context, False
+    from agent import AgentContext
+
+    parent = AgentContext.get(str(parent_id))
+    return (parent, False) if parent is not None else (context, True)
+
+
 def _jobs_for_context(context: "AgentContext") -> dict[str, ParallelJob]:
     jobs = context.get_data(PARALLEL_JOBS_KEY)
     if not isinstance(jobs, dict):

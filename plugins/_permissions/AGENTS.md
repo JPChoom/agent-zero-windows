@@ -16,6 +16,9 @@
 
 ## Local Contracts
 
+- The mode and messaging cap come from the chat a call acts for: a parallel worker uses its parent chat (`helpers/parallel_tools.governing_context`), never above Manual if that chat is gone; scheduled tasks carry their creating chat's channel (`helpers/channels.py`). Approval cards are posted to that visible chat.
+- Channel identity lives in `helpers/channels.py`; `config.CHANNEL_MARKERS` / `config.channel_of` re-export it.
+
 - The mode is per chat (`AgentContext` id) and never persisted: restart, new chat, and project switch return to settings `permissions_default_mode` (default `manual`; can never be `bypass`). A `mode` key in plugin config is ignored.
 - `bypass` needs the Bypass password and expires after settings `bypass_auto_off_hours` (0 = only on restart/new chat/project switch). The gate logs a chat warning when it expires.
 - The gate refuses, in every mode, any tool call whose args reference `permissions_bypass`, `permissions_mode`, or `security_audit` (the agent must not unlock itself or erase the trail).

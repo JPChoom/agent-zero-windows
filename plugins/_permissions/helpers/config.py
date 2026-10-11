@@ -30,24 +30,15 @@ DEFAULTS = {
 
 # A chat that came in over a messaging channel carries that channel's
 # context data key (set by the integration plugin's handler).
-CHANNEL_MARKERS = {
-    "telegram": "telegram_chat_id",
-    "whatsapp": "wa_chat_id",
-    "email": "email_sender",
-    "discord": "discord_channel_id",
-    "slack": "slack_channel_id",
-}
+# Kept here as names for existing callers; the source of truth is helpers/channels.py.
+from helpers.channels import CHANNEL_MARKERS  # noqa: E402
 
 
 def channel_of(context) -> str:
     """The messaging channel a chat belongs to, or "" for the local WebUI/API."""
-    data = getattr(context, "data", None)
-    if not isinstance(data, dict):
-        return ""
-    for channel, key in CHANNEL_MARKERS.items():
-        if data.get(key):
-            return channel
-    return ""
+    from helpers.channels import channel_of as _channel_of
+
+    return _channel_of(context)
 
 
 def channel_cap(cfg: dict, channel: str) -> str:
@@ -70,7 +61,12 @@ def get_config(agent=None) -> dict:
 
     cfg = plugins.get_plugin_config("_permissions", agent=agent) or {}
 
-    context = getattr(agent, "context", None)
+    # A parallel worker follows the chat that started it (helpers/
+    # parallel_tools.governing_context); without this it ran at the default
+    # mode, outside its chat's mode and messaging cap (enforcement audit E4).
+    from helpers.parallel_tools import governing_context
+
+    context, orphaned = governing_context(getattr(agent, "context", None))
     state = mode_state.get_mode(
         getattr(context, "id", None),
         mode_state.context_project(context) if context is not None else "",
@@ -86,6 +82,9 @@ def get_config(agent=None) -> dict:
     # WhatsApp, Email, Discord or Slack must not inherit the trust of the
     # local WebUI, whatever mode the chat was switched to.
     mode = state["mode"]
+    if orphaned:
+        # The chat that started this job is gone: never act above Manual.
+        mode = rules.safer_mode(mode, "manual")
     channel = channel_of(context)
     capped_from = ""
     if channel:

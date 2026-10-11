@@ -191,7 +191,10 @@ class SafetyCommandPolicy(Extension):
         )
         log_item = None
         try:
-            log_item = self.agent.context.log.log(
+            from helpers.parallel_tools import governing_context
+
+            visible, _ = governing_context(self.agent.context)
+            log_item = (visible or self.agent.context).log.log(
                 type="safety_policy_approval_request",
                 content=message,
                 kvps={

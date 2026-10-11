@@ -87,6 +87,8 @@
 
 ## Runtime Contracts
 
+- `BaseTask.channel_origin` is the messaging channel of the chat that created or last changed the task (set by `tools/scheduler.py`); `_get_chat_context` writes it into the task chat as `helpers/channels.CHANNEL_ORIGIN_KEY`, so the task runs under that channel's permission cap. It only ever tightens.
+
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, network calls, settings/state persistence, secret handling, scheduler state.

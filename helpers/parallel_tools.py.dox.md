@@ -21,6 +21,7 @@
 
 ## Runtime Contracts
 
+- `governing_context(context)` returns the chat a parallel worker acts for (its parent context, from `PARALLEL_WORKER_PARENT_CONTEXT_KEY`) and whether that chat is gone. Permission mode, messaging cap and approval cards use it: worker contexts are hidden background contexts, so their own log is never shown.
 - `ParallelJob.parent_agent` is the agent (A0, A1, ...) that started the job; both worker runners store it in the worker context as `PARALLEL_WORKER_PARENT_AGENT_KEY`, so `helpers/workspace.py` can hand the worker's apps back to that agent when its context ends.
 
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.

@@ -31,6 +31,8 @@
 
 ## Runtime Contracts
 
+- Tasks created or updated from a messaging chat (or a parallel job of one) get `channel_origin` set to that channel, so they run under its permission cap; updates never clear it.
+
 - Tool modules must define `helpers.tool.Tool` subclasses and return `helpers.tool.Response` from `execute(...)`.
 - Update this file whenever tool arguments, output shape, `break_loop` behavior, intervention handling, prompt instructions, or side effects change.
 - `SchedulerTool` is a `Tool`.
