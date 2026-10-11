@@ -120,15 +120,24 @@ async def test_missing_tool_name_is_ignored(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_broken_config_fails_open(monkeypatch):
-    """A config error must not wedge every tool call: the user could not
-    then reach the settings UI to fix it."""
+async def test_broken_config_fails_closed_to_manual(monkeypatch):
+    """A config error must not let every tool run (enforcement audit E6),
+    nor wedge every call: reads still run, commands ask as in Manual."""
     def boom(agent=None):
         raise RuntimeError("config is corrupt")
 
     monkeypatch.setattr(gate_mod, "get_config", boom)
-    assert await _gate().execute(tool_name="code_execution_tool",
-                                 tool_args={"code": "ls"}) is None
+    asked = []
+
+    async def declined(agent, tool_name, *a, **k):
+        asked.append(tool_name)
+        raise RepairableException("[permissions] The user declined.")
+
+    monkeypatch.setattr(gate_mod.ask, "request_approval", declined)
+    with pytest.raises(RepairableException):
+        await _gate().execute(tool_name="code_execution_tool", tool_args={"code": "ls"})
+    assert asked == ["code_execution_tool"]
+    assert await _gate().execute(tool_name="search_engine", tool_args={"query": "x"}) is None
 
 
 # ------------------------------------------------------------------

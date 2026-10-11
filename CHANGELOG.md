@@ -15,6 +15,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - Computer Use `launch` only starts applications; scripts, shortcuts and installers must go through the terminal tool, where the command safety checks apply.
 - The file editor never writes to a Startup folder, whatever its access setting.
 - Remote Computer Use (through the CLI) refuses the key combos A0W blocks locally (lock, sign out, Ctrl+Alt+Del, Run dialog...) and stops while the kill switch is on.
+- When the coding completion gate is on, running a project's own build and test commands follows the chat's permission mode (Plan never, Manual and Accept-edits ask once per project, Auto runs); they used to run unasked.
 - Telegram webhook mode always uses a secret (a random one when none is configured), and updates without the matching secret are refused.
 - The access log stores header values only for a list of known-safe headers; any other header (for example a custom one carrying a token) is recorded as present only. Secret-looking query values in the referer are redacted too.
 
