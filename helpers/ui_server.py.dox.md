@@ -32,6 +32,8 @@
 
 ## Runtime Contracts
 
+- The session cookie is marked `Secure` per request when the browser came over HTTPS through a local tunnel (`came_over_https`: forwarded headers trusted only on proxied loopback connections; `_TunnelAwareSessionInterface`). Plain `http://localhost` keeps working.
+
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Socket.IO heartbeat defaults are intentionally longer than Engine.IO's short defaults so CLI sessions survive long prompt/context work; environment overrides must remain positive integers and fall back to source defaults when invalid.

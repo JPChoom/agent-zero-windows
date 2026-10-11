@@ -35,6 +35,8 @@
 
 ## Runtime Contracts
 
+- `dev_harness_enabled()` is true only with `A0_DEV_HARNESS=1` in `usr/.env`; it gates the WebSocket test harness and event console. `is_development()` is always true on a native install, so it must not gate anything sensitive.
+
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, subprocess/runtime control, settings/state persistence, secret handling, tunnel state.

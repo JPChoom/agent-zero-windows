@@ -11,12 +11,13 @@ class WsDevTest(WsHandler):
     """Developer-only WebSocket test harness handler."""
 
     async def process(self, event: str, data: dict, sid: str) -> dict[str, Any] | WsResult | None:
+        if event.startswith(("ws_tester_", "ws_event_console_")) and not runtime.dev_harness_enabled():
+            return WsResult.error(
+                code="NOT_AVAILABLE",
+                message="The WebSocket test harness is off. Set A0_DEV_HARNESS=1 in usr/.env and restart to use it.",
+            )
+
         if event == "ws_event_console_subscribe":
-            if not runtime.is_development():
-                return WsResult.error(
-                    code="NOT_AVAILABLE",
-                    message="Event console is available only in development mode",
-                )
             registered = self.manager.register_diagnostic_watcher(self.namespace, sid)
             if not registered:
                 return WsResult.error(

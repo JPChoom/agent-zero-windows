@@ -65,6 +65,18 @@ def is_development() -> bool:
     return not is_dockerized()
 
 
+def dev_harness_enabled() -> bool:
+    """The WebSocket test harness and event console (Settings > Developer).
+
+    Opt-in with A0_DEV_HARNESS=1 in usr/.env: on a native install
+    is_development() is always true, and the event console streams every
+    WebSocket event, so it must not be on by default.
+    """
+    from helpers import dotenv
+
+    return str(dotenv.get_dotenv_value("A0_DEV_HARNESS", "") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def get_local_url():
     if is_dockerized():
         return "host.docker.internal"

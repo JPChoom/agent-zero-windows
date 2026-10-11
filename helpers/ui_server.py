@@ -9,6 +9,7 @@ import threading
 import time
 from typing import Any
 
+from flask.sessions import SecureCookieSessionInterface
 from flask import (
     Flask,
     Response,
@@ -127,6 +128,7 @@ class UiServerRuntime:
     def create(cls) -> "UiServerRuntime":
         webapp = Flask("app", static_folder=get_abs_path("./webui"), static_url_path="/")
         webapp.secret_key = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
+        webapp.session_interface = _TunnelAwareSessionInterface()
 
         WerkzeugRequest.max_form_memory_size = UPLOAD_LIMIT_BYTES
         webapp.config.update(
@@ -298,6 +300,34 @@ def _bare_not_found(_error=None):
     # Same body for "doesn't exist" and "not for you": no framework page,
     # nothing to fingerprint.
     return Response("Not Found", status=404, mimetype="text/plain")
+
+
+def came_over_https(remote_addr, headers) -> bool:
+    """Whether the browser reached us over HTTPS through a local tunnel
+    (cloudflared and friends terminate TLS and forward over loopback HTTP).
+    Forwarded headers are only trusted on a proxied loopback connection,
+    the same rule access_control uses for the client address."""
+    from helpers.network import is_loopback_address
+
+    if not remote_addr or not is_loopback_address(str(remote_addr)) or not access_control.is_proxied(headers):
+        return False
+    proto = str(headers.get("X-Forwarded-Proto", "") or "").split(",")[0].strip().lower()
+    visitor = str(headers.get("CF-Visitor", "") or "").replace(" ", "").lower()
+    return proto == "https" or '"scheme":"https"' in visitor
+
+
+class _TunnelAwareSessionInterface(SecureCookieSessionInterface):
+    """Marks the session cookie Secure when the page came over the HTTPS tunnel
+    (investigation finding F8), so it is never sent over plain HTTP on the way
+    in. Local http://localhost keeps working: the flag is per request."""
+
+    def get_cookie_secure(self, app) -> bool:
+        if super().get_cookie_secure(app):
+            return True
+        try:
+            return came_over_https(request.remote_addr, request.headers)
+        except RuntimeError:  # outside a request
+            return False
 
 
 def _security_headers(response):

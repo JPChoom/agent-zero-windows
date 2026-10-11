@@ -16,6 +16,8 @@
 
 ## Runtime Contracts
 
+- All `ws_tester_*` and `ws_event_console_*` events answer `NOT_AVAILABLE` unless `runtime.dev_harness_enabled()` (opt-in `A0_DEV_HARNESS=1` in `usr/.env`).
+
 - HTTP handlers must derive from `helpers.api.ApiHandler`; WebSocket handlers must derive from `helpers.ws.WsHandler`.
 - Update this file whenever request payloads, authentication or CSRF requirements, response shapes, route side effects, or WebSocket event contracts change.
 - `WsDevTest` is a `WsHandler`.

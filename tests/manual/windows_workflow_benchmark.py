@@ -291,7 +291,7 @@ async def main(argv=None) -> int:
         print(f"- {task.id} ...", flush=True)
         result = await run_task(task, workdir, args.timeout)
         flag = "OK " if result.completed else "FAIL"
-        print(f"  {flag} {result.seconds}s tools={result.tool_calls} approvals={result.approvals_requested}"
+        print(f"\n  {flag} {result.seconds}s tools={result.tool_calls} approvals={result.approvals_requested}"
               f"{' UNINTENDED ' + json.dumps(result.unintended) if result.unintended else ''}"
               f"{' error: ' + result.error if result.error else ''}", flush=True)
         results.append(result)

@@ -161,6 +161,8 @@ What that means in practice:
 - **Keep Terminal Access disabled** unless you need it, and leave Computer Use input off until you want the agent to drive apps.
 - **Allowlist only yourself** in the Discord, Slack and Telegram integrations, and keep their chats capped at Manual: approvals for those chats wait for you in the WebUI.
 
+- **The File Browser access setting limits the File Browser and Editor, not the agent.** The agent's terminal, Python and Node can reach anything your Windows account can, whatever that setting says.
+
 The safeguards in this fork - permission modes, messaging-channel caps, the list of denied commands, the infection check, untrusted-content wrapping, Computer Use's refusals, the tunnel allowlist, the locked Bypass mode and the kill switch - **reduce risk and catch mistakes. They are defense in depth, not a boundary**, and they cannot contain a determined, manipulated or compromised agent.
 
 Report vulnerabilities privately through GitHub's *Security > Report a vulnerability*, not in a public issue.

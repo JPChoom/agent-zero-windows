@@ -25,6 +25,10 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - The file editor never writes to a Startup folder, whatever its access setting.
 - Remote Computer Use (through the CLI) refuses the key combos A0W blocks locally (lock, sign out, Ctrl+Alt+Del, Run dialog...) and stops while the kill switch is on.
 - When the coding completion gate is on, running a project's own build and test commands follows the chat's permission mode (Plan never, Manual and Accept-edits ask once per project, Auto runs); they used to run unasked.
+- The session cookie is marked Secure when you come in over the HTTPS tunnel.
+- The WebSocket test harness and event console (Settings > Developer) are off unless `A0_DEV_HARNESS=1` is set in `usr/.env`; the event console could show other sessions' WebSocket traffic.
+- Every HTTP endpoint that skips the CSRF check is now listed and justified in a test, so a new exemption cannot slip in unreviewed.
+- Docs and Settings say plainly that the File Browser access setting limits the File Browser and Editor, not what the agent's terminal can reach.
 - Telegram webhook mode always uses a secret (a random one when none is configured), and updates without the matching secret are refused.
 - The access log stores header values only for a list of known-safe headers; any other header (for example a custom one carrying a token) is recorded as present only. Secret-looking query values in the referer are redacted too.
 
