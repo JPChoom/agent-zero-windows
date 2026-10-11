@@ -10,6 +10,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - The `input` tool, which types into the same terminal as `code_execution_tool`, now passes the command safety floor too. Before, a denied command sent through it ran unchecked in Auto or Bypass mode.
 - The kill switch now stops every tool that acts (browser, file edits, MCP tools, remote execution, scheduler...), not only the terminal and Computer Use; read-only tools keep working so the agent can still explain. Remote execution on a CLI-connected machine also passes the command safety floor.
 - Parallel jobs follow their chat's permission mode and messaging cap (they ran at the default mode), and their approval requests now appear in that chat instead of timing out unseen. Scheduled tasks created or changed from a Telegram, WhatsApp, Email, Discord or Slack chat run under that channel's cap.
+- The permission gate fails closed: if its settings cannot be read it decides as Manual mode (reads run, edits and commands ask) instead of letting every tool run, and an invalid messaging-channel cap counts as Manual instead of Auto.
 - Telegram webhook mode always uses a secret (a random one when none is configured), and updates without the matching secret are refused.
 - The access log stores header values only for a list of known-safe headers; any other header (for example a custom one carrying a token) is recorded as present only. Secret-looking query values in the referer are redacted too.
 

@@ -48,8 +48,23 @@ def channel_cap(cfg: dict, channel: str) -> str:
         caps = {}
     cap = str(caps.get(channel) or DEFAULTS["channel_mode_caps"].get(channel) or "manual").strip().lower()
     if cap not in rules.MODES or cap == "bypass":
-        cap = "auto"
+        # An unreadable cap must not widen access (enforcement audit E7; it
+        # used to become "auto").
+        cap = "manual"
     return cap
+
+
+def fallback_config() -> dict:
+    """What the gate uses when its config cannot be read: Manual, no rules."""
+    return {
+        "mode": "manual",
+        "channel": "",
+        "capped_from": "",
+        "bypass_expired": False,
+        "ruleset": rules.Ruleset.from_config({}),
+        "approval_timeout_seconds": DEFAULTS["approval_timeout_seconds"],
+        "audit_decisions": True,
+    }
 
 
 def get_config(agent=None) -> dict:

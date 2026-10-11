@@ -232,5 +232,7 @@ def test_caps_take_the_safer_mode_and_never_allow_bypass():
     assert rules.safer_mode("bypass", "manual") == "manual"
     assert rules.safer_mode("plan", "manual") == "plan"
     assert perm_config.channel_cap({}, "telegram") == "manual"
-    assert perm_config.channel_cap({"channel_mode_caps": {"telegram": "bypass"}}, "telegram") == "auto"
+    # An invalid cap never widens access (enforcement audit E7).
+    assert perm_config.channel_cap({"channel_mode_caps": {"telegram": "bypass"}}, "telegram") == "manual"
+    assert perm_config.channel_cap({"channel_mode_caps": {"telegram": "everything"}}, "telegram") == "manual"
     assert perm_config.channel_cap({"channel_mode_caps": {"slack": "plan"}}, "slack") == "plan"

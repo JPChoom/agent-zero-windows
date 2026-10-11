@@ -16,6 +16,8 @@
 
 ## Local Contracts
 
+- Fail closed: an unreadable config makes the gate decide as Manual with no rules (`config.fallback_config`); an invalid channel cap counts as Manual.
+
 - The mode and messaging cap come from the chat a call acts for: a parallel worker uses its parent chat (`helpers/parallel_tools.governing_context`), never above Manual if that chat is gone; scheduled tasks carry their creating chat's channel (`helpers/channels.py`). Approval cards are posted to that visible chat.
 - Channel identity lives in `helpers/channels.py`; `config.CHANNEL_MARKERS` / `config.channel_of` re-export it.
 

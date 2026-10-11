@@ -28,7 +28,7 @@ from helpers.errors import RepairableException
 from helpers.extension import Extension
 from helpers.print_style import PrintStyle
 from plugins._permissions.helpers import ask, rules
-from plugins._permissions.helpers.config import get_config
+from plugins._permissions.helpers.config import fallback_config, get_config
 
 
 PROTECTED_MARKERS = (
@@ -65,11 +65,13 @@ class PermissionGate(Extension):
 
         try:
             cfg = get_config(self.agent)
-        except Exception:
-            # A broken config must not wedge every tool call. Failing open
-            # here matches the pre-plugin behaviour rather than inventing a
-            # lockout the user cannot undo from inside the UI.
-            return
+        except Exception as exc:
+            # Fail closed, but not into a lockout: with the config unreadable,
+            # decide as Manual mode with no rules, so reads still run and
+            # edits/commands ask (enforcement audit E6; it used to return
+            # here and let every tool run unchecked).
+            PrintStyle.warning(f"[permissions] config unreadable ({exc}); using Manual mode with no rules.")
+            cfg = fallback_config()
 
         # The agent must never be able to unlock Bypass for itself or wipe
         # the trail: refuse, in every mode, any tool call that references

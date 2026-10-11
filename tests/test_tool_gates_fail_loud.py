@@ -100,6 +100,32 @@ async def test_an_allowed_call_still_passes(monkeypatch):
     )
 
 
+@pytest.mark.asyncio
+async def test_unreadable_config_fails_closed_to_manual(monkeypatch):
+    # Enforcement audit E6: a config error used to let every tool run unchecked.
+    _only(monkeypatch, gate_mod.PermissionGate)
+
+    def broken(agent):
+        raise OSError("config.json is corrupt")
+
+    monkeypatch.setattr(gate_mod, "get_config", broken)
+    asked = []
+
+    async def declined(agent, tool_name, *a, **k):
+        asked.append(tool_name)
+        raise RepairableException("[permissions] The user declined.")
+
+    monkeypatch.setattr(gate_mod.ask, "request_approval", declined)
+    with pytest.raises(RepairableException, match="declined"):
+        await extension.call_extensions_async("tool_execute_before", agent=_Agent(), **SET_CALL)
+    assert asked == ["windows_setting"]
+    # Reads still run, so the agent is not locked out.
+    await extension.call_extensions_async(
+        "tool_execute_before", agent=_Agent(),
+        tool_name="windows_setting", tool_args={"action": "get", "setting": "file_extensions"},
+    )
+
+
 def _gate_files():
     roots = [ROOT / "extensions" / "python"] + sorted((ROOT / "plugins").glob("*/extensions/python"))
     for root in roots:
