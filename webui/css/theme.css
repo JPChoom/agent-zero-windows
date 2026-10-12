@@ -567,11 +567,12 @@ body.a0-theme .chat-bottom-menu-item:hover:not(:disabled) {
   background: var(--color-background-hover);
 }
 
-/* Approval decisions (permissions gate and safety policy) in a process
+/* Approval decisions (permissions gate, safety policy and the infection-check
+   safety question) in a process
    step: real buttons, always visible while pending. The first approve
    (Allow once) is the primary accent action, the "Always allow" options
    are soft accent, Deny is neutral until hovered. */
-body.a0-theme .step-action-buttons:has(.permissions-decision-btn, .safety-policy-decision-btn) {
+body.a0-theme .step-action-buttons:has(.permissions-decision-btn, .safety-policy-decision-btn, .infection-check-decision-btn) {
   opacity: 1;
   pointer-events: auto;
   flex-wrap: wrap;
@@ -580,7 +581,8 @@ body.a0-theme .step-action-buttons:has(.permissions-decision-btn, .safety-policy
 }
 
 body.a0-theme .permissions-decision-btn,
-body.a0-theme .safety-policy-decision-btn {
+body.a0-theme .safety-policy-decision-btn,
+body.a0-theme .infection-check-decision-btn {
   padding: .32rem .8rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
@@ -594,40 +596,46 @@ body.a0-theme .safety-policy-decision-btn {
 }
 
 body.a0-theme .permissions-decision-btn.approve-btn,
-body.a0-theme .safety-policy-decision-btn.approve-btn {
+body.a0-theme .safety-policy-decision-btn.approve-btn,
+body.a0-theme .infection-check-decision-btn.approve-btn {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
   color: var(--accent-ui);
 }
 
 body.a0-theme .permissions-decision-btn.approve-btn:hover:not(:disabled),
-body.a0-theme .safety-policy-decision-btn.approve-btn:hover:not(:disabled) {
+body.a0-theme .safety-policy-decision-btn.approve-btn:hover:not(:disabled),
+body.a0-theme .infection-check-decision-btn.approve-btn:hover:not(:disabled) {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 body.a0-theme .permissions-decision-btn.approve-btn:first-child,
-body.a0-theme .safety-policy-decision-btn.approve-btn:first-child {
+body.a0-theme .safety-policy-decision-btn.approve-btn:first-child,
+body.a0-theme .infection-check-decision-btn.approve-btn:first-child {
   border-color: transparent;
   background: var(--accent);
   color: var(--on-accent);
 }
 
 body.a0-theme .permissions-decision-btn.approve-btn:first-child:hover:not(:disabled),
-body.a0-theme .safety-policy-decision-btn.approve-btn:first-child:hover:not(:disabled) {
+body.a0-theme .safety-policy-decision-btn.approve-btn:first-child:hover:not(:disabled),
+body.a0-theme .infection-check-decision-btn.approve-btn:first-child:hover:not(:disabled) {
   background: var(--accent);
   filter: brightness(1.08);
 }
 
 body.a0-theme .permissions-decision-btn.deny-btn:hover:not(:disabled),
-body.a0-theme .safety-policy-decision-btn.deny-btn:hover:not(:disabled) {
+body.a0-theme .safety-policy-decision-btn.deny-btn:hover:not(:disabled),
+body.a0-theme .infection-check-decision-btn.deny-btn:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--bad) 60%, transparent);
   background: color-mix(in srgb, var(--bad) 14%, transparent);
   color: var(--bad);
 }
 
 body.a0-theme .permissions-decision-btn:disabled,
-body.a0-theme .safety-policy-decision-btn:disabled {
+body.a0-theme .safety-policy-decision-btn:disabled,
+body.a0-theme .infection-check-decision-btn:disabled {
   opacity: .45;
   cursor: default;
 }
