@@ -16,6 +16,10 @@
   Re-running it on an existing install updates it to the chosen tag (local
   changes are never overwritten: it stops instead).
 
+  Shortcuts: setup adds a Start menu entry (-NoShortcut skips it) and offers a
+  desktop shortcut (-DesktopShortcut yes|no|ask; the default asks, and skips it
+  when nothing can be asked).
+
   llama.cpp server: Agent Zero can run its own llama-server.exe instead of
   needing LM Studio. -Llama chooses the build to download during setup
   (cuda, vulkan, rocm, cpu, auto = detect, none = skip; the default asks). The
@@ -33,6 +37,7 @@ param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\AgentZeroWindows"),
     [ValidateSet("ask", "auto", "cuda", "vulkan", "rocm", "cpu", "none")][string]$Llama = "ask",
     [switch]$NoShortcut,
+    [ValidateSet("ask", "yes", "no")][string]$DesktopShortcut = "ask",
     [switch]$Force
 )
 
@@ -179,11 +184,9 @@ if ($llamaChoice -ne "none") {
 # --- Start menu and Apps entry ----------------------------------------------------
 $pythonw = Join-Path $app ".venv\Scripts\pythonw.exe"
 $launcher = Join-Path $app "installer\tray_launcher.pyw"
-if (-not $NoShortcut) {
-    Step "Adding the Start menu entry"
-    $startMenu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+function New-AppShortcut($folder) {
     $shell = New-Object -ComObject WScript.Shell
-    $link = $shell.CreateShortcut((Join-Path $startMenu "$AppName.lnk"))
+    $link = $shell.CreateShortcut((Join-Path $folder "$AppName.lnk"))
     $link.TargetPath = $pythonw
     $link.Arguments = "`"$launcher`""
     $link.WorkingDirectory = $app
@@ -191,6 +194,26 @@ if (-not $NoShortcut) {
     if (Test-Path $icon) { $link.IconLocation = $icon }
     $link.Description = $AppName
     $link.Save()
+}
+
+if (-not $NoShortcut) {
+    Step "Adding the Start menu entry"
+    New-AppShortcut (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs")
+
+    $desktopChoice = $DesktopShortcut
+    if ($desktopChoice -eq "ask") {
+        if ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
+            $desktopChoice = "no"
+        } else {
+            Write-Host ""
+            $reply = (Read-Host "Add a shortcut to your desktop too? [Y/n]").Trim().ToLower()
+            $desktopChoice = if ($reply -in @("", "y", "yes")) { "yes" } else { "no" }
+        }
+    }
+    if ($desktopChoice -eq "yes") {
+        Step "Adding the desktop shortcut"
+        New-AppShortcut ([Environment]::GetFolderPath("Desktop"))
+    }
 }
 
 Step "Registering in Settings > Apps"

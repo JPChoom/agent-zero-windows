@@ -7,10 +7,10 @@
 
 ## Ownership
 
-- `setup.go` (+ `go.mod`) builds `AgentZeroWindows-Setup.exe`: it embeds `install.ps1`, writes it to a temp folder with a UTF-8 BOM, runs it with Windows PowerShell passing `-version`, `-dir`, `-llama`, `-no-shortcut`, `-force` through, returns its exit code, and waits for Enter when double-clicked. Standard library only.
+- `setup.go` (+ `go.mod`) builds `AgentZeroWindows-Setup.exe`: it embeds `install.ps1`, writes it to a temp folder with a UTF-8 BOM, runs it with Windows PowerShell passing `-version`, `-dir`, `-llama`, `-desktop`, `-no-shortcut`, `-force` through, returns its exit code, and waits for Enter when double-clicked. Standard library only.
 - `build.ps1` builds it with Go into `installer/dist/` (git-ignored) and writes its SHA-256. Rebuild whenever `install.ps1` changes.
-- `install.ps1` checks the configuration, clones or updates the chosen release tag into `%LOCALAPPDATA%\Programs\AgentZeroWindows`, creates `.venv`, installs `requirements.lock.txt`, optionally downloads the llama.cpp server (`-Llama ask|auto|cuda|vulkan|rocm|cpu|none`; asks when interactive, skips otherwise; uses the plugin's verified download and switches the plugin on), and adds the Start menu entry and the *Settings > Apps* (HKCU Uninstall) entry.
-- `uninstall.ps1` stops processes running from the install, removes the Start menu entry, Run entries that point at the install and the Uninstall entry, and deletes the program; `usr\` is kept unless `-Clean`.
+- `install.ps1` checks the configuration, clones or updates the chosen release tag into `%LOCALAPPDATA%\Programs\AgentZeroWindows`, creates `.venv`, installs `requirements.lock.txt`, optionally downloads the llama.cpp server (`-Llama ask|auto|cuda|vulkan|rocm|cpu|none`; asks when interactive, skips otherwise; uses the plugin's verified download and switches the plugin on), and adds the Start menu entry, offers a desktop shortcut (`-DesktopShortcut ask|yes|no`; asks when interactive, off otherwise) and adds the *Settings > Apps* (HKCU Uninstall) entry.
+- `uninstall.ps1` stops processes running from the install, removes the Start menu entry, the desktop shortcut only if it points at this install, Run entries that point at the install and the Uninstall entry, and deletes the program; `usr\` is kept unless `-Clean`.
 - `tray_launcher.pyw` starts the server hidden (same logic as `plugins/_autostart/launch_agent_zero.pyw`, loaded from it) and shows a tray icon (Open / Settings / Quit), standard library only.
 - `agent-zero.ico` is the Start menu, Apps and tray icon.
 

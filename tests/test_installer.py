@@ -160,3 +160,34 @@ def test_setup_exe_passes_options_through(setup_exe, tmp_path):
         pytest.skip("this machine lacks the installer's prerequisites")
     assert result.returncode == 1 and "is not an Agent Zero install" in out
     assert (occupied / "keep.txt").read_text(encoding="utf-8") == "keep"
+
+
+def _make_shortcut(path: Path, arguments: str, working_dir: str) -> None:
+    ps("-Command", f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{path}'); $s.TargetPath='C:\Windows\notepad.exe';"
+                   f"$s.Arguments='{arguments}'; $s.WorkingDirectory='{working_dir}'; $s.Save()")
+
+
+def test_uninstall_removes_the_desktop_shortcut_of_this_install(fake_install, tmp_path):
+    app, start_menu, key = fake_install
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    link = desktop / "Agent Zero for Windows.lnk"
+    _make_shortcut(link, f'"{app}\installer\tray_launcher.pyw"', str(app))
+    assert link.exists()
+    assert _uninstall(app, start_menu, key, "-DesktopDir", str(desktop)).returncode == 0
+    assert not link.exists()
+
+
+def test_uninstall_leaves_a_desktop_shortcut_of_another_install(fake_install, tmp_path):
+    app, start_menu, key = fake_install
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    link = desktop / "Agent Zero for Windows.lnk"
+    _make_shortcut(link, r'"C:\Other\AgentZero\installer\tray_launcher.pyw"', r"C:\Other\AgentZero")
+    assert _uninstall(app, start_menu, key, "-DesktopDir", str(desktop)).returncode == 0
+    assert link.exists()
+
+
+def test_setup_exe_offers_the_desktop_shortcut_option(setup_exe):
+    result = subprocess.run([str(setup_exe), "-h"], capture_output=True, text=True, timeout=30)
+    assert "-desktop" in result.stdout + result.stderr

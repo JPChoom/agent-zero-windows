@@ -33,12 +33,13 @@ func main() {
 	version := flag.String("version", "", "release tag to install, e.g. v1.4 (default: the latest release)")
 	dir := flag.String("dir", "", `install folder (default: %LOCALAPPDATA%\Programs\AgentZeroWindows)`)
 	llama := flag.String("llama", "ask", "llama.cpp server build to download: ask, auto, cuda, vulkan, rocm, cpu or none")
-	noShortcut := flag.Bool("no-shortcut", false, "do not add a Start menu entry")
+	noShortcut := flag.Bool("no-shortcut", false, "do not add a Start menu entry (or a desktop shortcut)")
+	desktop := flag.String("desktop", "ask", "desktop shortcut: ask, yes or no")
 	force := flag.Bool("force", false, "skip the Windows 11 check")
 	flag.Parse()
 
 	fmt.Printf("%s setup\n\n", appName)
-	code := run(*version, *dir, *llama, *noShortcut, *force)
+	code := run(*version, *dir, *llama, *desktop, *noShortcut, *force)
 	if startedByDoubleClick() {
 		fmt.Print("\nPress Enter to close this window...")
 		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
@@ -46,7 +47,7 @@ func main() {
 	os.Exit(code)
 }
 
-func run(version, dir, llama string, noShortcut, force bool) int {
+func run(version, dir, llama, desktop string, noShortcut, force bool) int {
 	tmp, err := os.MkdirTemp("", "a0w-setup-")
 	if err != nil {
 		fmt.Println("ERROR: cannot create a temporary folder:", err)
@@ -61,7 +62,7 @@ func run(version, dir, llama string, noShortcut, force bool) int {
 		return 1
 	}
 
-	args := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Llama", llama}
+	args := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Llama", llama, "-DesktopShortcut", desktop}
 	if version != "" {
 		args = append(args, "-Version", version)
 	}

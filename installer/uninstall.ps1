@@ -18,6 +18,7 @@ param(
     [switch]$Yes,
     # Tests point these elsewhere; normal use never sets them.
     [string]$StartMenuDir = (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"),
+    [string]$DesktopDir = [Environment]::GetFolderPath("Desktop"),
     [string]$UninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AgentZeroWindows",
     [string]$RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 )
@@ -45,6 +46,17 @@ Get-CimInstance Win32_Process | Where-Object {
 
 # Shortcuts and registry entries that belong to this install.
 Remove-Item -LiteralPath (Join-Path $StartMenuDir "$AppName.lnk") -Force -ErrorAction SilentlyContinue
+# The desktop shortcut only if it points at this install (it may belong to another copy).
+$desktopLink = Join-Path $DesktopDir "$AppName.lnk"
+if (Test-Path -LiteralPath $desktopLink) {
+    try {
+        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($desktopLink)
+        if ($shortcut.Arguments.IndexOf($app, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $shortcut.WorkingDirectory.TrimEnd("\").Equals($app.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $desktopLink -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
 if (Test-Path $RunKey) {
     $props = Get-ItemProperty -Path $RunKey
     foreach ($p in $props.PSObject.Properties) {
