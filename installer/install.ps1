@@ -112,9 +112,16 @@ if (-not (Test-Path $venvPython)) {
 $lock = Join-Path $app "requirements.lock.txt"
 $reqs = if (Test-Path $lock) { $lock } else { Join-Path $app "requirements.txt" }
 Step "Installing packages from $(Split-Path $reqs -Leaf) (this takes a while the first time)"
+# A private pip cache inside the install: the shared per-user cache can hold
+# files this account may not read (left by an earlier run as another user or
+# as administrator), which made pip fail with "Permission denied".
+$env:PIP_CACHE_DIR = Join-Path $app ".pip-cache"
 & $venvPython -m pip install --disable-pip-version-check --quiet --upgrade pip
 & $venvPython -m pip install --disable-pip-version-check --quiet -r $reqs
-if ($LASTEXITCODE -ne 0) { Fail "Package installation failed. See the messages above." }
+if ($LASTEXITCODE -ne 0) {
+    Fail "Package installation failed. See the messages above. Running setup again continues where it stopped."
+}
+Remove-Item -Recurse -Force $env:PIP_CACHE_DIR -ErrorAction SilentlyContinue
 
 # --- llama.cpp server (optional) ------------------------------------------------------
 function Install-LlamaServer($choice) {
