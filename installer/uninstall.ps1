@@ -37,26 +37,32 @@ if (-not $Yes) {
     if ($answer -notmatch '^(y|yes)$') { exit 0 }
 }
 
-# Stop Agent Zero processes started from this folder (server, launcher, llama-server).
+# Stop Agent Zero processes started from this folder (server, launcher, llama-server),
+# but not Uninstall.exe: it is waiting for this script (it runs a copy of itself
+# from a temporary folder because it cannot delete the folder it runs from).
 Get-CimInstance Win32_Process | Where-Object {
-    $_.ExecutablePath -and $_.ExecutablePath.StartsWith($app, [StringComparison]::OrdinalIgnoreCase)
+    $_.ExecutablePath -and $_.ExecutablePath.StartsWith($app, [StringComparison]::OrdinalIgnoreCase) -and
+    $_.Name -ne "Uninstall.exe"
 } | ForEach-Object {
     try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {}
 }
 
-# Shortcuts and registry entries that belong to this install.
-Remove-Item -LiteralPath (Join-Path $StartMenuDir "$AppName.lnk") -Force -ErrorAction SilentlyContinue
-# The desktop shortcut only if it points at this install (it may belong to another copy).
-$desktopLink = Join-Path $DesktopDir "$AppName.lnk"
-if (Test-Path -LiteralPath $desktopLink) {
+# Shortcuts and registry entries that belong to this install - and only those:
+# another copy of Agent Zero on this PC keeps its own.
+function Remove-OwnShortcut($folder) {
+    $link = Join-Path $folder "$AppName.lnk"
+    if (-not (Test-Path -LiteralPath $link)) { return }
     try {
-        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($desktopLink)
-        if ($shortcut.Arguments.IndexOf($app, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)
+        if ($shortcut.TargetPath.StartsWith($app, [StringComparison]::OrdinalIgnoreCase) -or
+            $shortcut.Arguments.IndexOf($app, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
             $shortcut.WorkingDirectory.TrimEnd("\").Equals($app.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) {
-            Remove-Item -LiteralPath $desktopLink -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
         }
     } catch {}
 }
+Remove-OwnShortcut $StartMenuDir
+Remove-OwnShortcut $DesktopDir
 if (Test-Path $RunKey) {
     $props = Get-ItemProperty -Path $RunKey
     foreach ($p in $props.PSObject.Properties) {
@@ -65,7 +71,12 @@ if (Test-Path $RunKey) {
         }
     }
 }
-Remove-Item -Path $UninstallKey -Recurse -Force -ErrorAction SilentlyContinue
+if (Test-Path $UninstallKey) {
+    $registered = (Get-ItemProperty -Path $UninstallKey -ErrorAction SilentlyContinue).InstallLocation
+    if ($registered -and $registered.TrimEnd("\").Equals($app.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) {
+        Remove-Item -Path $UninstallKey -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 
 # The program; usr\ is kept unless -Clean.
 Get-ChildItem -LiteralPath $app -Force | Where-Object { $Clean -or $_.Name -ne "usr" } | ForEach-Object {

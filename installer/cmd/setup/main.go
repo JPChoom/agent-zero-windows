@@ -2,11 +2,13 @@
 
 // Agent Zero for Windows setup: a single .exe around install.ps1.
 //
-// It embeds install.ps1, writes it to a temporary folder, runs it with
-// Windows PowerShell (passing the options below through) and removes it
-// again. All the work - checks, download, environment, Start menu and Apps
-// entries, the optional llama.cpp server - is done by install.ps1, so the
-// .exe and the script never disagree. Standard library only.
+// It embeds install.ps1 plus the two programs that live in the install folder
+// (AgentZero.exe, the launcher with the tray icon, and Uninstall.exe), writes
+// them to a temporary folder, runs install.ps1 with Windows PowerShell
+// (passing the options below and the folder with the two programs) and removes
+// the temporary folder again. All the work - checks, download, environment,
+// shortcuts, Apps entry, the optional llama.cpp server - is done by
+// install.ps1, so the .exe and the script never disagree. Standard library only.
 //
 // Build: installer\build.ps1 (go build; no other tools needed).
 package main
@@ -24,8 +26,14 @@ import (
 	"unsafe"
 )
 
-//go:embed install.ps1
+//go:embed assets/install.ps1
 var installScript []byte
+
+//go:embed assets/AgentZero.exe
+var launcherExe []byte
+
+//go:embed assets/Uninstall.exe
+var uninstallerExe []byte
 
 const appName = "Agent Zero for Windows"
 
@@ -62,7 +70,20 @@ func run(version, dir, llama, desktop string, noShortcut, force bool) int {
 		return 1
 	}
 
-	args := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Llama", llama, "-DesktopShortcut", desktop}
+	bundle := filepath.Join(tmp, "bundle")
+	if err := os.MkdirAll(bundle, 0o700); err != nil {
+		fmt.Println("ERROR: cannot create a temporary folder:", err)
+		return 1
+	}
+	for name, data := range map[string][]byte{"AgentZero.exe": launcherExe, "Uninstall.exe": uninstallerExe} {
+		if err := os.WriteFile(filepath.Join(bundle, name), data, 0o700); err != nil {
+			fmt.Println("ERROR: cannot unpack", name+":", err)
+			return 1
+		}
+	}
+
+	args := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Llama", llama,
+		"-DesktopShortcut", desktop, "-BundleDir", bundle}
 	if version != "" {
 		args = append(args, "-Version", version)
 	}

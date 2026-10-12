@@ -43,6 +43,11 @@ def test_installer_refuses_a_non_release_tag_before_downloading(tmp_path):
     assert not (tmp_path / "x").exists()
 
 
+def _make_shortcut(path: Path, arguments: str, working_dir: str, target: str = r"C:\Windows\notepad.exe") -> None:
+    ps("-Command", f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{path}'); $s.TargetPath='{target}';"
+                   f"$s.Arguments='{arguments}'; $s.WorkingDirectory='{working_dir}'; $s.Save()")
+
+
 @pytest.fixture
 def fake_install(tmp_path):
     app = tmp_path / "AgentZeroWindows"
@@ -52,9 +57,10 @@ def fake_install(tmp_path):
         path.write_text("x", encoding="utf-8")
     start_menu = tmp_path / "StartMenu"
     start_menu.mkdir()
-    (start_menu / "Agent Zero for Windows.lnk").write_text("x", encoding="utf-8")
+    _make_shortcut(start_menu / "Agent Zero for Windows.lnk", "", str(app), target=str(app / "AgentZero.exe"))
     test_key = f"HKCU:\\Software\\AgentZeroInstallerTest-{uuid.uuid4().hex[:8]}"
     ps("-Command", f"New-Item -Path '{test_key}\\Uninstall' -Force | Out-Null; New-Item -Path '{test_key}\\Run' -Force | Out-Null;"
+                   f"Set-ItemProperty -Path '{test_key}\\Uninstall' -Name InstallLocation -Value '{app}';"
                    f"Set-ItemProperty -Path '{test_key}\\Run' -Name AgentZero -Value 'pythonw.exe \"{app}\\launch.pyw\"';"
                    f"Set-ItemProperty -Path '{test_key}\\Run' -Name OtherApp -Value 'C:\\Other\\other.exe'")
     yield app, start_menu, test_key
@@ -123,25 +129,27 @@ GO = shutil.which("go") or r"C:\Program Files\Go\bin\go.exe"
 
 
 @pytest.fixture(scope="module")
-def setup_exe(tmp_path_factory):
+def built(tmp_path_factory):
+    """AgentZero.exe, Uninstall.exe and the setup .exe, built from source by build.ps1."""
     if not Path(GO).exists():
         pytest.skip("Go is not installed")
-    out = tmp_path_factory.mktemp("setup") / "AgentZeroWindows-Setup.exe"
-    env = {**os.environ, "CGO_ENABLED": "0", "GOOS": "windows", "GOARCH": "amd64", "GOFLAGS": "-mod=mod"}
-    result = subprocess.run([GO, "build", "-trimpath", "-o", str(out), "."], cwd=INSTALLER,
-                            capture_output=True, text=True, timeout=300, env=env)
-    assert result.returncode == 0, result.stderr
+    out = tmp_path_factory.mktemp("dist")
+    result = ps("-File", str(INSTALLER / "build.ps1"), "-OutDir", str(out), timeout=600)
+    assert result.returncode == 0, result.stdout + result.stderr
     return out
 
 
-def test_setup_exe_embeds_the_current_install_script(setup_exe):
-    # The .exe must carry exactly installer/install.ps1 (rebuilt here from source).
-    assert (INSTALLER / "install.ps1").read_bytes() in setup_exe.read_bytes()
+def test_setup_exe_carries_the_current_scripts_and_both_programs(built):
+    data = (built / "AgentZeroWindows-Setup.exe").read_bytes()
+    assert (INSTALLER / "install.ps1").read_bytes() in data
+    assert (built / "AgentZero.exe").read_bytes() in data
+    assert (built / "Uninstall.exe").read_bytes() in data
+    assert (built / "Uninstall.exe").read_bytes().count((INSTALLER / "uninstall.ps1").read_bytes()) == 1
 
 
-def test_setup_exe_refuses_a_bad_tag_with_exit_code_1(setup_exe, tmp_path):
-    result = subprocess.run([str(setup_exe), "-version", "main", "-llama", "none", "-dir", str(tmp_path / "x")],
-                            capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+def test_setup_exe_refuses_a_bad_tag_with_exit_code_1(built, tmp_path):
+    result = subprocess.run([str(built / "AgentZeroWindows-Setup.exe"), "-version", "main", "-llama", "none",
+                             "-dir", str(tmp_path / "x")], capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
     out = result.stdout + result.stderr
     if "Python 3.12 not found" in out or "Git not found" in out:
         pytest.skip("this machine lacks the installer's prerequisites")
@@ -149,11 +157,12 @@ def test_setup_exe_refuses_a_bad_tag_with_exit_code_1(setup_exe, tmp_path):
     assert not (tmp_path / "x").exists()
 
 
-def test_setup_exe_passes_options_through(setup_exe, tmp_path):
+def test_setup_exe_passes_options_through(built, tmp_path):
     occupied = tmp_path / "occupied"
     occupied.mkdir()
     (occupied / "keep.txt").write_text("keep", encoding="utf-8")
-    result = subprocess.run([str(setup_exe), "-version", "v1.3", "-llama", "none", "-dir", str(occupied)],
+    result = subprocess.run([str(built / "AgentZeroWindows-Setup.exe"), "-version", "v1.3", "-llama", "none",
+                             "-desktop", "no", "-dir", str(occupied)],
                             capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
     out = result.stdout + result.stderr
     if "Python 3.12 not found" in out or "Git not found" in out:
@@ -162,9 +171,91 @@ def test_setup_exe_passes_options_through(setup_exe, tmp_path):
     assert (occupied / "keep.txt").read_text(encoding="utf-8") == "keep"
 
 
-def _make_shortcut(path: Path, arguments: str, working_dir: str) -> None:
-    ps("-Command", f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{path}'); $s.TargetPath='C:\Windows\notepad.exe';"
-                   f"$s.Arguments='{arguments}'; $s.WorkingDirectory='{working_dir}'; $s.Save()")
+def test_setup_exe_offers_the_desktop_shortcut_option(built):
+    result = subprocess.run([str(built / "AgentZeroWindows-Setup.exe"), "-h"], capture_output=True, text=True, timeout=30)
+    assert "-desktop" in result.stdout + result.stderr
+
+
+def test_launcher_has_its_icon_and_shows_in_the_tray_then_closes(built, tmp_path):
+    folder = tmp_path / "install"
+    folder.mkdir()
+    shutil.copy2(built / "AgentZero.exe", folder / "AgentZero.exe")
+    assert subprocess.run([str(folder / "AgentZero.exe"), "-icon-check"], timeout=30).returncode == 0
+    assert subprocess.run([str(folder / "AgentZero.exe"), "-no-server", "-smoke"], timeout=30).returncode == 0
+
+
+def _wait_until(condition, seconds=20):
+    """Uninstall.exe finishes its cleanup a moment after it returns."""
+    import time
+
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if condition():
+            return True
+        time.sleep(0.3)
+    return condition()
+
+
+def _installed_with_exes(fake_install, built):
+    app, start_menu, key = fake_install
+    shutil.copy2(built / "AgentZero.exe", app / "AgentZero.exe")
+    shutil.copy2(built / "Uninstall.exe", app / "Uninstall.exe")
+    return app, start_menu, key
+
+
+def test_uninstall_exe_keeps_data_by_default(fake_install, built):
+    app, _, _ = _installed_with_exes(fake_install, built)
+    result = subprocess.run([str(app / "Uninstall.exe"), "-yes"], capture_output=True, text=True, timeout=120,
+                            stdin=subprocess.DEVNULL)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (app / "usr" / "settings.json").exists() and (app / "usr" / "memory" / "m.json").exists()
+    assert not (app / "run_ui.py").exists() and not (app / "helpers").exists()
+    assert not (app / "AgentZero.exe").exists()
+    assert _wait_until(lambda: not (app / "Uninstall.exe").exists())
+    assert (app / "usr" / "settings.json").exists()  # the data folder (and so the install folder) stays
+
+
+def test_uninstall_exe_clean_removes_everything(fake_install, built):
+    app, _, _ = _installed_with_exes(fake_install, built)
+    result = subprocess.run([str(app / "Uninstall.exe"), "-yes", "-clean"], capture_output=True, text=True, timeout=120,
+                            stdin=subprocess.DEVNULL)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _wait_until(lambda: not app.exists())
+
+
+def test_uninstall_exe_asks_and_a_no_changes_nothing(fake_install, built):
+    app, _, _ = _installed_with_exes(fake_install, built)
+    result = subprocess.run([str(app / "Uninstall.exe")], input="n\n", capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0 and "Nothing was changed" in result.stdout
+    assert (app / "run_ui.py").exists() and (app / "usr" / "settings.json").exists()
+
+
+def test_uninstall_exe_can_delete_data_when_asked(fake_install, built):
+    app, _, _ = _installed_with_exes(fake_install, built)
+    result = subprocess.run([str(app / "Uninstall.exe")], input="y\ny\n", capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _wait_until(lambda: not app.exists())
+
+
+def test_uninstall_exe_refuses_a_folder_that_is_not_agent_zero(built, tmp_path):
+    other = tmp_path / "Documents"
+    other.mkdir()
+    (other / "precious.txt").write_text("keep", encoding="utf-8")
+    shutil.copy2(built / "Uninstall.exe", other / "Uninstall.exe")
+    result = subprocess.run([str(other / "Uninstall.exe"), "-yes", "-clean"], capture_output=True, text=True, timeout=120,
+                            stdin=subprocess.DEVNULL)
+    assert result.returncode == 1 and (other / "precious.txt").exists()
+
+
+def test_uninstall_leaves_another_installs_start_menu_entry_and_apps_key(fake_install, tmp_path):
+    app, start_menu, key = fake_install
+    other = tmp_path / "OtherCopy"
+    other.mkdir()
+    (other / "run_ui.py").write_text("x", encoding="utf-8")
+    # The shortcut and the Apps entry belong to `app`, not to `other`.
+    assert _uninstall(other, start_menu, key).returncode == 0
+    assert (start_menu / "Agent Zero for Windows.lnk").exists()
+    assert ps("-Command", f"Test-Path '{key}\\Uninstall'").stdout.strip() == "True"
 
 
 def test_uninstall_removes_the_desktop_shortcut_of_this_install(fake_install, tmp_path):
@@ -172,7 +263,7 @@ def test_uninstall_removes_the_desktop_shortcut_of_this_install(fake_install, tm
     desktop = tmp_path / "Desktop"
     desktop.mkdir()
     link = desktop / "Agent Zero for Windows.lnk"
-    _make_shortcut(link, f'"{app}\installer\tray_launcher.pyw"', str(app))
+    _make_shortcut(link, f'"{app}' + r'\installer\tray_launcher.pyw"', str(app))
     assert link.exists()
     assert _uninstall(app, start_menu, key, "-DesktopDir", str(desktop)).returncode == 0
     assert not link.exists()
@@ -186,8 +277,3 @@ def test_uninstall_leaves_a_desktop_shortcut_of_another_install(fake_install, tm
     _make_shortcut(link, r'"C:\Other\AgentZero\installer\tray_launcher.pyw"', r"C:\Other\AgentZero")
     assert _uninstall(app, start_menu, key, "-DesktopDir", str(desktop)).returncode == 0
     assert link.exists()
-
-
-def test_setup_exe_offers_the_desktop_shortcut_option(setup_exe):
-    result = subprocess.run([str(setup_exe), "-h"], capture_output=True, text=True, timeout=30)
-    assert "-desktop" in result.stdout + result.stderr

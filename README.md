@@ -111,7 +111,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 Setup offers to download the llama.cpp server too (NVIDIA CUDA, Vulkan, AMD ROCm or CPU build), so you can run local models without LM Studio; you add a `.gguf` model yourself.
 
-It installs the latest release into `%LOCALAPPDATA%\Programs\AgentZeroWindows` with the exact package versions it was tested with (`requirements.lock.txt`), adds **Agent Zero for Windows** to the Start menu (a tray icon opens it in your browser), offers a desktop shortcut and adds it to *Settings > Apps*. Agent Zero itself is not an `.exe`: start it from that Start menu or desktop entry. Uninstalling keeps your data (`usr\`) unless you choose a clean uninstall. Updates use *Settings > Check for updates* as before.
+It installs the latest release into `%LOCALAPPDATA%\Programs\AgentZeroWindows` with the exact package versions it was tested with (`requirements.lock.txt`), adds **Agent Zero for Windows** to the Start menu (a tray icon opens it in your browser), offers a desktop shortcut and adds it to *Settings > Apps*. Start it from that Start menu or desktop entry: it runs `AgentZero.exe` in the install folder (the name you see in Task Manager, and what you can pin to the taskbar), which starts Agent Zero in the background and keeps the tray icon (left click opens the browser; right click: Open, Settings, Quit). Uninstall from *Settings > Apps*, or run `Uninstall.exe` in the install folder; your data is kept unless you choose to delete it. Uninstalling keeps your data (`usr\`) unless you choose a clean uninstall. Updates use *Settings > Check for updates* as before.
 
 **Manual install:**
 

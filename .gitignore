@@ -85,3 +85,4 @@ user-logs/
 
 # Built setup .exe (installer/build.ps1)
 installer/dist/
+installer/cmd/*/assets/

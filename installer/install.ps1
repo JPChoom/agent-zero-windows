@@ -38,6 +38,10 @@ param(
     [ValidateSet("ask", "auto", "cuda", "vulkan", "rocm", "cpu", "none")][string]$Llama = "ask",
     [switch]$NoShortcut,
     [ValidateSet("ask", "yes", "no")][string]$DesktopShortcut = "ask",
+    # Folder holding AgentZero.exe (launcher with tray icon) and Uninstall.exe;
+    # the setup .exe unpacks them there. Without it, shortcuts start the
+    # Python tray launcher and Settings > Apps uses the PowerShell uninstaller.
+    [string]$BundleDir = "",
     [switch]$Force
 )
 
@@ -181,14 +185,34 @@ if ($llamaChoice -ne "none") {
     Install-LlamaServer $llamaChoice
 }
 
+# --- AgentZero.exe and Uninstall.exe ---------------------------------------------------
+foreach ($name in @("AgentZero.exe", "Uninstall.exe")) {
+    $from = if ($BundleDir) { Join-Path $BundleDir $name } else { "" }
+    if ($from -and (Test-Path $from)) {
+        try { Copy-Item -LiteralPath $from -Destination (Join-Path $app $name) -Force }
+        catch { Write-Host "Could not update $name (is Agent Zero still running? Quit it from the tray and run setup again): $($_.Exception.Message)" -ForegroundColor Yellow }
+    }
+}
+# Programs placed by setup are not part of the repository; keep git from listing them.
+$exclude = Join-Path $app ".git\info\exclude"
+if ((Test-Path (Split-Path $exclude)) -and -not (Select-String -Path $exclude -SimpleMatch "AgentZero.exe" -Quiet -ErrorAction SilentlyContinue)) {
+    Add-Content -Path $exclude -Value "`nAgentZero.exe`nUninstall.exe"
+}
+
 # --- Start menu and Apps entry ----------------------------------------------------
+$launcherExe = Join-Path $app "AgentZero.exe"
+$haveExe = Test-Path $launcherExe
 $pythonw = Join-Path $app ".venv\Scripts\pythonw.exe"
 $launcher = Join-Path $app "installer\tray_launcher.pyw"
 function New-AppShortcut($folder) {
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut((Join-Path $folder "$AppName.lnk"))
-    $link.TargetPath = $pythonw
-    $link.Arguments = "`"$launcher`""
+    if ($haveExe) {
+        $link.TargetPath = $launcherExe
+    } else {
+        $link.TargetPath = $pythonw
+        $link.Arguments = "`"$launcher`""
+    }
     $link.WorkingDirectory = $app
     $icon = Join-Path $app "installer\agent-zero.ico"
     if (Test-Path $icon) { $link.IconLocation = $icon }
@@ -218,7 +242,7 @@ if (-not $NoShortcut) {
 
 Step "Registering in Settings > Apps"
 New-Item -Path $UninstallKey -Force | Out-Null
-$uninstall = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$app\installer\uninstall.ps1`" -InstallDir `"$app`""
+$uninstall = if (Test-Path (Join-Path $app "Uninstall.exe")) { "`"$app\Uninstall.exe`"" } else { "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$app\installer\uninstall.ps1`" -InstallDir `"$app`"" }
 Set-ItemProperty -Path $UninstallKey -Name DisplayName -Value $AppName
 Set-ItemProperty -Path $UninstallKey -Name DisplayVersion -Value $Version.TrimStart("v")
 Set-ItemProperty -Path $UninstallKey -Name Publisher -Value "Agent Zero for Windows"
@@ -231,3 +255,4 @@ Set-ItemProperty -Path $UninstallKey -Name NoRepair -Value 1 -Type DWord
 Step "Done"
 Write-Host "$AppName $Version is installed in $app"
 Write-Host "Start it from the Start menu ('$AppName'); a tray icon opens it in your browser."
+if ($haveExe) { Write-Host "Uninstall it from Settings > Apps, or run $app\Uninstall.exe" }
