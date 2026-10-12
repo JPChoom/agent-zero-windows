@@ -644,10 +644,13 @@ class Agent:
             {**loop_data.protocol_persistent, **loop_data.protocol_temporary},
             include_empty=False,
         )
+        extras_items = self._fit_extras_to_window(
+            system_text, protocol, {**loop_data.extras_persistent, **loop_data.extras_temporary}
+        )
         extras = self._build_context_message(
             "agent.context.extras.md",
             "extras",
-            {**loop_data.extras_persistent, **loop_data.extras_temporary},
+            extras_items,
             include_empty=True,
         )
         loop_data.protocol_temporary.clear()
@@ -700,6 +703,59 @@ class Agent:
 
         return full_prompt
 
+    def _window_and_reserve(self) -> tuple[int, int] | None:
+        """(usable window, reply reserve) for the chat model, or None if unknown.
+
+        The window is the smaller of the configured ctx_length and what a
+        local server reports it actually loaded (helpers/prompt_budget), and
+        shrinks after the provider refused a prompt as too long.
+        """
+        try:
+            from helpers import prompt_budget
+
+            cfg = history.get_chat_model_config(self)
+            window = prompt_budget.effective_ctx_length(cfg, self)
+            reserve = int(window * history.History._get_ctx_output(cfg))
+            return window, reserve
+        except Exception:
+            return None
+
+    def _fit_extras_to_window(
+        self,
+        system_text: str,
+        protocol: list[history.OutputMessage],
+        extras_items: dict,
+    ) -> dict:
+        """Trim this turn's extras when the fixed part of the prompt leaves too
+        little room for history and the reply.
+
+        Extras (recalled memories and solutions, matched skills, file
+        listings) are never compressed like history, so a prompt could
+        overflow while history was already at its floor. Trims a copy for
+        this turn only; the persistent extras are unchanged.
+        """
+        limits = self._window_and_reserve()
+        if not limits or not extras_items:
+            return extras_items
+        window, reserve = limits
+        from helpers import prompt_budget
+
+        history_floor = int(window * history.MIN_HISTORY_RATIO)
+        fixed = tokens.approximate_prompt_tokens(system_text + history.output_text(protocol)) + sum(
+            tokens.approximate_prompt_tokens(str(v)) for v in extras_items.values()
+        )
+        excess = fixed + reserve + history_floor - window
+        if excess <= 0:
+            return extras_items
+        trimmed, changed = prompt_budget.shrink_extras(extras_items, excess)
+        if changed:
+            self.context.log.log(
+                type="warning",
+                heading="Prompt trimmed to fit the context window",
+                content=f"Window {window} tokens: {', '.join(changed)} for this turn.",
+            )
+        return trimmed
+
     def _fit_history_to_window(
         self,
         system_text: str,
@@ -729,12 +785,10 @@ class Agent:
         # Fails open. This runs on the path that builds every prompt, so a
         # config that cannot be resolved must cost at most the safety net,
         # never the turn itself.
-        try:
-            cfg = history.get_chat_model_config(self)
-            ctx_length = int(cfg.get("ctx_length", 128000))
-            reserve = int(ctx_length * history.History._get_ctx_output(cfg))
-        except Exception:
+        limits = self._window_and_reserve()
+        if not limits:
             return history_output
+        ctx_length, reserve = limits
         budget = (
             ctx_length
             - reserve

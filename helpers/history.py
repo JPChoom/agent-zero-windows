@@ -376,7 +376,13 @@ def _get_utility_input_budget(agent) -> int:
     in the UI and controlled no behaviour. This is its consumer.
     """
     cfg = get_utility_model_config(agent)
-    ctx_length = int(cfg.get("ctx_length", 128000))
+    try:
+        from helpers import prompt_budget
+
+        # The server's real window (no overflow factor: that is the chat model's).
+        ctx_length = prompt_budget.effective_ctx_length(cfg)
+    except Exception:
+        ctx_length = int(cfg.get("ctx_length", 128000))
     try:
         ctx_input = float(cfg.get("ctx_input", DEFAULT_UTILITY_CTX_INPUT))
     except (TypeError, ValueError):
@@ -707,7 +713,14 @@ class History(Record):
 
     def _get_ctx_size_for_history(self) -> int:
         chat_cfg = get_chat_model_config(self.agent)
-        ctx_length = int(chat_cfg.get("ctx_length", 128000))
+        # The window the server really has (helpers/prompt_budget), not just
+        # the configured one: compression must aim at what actually fits.
+        try:
+            from helpers import prompt_budget
+
+            ctx_length = prompt_budget.effective_ctx_length(chat_cfg, self.agent)
+        except Exception:
+            ctx_length = int(chat_cfg.get("ctx_length", 128000))
         ctx_history = float(chat_cfg.get("ctx_history", 0.7))
         budget = int(ctx_length * ctx_history)
 

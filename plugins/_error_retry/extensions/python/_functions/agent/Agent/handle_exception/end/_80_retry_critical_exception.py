@@ -8,7 +8,14 @@ from helpers.errors import RepairableException, HandledException
 from helpers import errors, plugins
 from helpers.print_style import PrintStyle
 
-from plugins._error_retry.extensions.python._functions.agent.Agent.monologue.start._10_reset_critical_exception_counter import DATA_NAME_COUNTER
+from plugins._error_retry.extensions.python._functions.agent.Agent.monologue.start._10_reset_critical_exception_counter import (
+    DATA_NAME_COUNTER,
+    DATA_NAME_OVERFLOW_COUNTER,
+)
+
+# Context-window overflows are retried separately from other errors, after
+# the prompt has been made smaller; a plain retry would only fail again.
+MAX_OVERFLOW_RETRIES = 2
 
 DEFAULT_MAX_RETRIES = 1
 RETRY_DELAY_SECONDS = 3
@@ -43,6 +50,9 @@ class RetryCriticalException(Extension):
             self.agent.set_data(DATA_NAME_COUNTER, 0) # reset counter if exception has been handled
             return
 
+        if await self._recover_from_overflow(data, exception):
+            return
+
         cfg = plugins.get_plugin_config("_error_retry", agent=self.agent) or {}
         max_retries = normalize_max_retries(cfg.get("retries"))
 
@@ -75,6 +85,38 @@ class RetryCriticalException(Extension):
 
         data["exception"] = None
 
+
+    async def _recover_from_overflow(self, data: dict, exception) -> bool:
+        """The provider refused the prompt as too long (or ran out of room
+        mid-reply). Make the prompt smaller and retry, instead of failing
+        and putting the long error text into history, which made the next
+        prompt even bigger."""
+        from helpers import prompt_budget
+
+        if not prompt_budget.is_context_overflow(exception):
+            return False
+        count = int(self.agent.get_data(DATA_NAME_OVERFLOW_COUNTER) or 0)
+        if count >= MAX_OVERFLOW_RETRIES:
+            return False
+        self.agent.set_data(DATA_NAME_OVERFLOW_COUNTER, count + 1)
+
+        factor = prompt_budget.shrink_after_overflow(self.agent)
+        try:
+            await self.agent.history.compress()
+        except Exception as exc:
+            PrintStyle.error(f"History compression after a context overflow failed: {exc}")
+        self.agent.context.log.log(
+            type="warning",
+            heading="Prompt did not fit the context window - retrying with less context",
+            content=(f"This chat now uses {int(factor * 100)}% of the configured window. "
+                     "Older history is summarised more and extras are trimmed when needed."),
+        )
+        self.agent.hist_add_warning(
+            message="The previous reply was cut off: the prompt did not fit the model's context window. "
+                    "Context has been reduced. Continue where you left off; keep tool output short."
+        )
+        data["exception"] = None
+        return True
 
     def when_critical(self, data: dict = {}):
         if not self.agent:

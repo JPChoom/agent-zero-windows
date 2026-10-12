@@ -75,6 +75,8 @@
 
 ## Runtime Contracts
 
+- Compression aims at `prompt_budget.effective_ctx_length` (the window the server really loaded, smaller after an overflow), not only the configured `ctx_length`; the utility summary budget uses the utility server's real window.
+
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem writes, filesystem deletion, model calls, plugin state, settings/state persistence, secret handling.
