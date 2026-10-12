@@ -27,6 +27,8 @@
 
 ## Runtime Contracts
 
+- `native_host(url)` replaces Docker's `host.docker.internal` with `127.0.0.1` unless the run is dockerized. Natively the alias resolves (Docker Desktop's hosts entry) to the PC's LAN address, where a loopback-only server such as LM Studio never answers, so every call times out. Applied to provider defaults, saved values and the Settings model lists (`models._merge_provider_defaults`, `plugins/_model_config/api/model_search.py`); other hosts are left alone.
+
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem deletion, plugin state, settings/state persistence.

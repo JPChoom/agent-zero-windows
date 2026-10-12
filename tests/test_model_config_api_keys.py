@@ -48,6 +48,7 @@ sys.modules["watchdog.events"] = watchdog.events
 from plugins._model_config.api.api_keys import ApiKeys
 from plugins._model_config.extensions.python.banners import _20_missing_api_key as missing_key_banner
 import models
+from helpers import runtime
 
 
 def test_model_config_api_keys_can_be_cleared_via_backend(monkeypatch, tmp_path):
@@ -385,6 +386,8 @@ def test_local_provider_defaults_are_docker_friendly():
 
 def test_local_provider_runtime_defaults_and_overrides(monkeypatch):
     monkeypatch.setattr(models, "get_api_key", lambda provider: "None")
+    # The Docker contract: inside Docker the defaults keep the host alias.
+    monkeypatch.setattr(runtime, "is_dockerized", lambda: True)
 
     lm_chat = models.get_chat_model("lm_studio", "local-chat-model")
     assert lm_chat.model_name == "lm_studio/local-chat-model"
@@ -531,3 +534,33 @@ def test_docker_compose_maps_host_docker_internal_for_local_models():
     service = compose["services"]["agent-zero"]
 
     assert "host.docker.internal:host-gateway" in service["extra_hosts"]
+
+
+def test_native_runs_reach_local_servers_through_loopback(monkeypatch):
+    """Natively, host.docker.internal resolves to the PC's LAN address, where a
+    server listening only on 127.0.0.1 (LM Studio's default) never answers and
+    every call times out. Defaults, saved values and the model list therefore
+    use loopback when not dockerized."""
+    monkeypatch.setattr(models, "get_api_key", lambda provider: "None")
+    monkeypatch.setattr(runtime, "is_dockerized", lambda: False)
+
+    default = models.get_chat_model("lm_studio", "m")
+    assert default.kwargs["api_base"] == "http://127.0.0.1:1234/v1"
+    assert models.get_embedding_model("lm_studio", "e").kwargs["api_base"] == "http://127.0.0.1:1234/v1"
+    saved = models.get_chat_model("ollama", "m", api_base="http://host.docker.internal:11434")
+    assert saved.kwargs["api_base"] == "http://127.0.0.1:11434"
+    # An address the user chose on purpose is left alone.
+    custom = models.get_chat_model("lm_studio", "m", api_base="http://192.168.1.50:1234/v1")
+    assert custom.kwargs["api_base"] == "http://192.168.1.50:1234/v1"
+
+    monkeypatch.setattr(runtime, "is_dockerized", lambda: True)
+    assert models.get_chat_model("lm_studio", "m").kwargs["api_base"] == "http://host.docker.internal:1234/v1"
+
+
+def test_native_host_only_touches_the_docker_alias(monkeypatch):
+    from helpers import providers
+
+    monkeypatch.setattr(runtime, "is_dockerized", lambda: False)
+    assert providers.native_host("http://host.docker.internal:8000/v1") == "http://127.0.0.1:8000/v1"
+    assert providers.native_host("http://localhost:1234/v1") == "http://localhost:1234/v1"
+    assert providers.native_host("") == "" and providers.native_host(None) is None

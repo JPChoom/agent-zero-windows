@@ -122,6 +122,30 @@ class ProviderManager:
         return None
 
 
+DOCKER_HOST_ALIAS = "host.docker.internal"
+
+
+def native_host(url):
+    """`url` with Docker's host alias replaced by this PC's loopback address.
+
+    Provider defaults (conf/model_providers.yaml) and the onboarding wizard
+    use http://host.docker.internal:<port> for local servers (LM Studio,
+    Ollama, vLLM, llama.cpp) because Agent Zero upstream runs in Docker. Run
+    natively on Windows the alias still resolves (Docker Desktop adds a hosts
+    entry) - to the PC's LAN address, where a server that listens only on
+    127.0.0.1, like LM Studio by default, never answers: the connection just
+    times out. Natively the host IS this PC, so loopback is the same machine
+    and always works. Dockerized runs keep the alias.
+    """
+    if not isinstance(url, str) or DOCKER_HOST_ALIAS not in url:
+        return url
+    from helpers import runtime
+
+    if runtime.is_dockerized():
+        return url
+    return url.replace(DOCKER_HOST_ALIAS, "127.0.0.1")
+
+
 def get_providers(provider_type: ModelType) -> List[FieldOption]:
     """Convenience function to get providers of a specific type."""
     return ProviderManager.get_instance().get_providers(provider_type)

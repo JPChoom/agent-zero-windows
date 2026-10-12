@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 from helpers.api import ApiHandler, Request, Response
-from helpers.providers import get_provider_config
+from helpers.providers import get_provider_config, native_host
 import models
 
 # Model name substrings to exclude from chat dropdowns and LiteLLM fallback results.
@@ -94,8 +94,10 @@ class ModelSearch(ApiHandler):
     ) -> tuple[list[str], str, str]:
         api_key = models.get_api_key(provider)
         kwargs = (cfg or {}).get("kwargs", {}) or {}
-        api_base = user_api_base or kwargs.get("api_base", "") or ml.get("default_base", "")
+        api_base = native_host(user_api_base or kwargs.get("api_base", "") or ml.get("default_base", ""))
         effective_ml = dict(ml or {})
+        if effective_ml.get("default_base"):
+            effective_ml["default_base"] = native_host(effective_ml["default_base"])
 
         # Ollama's native endpoint is /api/tags, but user-supplied /v1 bases usually
         # mean the OpenAI-compatible /v1/models endpoint.

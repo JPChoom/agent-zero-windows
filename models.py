@@ -22,7 +22,7 @@ import openai
 from helpers import dotenv
 from helpers import model_concurrency, settings, images
 from helpers.dotenv import load_dotenv
-from helpers.providers import ModelType as ProviderModelType, get_provider_config
+from helpers.providers import ModelType as ProviderModelType, get_provider_config, native_host
 from helpers.rate_limiter import RateLimiter
 from helpers.tokens import approximate_tokens
 from helpers.extension import extensible  # extensible: allows plugins to intercept get_api_key()
@@ -1014,6 +1014,11 @@ def _merge_provider_defaults(
         if isinstance(extra_kwargs, dict):
             for k, v in extra_kwargs.items():
                 kwargs.setdefault(k, v)
+
+    # Local-server addresses saved or defaulted as Docker's host alias must
+    # reach this PC when running natively (see providers.native_host).
+    if isinstance(kwargs.get("api_base"), str):
+        kwargs["api_base"] = native_host(kwargs["api_base"])
 
     # Inject API key based on the *original* provider id if still missing
     if "api_key" not in kwargs:
