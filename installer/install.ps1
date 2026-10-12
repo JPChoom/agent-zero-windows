@@ -153,13 +153,20 @@ if ($llamaChoice -eq "ask") {
     if ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
         $llamaChoice = "none"
     } else {
+        $detected = if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { "an NVIDIA GPU was found, so Automatic installs the CUDA build" } else { "no NVIDIA GPU was found, so Automatic installs the CPU build" }
         Write-Host ""
         Write-Host "Agent Zero can run its own llama.cpp server, so you do not need LM Studio." -ForegroundColor Cyan
-        Write-Host "It downloads the official llama-server.exe (CUDA ~630 MB, others 20-250 MB; verified before it is installed)."
+        Write-Host "It downloads the official llama-server.exe, verified before it is installed."
         Write-Host "You add a .gguf model yourself afterwards (models are never included)."
-        Write-Host "  [A] Automatic  - NVIDIA CUDA if an NVIDIA GPU is found, otherwise CPU"
-        Write-Host "  [C] NVIDIA CUDA   [V] Vulkan (AMD / Intel / NVIDIA)   [R] AMD ROCm   [P] CPU only"
-        Write-Host "  [S] Skip - set it up later in Settings"
+        Write-Host ""
+        Write-Host "  [A] Automatic    NVIDIA CUDA if an NVIDIA GPU is found, otherwise CPU"
+        Write-Host "  [C] NVIDIA CUDA  fastest on NVIDIA cards                   (about 630 MB)"
+        Write-Host "  [V] Vulkan       AMD, Intel or NVIDIA GPUs                 (about 30 MB)"
+        Write-Host "  [R] AMD ROCm     supported AMD cards with AMD's runtime    (about 250 MB)"
+        Write-Host "  [P] CPU only     no GPU; slow for large models             (about 20 MB)"
+        Write-Host "  [S] Skip         set it up later in Settings"
+        Write-Host ""
+        Write-Host "On this PC $detected." -ForegroundColor Yellow
         $answer = (Read-Host "Download it now? [A/C/V/R/P/S] (default S)").Trim().ToLower()
         $llamaChoice = switch ($answer) { "a" { "auto" } "c" { "cuda" } "v" { "vulkan" } "r" { "rocm" } "p" { "cpu" } default { "none" } }
     }
