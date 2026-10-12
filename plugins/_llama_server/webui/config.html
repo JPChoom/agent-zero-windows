@@ -99,6 +99,7 @@
               <option value="" x-text="'Build: automatic (' + (info?.suggested_variant || 'cpu') + ')'"></option>
               <option value="cuda">Build: NVIDIA (CUDA)</option>
               <option value="vulkan">Build: Vulkan (AMD / Intel / NVIDIA)</option>
+              <option value="rocm">Build: AMD ROCm (needs AMD's HIP runtime)</option>
               <option value="cpu">Build: CPU only</option>
             </select>
             <button class="btn btn-field" :disabled="busy" @click="call('download_plan', { variant: config.download_variant })">Check download</button>

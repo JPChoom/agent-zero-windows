@@ -35,6 +35,6 @@ vram_check: true
 
 startup_timeout_seconds: 300
 
-# Which llama.cpp build the Download button fetches: cuda, vulkan or cpu.
+# Which llama.cpp build the Download button fetches: cuda, vulkan, rocm or cpu.
 # Empty = cuda when an NVIDIA GPU is found, otherwise cpu.
 download_variant: ""

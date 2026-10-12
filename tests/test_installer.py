@@ -7,7 +7,9 @@ keys (never the real Start menu or Apps entries).
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import sys
 import uuid
@@ -115,3 +117,46 @@ def test_tray_launcher_shows_and_closes():
     result = subprocess.run([str(pythonw), str(INSTALLER / "tray_launcher.pyw"), "--no-server", "--smoke"],
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
+
+
+GO = shutil.which("go") or r"C:\Program Files\Go\bin\go.exe"
+
+
+@pytest.fixture(scope="module")
+def setup_exe(tmp_path_factory):
+    if not Path(GO).exists():
+        pytest.skip("Go is not installed")
+    out = tmp_path_factory.mktemp("setup") / "AgentZeroWindows-Setup.exe"
+    env = {**os.environ, "CGO_ENABLED": "0", "GOOS": "windows", "GOARCH": "amd64", "GOFLAGS": "-mod=mod"}
+    result = subprocess.run([GO, "build", "-trimpath", "-o", str(out), "."], cwd=INSTALLER,
+                            capture_output=True, text=True, timeout=300, env=env)
+    assert result.returncode == 0, result.stderr
+    return out
+
+
+def test_setup_exe_embeds_the_current_install_script(setup_exe):
+    # The .exe must carry exactly installer/install.ps1 (rebuilt here from source).
+    assert (INSTALLER / "install.ps1").read_bytes() in setup_exe.read_bytes()
+
+
+def test_setup_exe_refuses_a_bad_tag_with_exit_code_1(setup_exe, tmp_path):
+    result = subprocess.run([str(setup_exe), "-version", "main", "-llama", "none", "-dir", str(tmp_path / "x")],
+                            capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+    out = result.stdout + result.stderr
+    if "Python 3.12 not found" in out or "Git not found" in out:
+        pytest.skip("this machine lacks the installer's prerequisites")
+    assert result.returncode == 1 and "Not a release tag" in out
+    assert not (tmp_path / "x").exists()
+
+
+def test_setup_exe_passes_options_through(setup_exe, tmp_path):
+    occupied = tmp_path / "occupied"
+    occupied.mkdir()
+    (occupied / "keep.txt").write_text("keep", encoding="utf-8")
+    result = subprocess.run([str(setup_exe), "-version", "v1.3", "-llama", "none", "-dir", str(occupied)],
+                            capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+    out = result.stdout + result.stderr
+    if "Python 3.12 not found" in out or "Git not found" in out:
+        pytest.skip("this machine lacks the installer's prerequisites")
+    assert result.returncode == 1 and "is not an Agent Zero install" in out
+    assert (occupied / "keep.txt").read_text(encoding="utf-8") == "keep"

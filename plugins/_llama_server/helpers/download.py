@@ -24,7 +24,10 @@ import zipfile
 
 from helpers import files
 
-RELEASE_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+# Upstream publishes every build (bNNNNN) as a GitHub *pre-release*, so the
+# "latest release" endpoint skips them; the newest release that actually has
+# the requested Windows build is used instead.
+RELEASES_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20"
 ALLOWED_DOWNLOAD_PREFIX = "https://github.com/ggml-org/llama.cpp/releases/download/"
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 
@@ -32,6 +35,7 @@ MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 VARIANT_PATTERNS = {
     "cuda": [r"^llama-.*-bin-win-cuda-12[\d.]*-x64\.zip$", r"^cudart-llama-bin-win-cuda-12[\d.]*-x64\.zip$"],
     "vulkan": [r"^llama-.*-bin-win-vulkan-x64\.zip$"],
+    "rocm": [r"^llama-.*-bin-win-rocm-[\d.]+-x64\.zip$"],
     "cpu": [r"^llama-.*-bin-win-cpu-x64\.zip$"],
 }
 
@@ -69,7 +73,7 @@ def _get_json(url: str) -> dict:
 def select_assets(release: dict, variant: str) -> list[dict]:
     patterns = VARIANT_PATTERNS.get(variant)
     if not patterns:
-        raise DownloadError(f"Unknown build variant {variant!r}; use cuda, vulkan or cpu.")
+        raise DownloadError(f"Unknown build variant {variant!r}; use cuda, vulkan, rocm or cpu.")
     chosen = []
     for pattern in patterns:
         matches = [a for a in release.get("assets", []) if re.match(pattern, str(a.get("name", "")))]
@@ -88,11 +92,30 @@ def select_assets(release: dict, variant: str) -> list[dict]:
     return chosen
 
 
+def newest_release_with(releases: list[dict], variant: str) -> tuple[dict, list[dict]]:
+    """The newest non-draft release that has this Windows build, and its assets."""
+    if variant not in VARIANT_PATTERNS:
+        raise DownloadError(f"Unknown build variant {variant!r}; use cuda, vulkan, rocm or cpu.")
+    last_error = None
+    for release in releases:
+        if release.get("draft"):
+            continue
+        try:
+            return release, select_assets(release, variant)
+        except DownloadError as exc:
+            last_error = exc
+            if "no published SHA-256" in str(exc) or "Unexpected download location" in str(exc):
+                raise  # a real problem with the newest build: never fall back silently
+    raise DownloadError(f"No recent llama.cpp release has a Windows {variant} build. ({last_error})")
+
+
 def plan(variant: str = "") -> dict:
     """What a download would fetch, without fetching it."""
     variant = variant or suggested_variant()
-    release = _get_json(RELEASE_API)
-    assets = select_assets(release, variant)
+    releases = _get_json(RELEASES_API)
+    if not isinstance(releases, list):
+        raise DownloadError("Unexpected answer from GitHub's release list.")
+    release, assets = newest_release_with(releases, variant)
     return {
         "tag": release.get("tag_name", ""),
         "variant": variant,

@@ -103,11 +103,13 @@ Other projects in this space put the weight elsewhere: some focus on being reach
 
 ## Install
 
-**Installer (Windows 11, per user, no admin rights)** - needs Python 3.12 and Git (`winget install --id Python.Python.3.12 -e` and `winget install --id Git.Git -e`). Download `installer\install.ps1` from the repository and run:
+**Installer (Windows 11, per user, no admin rights)** - needs Python 3.12 and Git (`winget install --id Python.Python.3.12 -e` and `winget install --id Git.Git -e`). Download **AgentZeroWindows-Setup.exe** from the latest release and run it (it is not code-signed yet, so Windows SmartScreen asks you to confirm: *More info > Run anyway*). Or run the script directly:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+Setup offers to download the llama.cpp server too (NVIDIA CUDA, Vulkan, AMD ROCm or CPU build), so you can run local models without LM Studio; you add a `.gguf` model yourself.
 
 It installs the latest release into `%LOCALAPPDATA%\Programs\AgentZeroWindows` with the exact package versions it was tested with (`requirements.lock.txt`), adds **Agent Zero for Windows** to the Start menu (a tray icon opens it in your browser) and to *Settings > Apps*. Uninstalling keeps your data (`usr\`) unless you choose a clean uninstall. Updates use *Settings > Check for updates* as before.
 

@@ -16,13 +16,22 @@
   Re-running it on an existing install updates it to the chosen tag (local
   changes are never overwritten: it stops instead).
 
+  llama.cpp server: Agent Zero can run its own llama-server.exe instead of
+  needing LM Studio. -Llama chooses the build to download during setup
+  (cuda, vulkan, rocm, cpu, auto = detect, none = skip; the default asks). The
+  download is the official build from github.com/ggml-org/llama.cpp and is
+  installed only when its SHA-256 matches the one GitHub publishes. Models
+  are never included: you add a .gguf file yourself.
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File install.ps1
   powershell -ExecutionPolicy Bypass -File install.ps1 -Version v1.4
+  powershell -ExecutionPolicy Bypass -File install.ps1 -Llama cuda     (no questions asked)
 #>
 param(
     [string]$Version = "",
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\AgentZeroWindows"),
+    [ValidateSet("ask", "auto", "cuda", "vulkan", "rocm", "cpu", "none")][string]$Llama = "ask",
     [switch]$NoShortcut,
     [switch]$Force
 )
@@ -106,6 +115,52 @@ Step "Installing packages from $(Split-Path $reqs -Leaf) (this takes a while the
 & $venvPython -m pip install --disable-pip-version-check --quiet --upgrade pip
 & $venvPython -m pip install --disable-pip-version-check --quiet -r $reqs
 if ($LASTEXITCODE -ne 0) { Fail "Package installation failed. See the messages above." }
+
+# --- llama.cpp server (optional) ------------------------------------------------------
+function Install-LlamaServer($choice) {
+    $script = @'
+import sys
+sys.path.insert(0, ".")
+from plugins._llama_server.helpers import download
+variant = sys.argv[1]
+if variant == "auto":
+    variant = download.suggested_variant()
+print("Downloading the llama.cpp server (" + variant + " build)...")
+record = download.download(variant)
+print("Installed llama.cpp release " + record["tag"] + " (" + record["variant"] + ")")
+from helpers import plugins
+plugins.toggle_plugin("_llama_server", True)
+print("The llama.cpp server plugin is on: add a .gguf model in Settings > Agent > llama.cpp server.")
+'@
+    $tmp = Join-Path $env:TEMP ("a0-llama-" + [guid]::NewGuid().ToString("N") + ".py")
+    Set-Content -Path $tmp -Value $script -Encoding UTF8
+    Push-Location $app
+    try {
+        & $venvPython $tmp $choice
+        if ($LASTEXITCODE -ne 0) { Write-Host "The llama.cpp server could not be installed (see above). Everything else is installed; you can retry in Settings > Agent > llama.cpp server." -ForegroundColor Yellow }
+    } finally { Pop-Location; Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+}
+
+$llamaChoice = $Llama
+if ($llamaChoice -eq "ask") {
+    if ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
+        $llamaChoice = "none"
+    } else {
+        Write-Host ""
+        Write-Host "Agent Zero can run its own llama.cpp server, so you do not need LM Studio." -ForegroundColor Cyan
+        Write-Host "It downloads the official llama-server.exe (CUDA ~630 MB, others 20-250 MB; verified before it is installed)."
+        Write-Host "You add a .gguf model yourself afterwards (models are never included)."
+        Write-Host "  [A] Automatic  - NVIDIA CUDA if an NVIDIA GPU is found, otherwise CPU"
+        Write-Host "  [C] NVIDIA CUDA   [V] Vulkan (AMD / Intel / NVIDIA)   [R] AMD ROCm   [P] CPU only"
+        Write-Host "  [S] Skip - set it up later in Settings"
+        $answer = (Read-Host "Download it now? [A/C/V/R/P/S] (default S)").Trim().ToLower()
+        $llamaChoice = switch ($answer) { "a" { "auto" } "c" { "cuda" } "v" { "vulkan" } "r" { "rocm" } "p" { "cpu" } default { "none" } }
+    }
+}
+if ($llamaChoice -ne "none") {
+    Step "Installing the llama.cpp server ($llamaChoice)"
+    Install-LlamaServer $llamaChoice
+}
 
 # --- Start menu and Apps entry ----------------------------------------------------
 $pythonw = Join-Path $app ".venv\Scripts\pythonw.exe"

@@ -41,6 +41,21 @@ def test_variants_pick_the_right_assets():
         download.select_assets(RELEASE, "rocm-something")
 
 
+def test_the_newest_release_with_the_build_is_used_prereleases_included():
+    # Upstream ships every build as a pre-release; an unrelated newer release
+    # without Windows assets must not be picked.
+    library = {"tag_name": "v0.6.0", "prerelease": False, "assets": [_asset("python-bindings.tar.gz")]}
+    draft = {"tag_name": "b10000", "draft": True, "assets": RELEASE["assets"]}
+    build = {**RELEASE, "tag_name": "b9999", "prerelease": True}
+    release, assets = download.newest_release_with([draft, library, build], "vulkan")
+    assert release["tag_name"] == "b9999" and assets[0]["name"] == "llama-b9999-bin-win-vulkan-x64.zip"
+
+
+def test_rocm_build_is_available():
+    release = {"tag_name": "b1", "assets": [_asset("llama-b1-bin-win-rocm-10.0-x64.zip")]}
+    assert download.select_assets(release, "rocm")[0]["name"] == "llama-b1-bin-win-rocm-10.0-x64.zip"
+
+
 def test_an_asset_without_a_published_digest_is_refused():
     release = {"tag_name": "x", "assets": [_asset("llama-x-bin-win-cpu-x64.zip", digest=None)]}
     with pytest.raises(download.DownloadError, match="no published SHA-256"):

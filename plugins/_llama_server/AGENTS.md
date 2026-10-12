@@ -17,7 +17,8 @@
 - The supervisor owns host, port, model and alias; `extra_args` cannot override them (`FORBIDDEN_ARGS`), so the server can never listen beyond 127.0.0.1.
 - Crash recovery restarts with `RESTART_BACKOFF` and gives up after `MAX_RESTARTS` in `RESTART_WINDOW`, notifying the user; autostart does not retry a failed server.
 - No orphans: the server is stopped at Agent Zero exit (`atexit`); a leftover from a forced kill is adopted on the next start when identical and healthy, otherwise stopped.
-- Download is only run on an explicit user click, only from a local (not tunnel) session, only from `github.com/ggml-org/llama.cpp` releases, and only when the asset's SHA-256 published by GitHub matches; archives are zip-slip checked. Models are never downloaded or bundled.
+- Upstream publishes every build as a GitHub pre-release, so the download takes the newest non-draft release (pre-releases included) that has the requested Windows build (`newest_release_with`); a missing digest or unexpected host on that build is an error, never a reason to fall back to an older one. Builds: cuda (plus the CUDA runtime archive), vulkan, rocm, cpu.
+- Download is only run on an explicit user click (or the installer's `-Llama` choice), only from a local (not tunnel) session, only from `github.com/ggml-org/llama.cpp` releases, and only when the asset's SHA-256 published by GitHub matches; archives are zip-slip checked. Models are never downloaded or bundled.
 - Status reads take no lock (a start can hold it for minutes while loading).
 
 ## Verification
