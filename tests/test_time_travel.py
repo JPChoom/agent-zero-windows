@@ -495,3 +495,13 @@ def test_stale_index_lock_from_killed_git_run_is_cleared(workspace):
     result = service.snapshot(trigger="manual")
     assert result.created is True
     assert not (service.workspace.repo_git_path / "index.lock").exists()
+
+
+def test_snapshot_paths_skip_files_over_the_size_cap(tmp_path, monkeypatch):
+    from plugins._time_travel.helpers import time_travel
+
+    monkeypatch.setattr(time_travel, "MAX_SNAPSHOT_FILE_BYTES", 10)
+    (tmp_path / "small.txt").write_text("hi")
+    (tmp_path / "big.bin").write_bytes(b"x" * 11)
+    paths = list(time_travel.iter_snapshot_paths(tmp_path, display_path="/a0/usr/workdir"))
+    assert paths == ["small.txt"]

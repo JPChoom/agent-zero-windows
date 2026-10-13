@@ -29,6 +29,11 @@ METADATA_PREFIX = "A0-Time-Travel-Metadata:"
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MAX_RENDERED_PATCH_BYTES = 1_000_000
 GIT_TIMEOUT_SECONDS = 20
+# Staging re-reads every tracked file, so it gets longer on big workspaces.
+STAGE_TIMEOUT_SECONDS = 180
+# Larger files (datasets, binaries, archives) are not versioned: hashing them on
+# every snapshot made large workdirs time out and bloated the shadow repo.
+MAX_SNAPSHOT_FILE_BYTES = 20 * 1024 * 1024
 AUTO_SNAPSHOT_DEBOUNCE_SECONDS = 10.0
 WATCHDOG_ID = "time_travel_usr"
 WATCHDOG_DEBOUNCE_SECONDS = 1.0
@@ -1067,6 +1072,7 @@ class TimeTravelService:
                 "--pathspec-from-file=-",
                 "--pathspec-file-nul",
                 input=payload,
+                timeout=STAGE_TIMEOUT_SECONDS,
             )
         tree_hash = self._git("write-tree").stdout.strip()
         return tree_hash, paths
@@ -1440,7 +1446,7 @@ class TimeTravelService:
             )
         return completed
 
-    def _git_bytes(self, *args: str, input: bytes | None = None, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+    def _git_bytes(self, *args: str, input: bytes | None = None, check: bool = True, timeout: float = GIT_TIMEOUT_SECONDS) -> subprocess.CompletedProcess[bytes]:
         self.workspace.shadow_path.mkdir(parents=True, exist_ok=True)
         completed = subprocess.run(
             [
@@ -1455,7 +1461,7 @@ class TimeTravelService:
             capture_output=True,
             env=self._git_env(),
             cwd=str(self.workspace.real_path) if self.workspace.real_path.exists() else None,
-            timeout=GIT_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
         if check and completed.returncode != 0:
             stderr = completed.stderr.decode("utf-8", errors="replace")
@@ -1495,6 +1501,12 @@ def iter_snapshot_paths(workspace: Path, *, display_path: str = "") -> Iterable[
                     continue
                 yield from walk(Path(entry.path), rel)
             elif (is_file or is_link) and is_snapshot_candidate(rel, is_dir=False):
+                if is_file and not is_link:
+                    try:
+                        if entry.stat(follow_symlinks=False).st_size > MAX_SNAPSHOT_FILE_BYTES:
+                            continue
+                    except OSError:
+                        continue
                 yield rel
 
     yield from walk(workspace)

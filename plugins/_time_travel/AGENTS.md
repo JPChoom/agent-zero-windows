@@ -19,6 +19,8 @@
 - Every `TimeTravelService` method that touches a shadow repo is serialized by a per-repo `RLock` (`@_serialized`); debounced snapshot timers and panel API calls must not run git concurrently on the same repo. New repo-touching public methods need the decorator.
 - Under that lock, leftover `index.lock`/`config.lock`/`HEAD.lock` files can only come from a killed git run (`GIT_TIMEOUT_SECONDS`) and are removed by `ensure_repo()`. Identity config is written once per repo per process.
 
+- Files over `MAX_SNAPSHOT_FILE_BYTES` (20 MB) are not versioned (never snapshotted, so travel/revert leave them alone); staging uses `STAGE_TIMEOUT_SECONDS` instead of the 20 s default so large workspaces do not time out.
+
 ## Work Guidance
 
 - Coordinate API and UI changes so users can inspect effects before applying travel or revert operations.
