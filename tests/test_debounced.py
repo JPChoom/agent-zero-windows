@@ -175,9 +175,47 @@ def test_clear_removes_a_specific_key_without_touching_others():
 
 def test_clear_with_no_key_removes_everything():
     debounced._cache["x"] = (time.monotonic(), "vx")
-    debounced._locks["x"] = asyncio.Lock()
+    loop = asyncio.new_event_loop()
+    debounced._locks.setdefault(loop, {})["x"] = asyncio.Lock()
 
     debounced.clear()
+    loop.close()
 
     assert debounced._cache == {}
-    assert debounced._locks == {}
+    assert len(debounced._locks) == 0
+
+
+def test_works_across_different_event_loops():
+    import asyncio
+    import threading
+    from helpers import debounced
+
+    debounced.clear()
+    calls = []
+
+    def slow():
+        import time
+        time.sleep(0.2)
+        calls.append(1)
+        return "x"
+
+    async def run_two():
+        return await asyncio.gather(
+            debounced.run_debounced("k", 0, slow), debounced.run_debounced("k", 0, slow)
+        )
+
+    results = []
+    errors = []
+
+    def in_thread():
+        try:
+            results.append(asyncio.run(run_two()))
+        except Exception as exc:  # pragma: no cover - the failure being tested
+            errors.append(exc)
+
+    for _ in range(2):  # second loop reuses the key the first loop locked
+        thread = threading.Thread(target=in_thread)
+        thread.start()
+        thread.join()
+    assert not errors, errors
+    assert len(results) == 2

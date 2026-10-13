@@ -24,10 +24,16 @@ different kind of write.
 
 import asyncio
 import time
+import weakref
 from typing import Any, Callable
 
 _cache: dict[str, tuple[float, Any]] = {}
-_locks: dict[str, asyncio.Lock] = {}
+# asyncio.Lock binds to the first loop that waits on it, and A0 runs agents on
+# several loops (background and deferred tasks use their own threads), so each
+# loop gets its own locks; the result cache stays shared across loops.
+_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 async def run_debounced(
@@ -45,7 +51,7 @@ async def run_debounced(
     not use this for anything that mutates shared state or touches
     asyncio.Lock/Event/etc.
 
-    A per-key asyncio.Lock avoids a thundering herd: if several turns
+    A per-key (and per-event-loop) asyncio.Lock avoids a thundering herd: if several turns
     arrive while a walk for the same key is already in flight, only the
     first actually runs it, and the rest wait on the lock rather than
     each starting their own redundant walk.
@@ -55,7 +61,7 @@ async def run_debounced(
     if cached is not None and now - cached[0] < ttl_seconds:
         return cached[1]
 
-    lock = _locks.setdefault(key, asyncio.Lock())
+    lock = _locks.setdefault(asyncio.get_running_loop(), {}).setdefault(key, asyncio.Lock())
     async with lock:
         # Re-check after acquiring the lock: whoever held it may have
         # just refreshed this exact key while we were waiting.
@@ -80,4 +86,5 @@ def clear(key: str | None = None) -> None:
         _locks.clear()
     else:
         _cache.pop(key, None)
-        _locks.pop(key, None)
+        for loop_locks in list(_locks.values()):
+            loop_locks.pop(key, None)
