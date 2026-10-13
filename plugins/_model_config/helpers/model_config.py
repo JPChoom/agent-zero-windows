@@ -710,8 +710,23 @@ def build_utility_model(agent=None):
     cfg = apply_sampling(get_utility_model_config(agent), get_sampling(agent))
     mc = build_model_config(cfg, models.ModelType.CHAT)
     return models.get_chat_model(
-        mc.provider, mc.name, model_config=mc, **mc.build_kwargs()
+        mc.provider, mc.name, model_config=mc, **utility_kwargs(mc.provider, mc.build_kwargs())
     )
+
+
+def utility_kwargs(provider: str, kwargs: dict) -> dict:
+    """Utility calls (memorizing, titles, summaries) need an answer, not hidden
+    thinking. A reasoning model on LM Studio otherwise thinks for minutes over
+    a long history and trips the 180 s utility timeout. LM Studio honours
+    `reasoning_effort: none` only on its chat-completions route, passed as
+    extra_body; values the user set in the slot's kwargs win."""
+    kwargs = dict(kwargs)
+    if provider == "lm_studio":
+        kwargs.setdefault("a0_api_mode", "chat_completions")
+        extra_body = dict(kwargs.get("extra_body") or {})
+        extra_body.setdefault("reasoning_effort", "none")
+        kwargs["extra_body"] = extra_body
+    return kwargs
 
 
 def build_vision_model(agent=None):
