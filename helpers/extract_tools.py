@@ -164,11 +164,27 @@ def _json_root_object_starts(content: str) -> list[int]:
     return starts
 
 
+# A model sometimes forgets to close the "thoughts" array, so "headline",
+# "tool_name" and "tool_args" end up as strings inside it.
+_UNCLOSED_THOUGHTS = re.compile(r'"\s*,\s*"(headline|tool_name|tool_args)"\s*:')
+
+
 def _parse_json_root_object(root: str) -> dict[str, Any] | None:
     try:
         data = DirtyJson.parse_string(root)
     except Exception:
         return None
+    if isinstance(data, dict) and not _is_tool_request(data):
+        # Retry once with the unclosed thoughts array closed at its first
+        # stray key; a tool request only counts if the repair yields one.
+        fixed = _UNCLOSED_THOUGHTS.sub(lambda m: '"], "' + m.group(1) + '":', root, count=1)
+        if fixed != root:
+            try:
+                repaired = DirtyJson.parse_string(fixed)
+            except Exception:
+                repaired = None
+            if isinstance(repaired, dict) and _is_tool_request(repaired):
+                return repaired
     return data if isinstance(data, dict) else None
 
 
