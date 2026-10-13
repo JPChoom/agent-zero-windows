@@ -95,6 +95,8 @@
 - Imported dependency areas include: `agent`, `asyncio`, `crontab`, `datetime`, `enum`, `helpers`, `helpers.defer`, `helpers.files`, `helpers.localization`, `helpers.persist_chat`, `helpers.print_style`, `initialize`, `nest_asyncio`, `os`, `os.path`, `pydantic`.
 - `SchedulerTaskList.get()` uses `helpers/sync_async.run_sync` for save/reload instead of a nested `asyncio.run` (it is called from inside running loops). The job loop now ticks the scheduler on native Windows (see `helpers/job_loop.py.dox.md`).
 
+- `cron_wall_time(dt, tz)` re-attaches a `crontab` result to the task timezone. `crontab` returns results carrying the offset of the `now` it was given, so an occurrence across a daylight-saving change comes out an hour off; every place that takes a cron occurrence (due check, calendar expansion) must pass it through this helper.
+
 ## Key Concepts
 
 - Important called helpers/classes observed in the source: `nest_asyncio.apply`, `TypeVar`, `str.strip`, `callable`, `datetime.now`, `tzinfo.localize`, `Field`, `PrivateAttr`, `Localization.get.serialize_datetime`, `normalize_schedule_timezone`, `Localization.get.get_timezone`, `pytz.timezone`, `now`, `localize`, `cls`, `_localize_task_datetime`, `self.todo.remove`, `self.get_next_launch_time`, `super.__init__`, `threading.RLock`.

@@ -55,6 +55,7 @@ A Windows Explorer-style File Browser, the Agent Workspace, and a faster, lighte
 - **Agent Workspace**: a Workspace view of which agent owns which apps, terminals and browser tabs, with Adopt / Release / Close and an owner picker. Inside a chat, ownership follows the agent chain: an agent may use its own and its sub-agents' apps without asking, but must be handed (`computer_use` `hand_over`) or ask before using a superior's. A replaced sub-agent's apps pass up; a parallel job's apps go back to the agent that started it. Browser tabs show which agent opened them.
 
 ### Fixed
+- **Calendar showed scheduled tasks an hour early after a clock change**: a daily 6 am task appeared at 5 am from November to March. The calendar carried October's UTC offset forward; it now re-applies the zone's real offset at each date. The same re-pin is used by the "is it due" check.
 - An app a parallel agent launched through Computer Use was forgotten when the job ended, so the chat that started the job could not close it or type into it without an approval, and nothing listed it. Apps now pass to that chat; deleted chats leave their apps listed as orphans (never closed automatically).
 - App ownership is checked against the process's start time, so a reused process id can never make the agent "own" an unrelated program.
 - Terminal sessions now end when their chat is deleted or reset, when a parallel worker finishes, and when a sub-agent is replaced, instead of whenever garbage collection ran.

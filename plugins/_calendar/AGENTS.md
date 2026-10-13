@@ -14,6 +14,8 @@
 - Colors follow the user's accent through `--calendar-primary` (falls back to `--color-primary` outside the theme).
 - Occurrence expansion must stay bounded so a pathological cron expression or huge range cannot spin the server.
 
+- Cron occurrences are expanded in the task's schedule timezone and re-pinned with `cron_wall_time` on every step, so a daily 6 am task stays 6 am across daylight-saving changes.
+
 ## Work Guidance
 
 ## Verification

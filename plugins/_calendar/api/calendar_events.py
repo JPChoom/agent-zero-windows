@@ -12,6 +12,7 @@ from helpers.task_scheduler import (
     ScheduledTask,
     PlannedTask,
     normalize_schedule_timezone,
+    cron_wall_time,
     parse_datetime,
     serialize_datetime,
 )
@@ -71,8 +72,9 @@ class CalendarEvents(ApiHandler):
             occurrence = crontab.next(now=cursor, return_datetime=True)
             if occurrence is None:
                 break
-            if occurrence.tzinfo is None:
-                occurrence = task_timezone.localize(occurrence)
+            # Re-pin to the zone: next() keeps the cursor's UTC offset, which
+            # is wrong after a daylight-saving change (6:00 became 5:00).
+            occurrence = cron_wall_time(occurrence, task_timezone)
             if occurrence >= range_end_in_task_timezone:
                 break
             events.append({

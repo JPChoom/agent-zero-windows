@@ -94,6 +94,18 @@ def _now() -> datetime:
     return datetime.now(tzinfo)
 
 
+def cron_wall_time(dt: datetime, task_timezone) -> datetime:
+    """A datetime returned by `crontab` pinned to `task_timezone`'s real offset.
+
+    `crontab` computes in the wall clock of the `now` it is given and returns
+    the result carrying that same fixed UTC offset. When the occurrence falls
+    on the other side of a daylight-saving change from `now`, that offset is
+    wrong by an hour (6:00 EDT shown as 5:00 EST). The wall time is right, so
+    re-attach it to the zone to get the offset that applies on that date.
+    """
+    return task_timezone.localize(dt.replace(tzinfo=None))
+
+
 def _localize_task_datetime(dt: datetime) -> datetime:
     if dt.tzinfo is not None:
         return dt
@@ -450,7 +462,7 @@ class ScheduledTask(BaseTask):
             )
             if prev_occurrence is None:
                 return False
-            prev_occurrence = _localize_task_datetime(prev_occurrence)
+            prev_occurrence = cron_wall_time(prev_occurrence, task_timezone)
 
             baseline = self.last_run or self.created_at
             if baseline is not None:
