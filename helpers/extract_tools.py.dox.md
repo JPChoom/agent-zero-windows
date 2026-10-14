@@ -27,6 +27,7 @@
 - Dirty parsing scans complete JSON object roots in prose and prefers the first object that normalizes as a valid tool request, so a leading text preamble or incidental non-tool object does not force a misformat warning when a valid tool call follows.
 - Streaming tool snapshots use the same valid-tool preference through `extract_json_root_string`, while preserving the first complete object fallback when no valid tool-call object is present.
 - A tool request whose `"thoughts"` array was never closed (`"headline"`, `"tool_name"`, `"tool_args"` swallowed as array strings) is repaired by closing the array at the first stray key, and only accepted if the result is a valid tool request.
+- `extract_tool_request` accepts a whole-message tool call, or one prose sentence followed by exactly one valid tool call that ends the message (`_trailing_tool_request`). A call followed by more text, two competing calls, or a call quoted mid-reply is still not executed.
 - Root extraction ignores objects nested inside an open parent object, so streamed wrapper tools such as `parallel` cannot stop early on the first nested `tool_calls` item.
 - Imported dependency areas include: `dirty_json`, `helpers.modules`, `re`, `regex`, `typing`.
 

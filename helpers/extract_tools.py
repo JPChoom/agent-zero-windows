@@ -27,10 +27,28 @@ def extract_tool_request(content: str) -> dict[str, Any] | None:
     content = content.strip()
     root = extract_json_root_string(content)
     if root != content:
-        return None
+        return _trailing_tool_request(content)
 
     request = _parse_json_root_object(root)
     return request if request is not None and _is_tool_request(request) else None
+
+
+def _trailing_tool_request(content: str) -> dict[str, Any] | None:
+    """A tool call that ends the message after a sentence of prose.
+
+    Models often announce a call ("Retrying the read:") before the JSON. That
+    is still one unambiguous call, so accept it - but only when it is the
+    single valid tool request and nothing follows it, so quoted examples in
+    the middle of a reply, or two competing calls, are never executed.
+    """
+    valid: list[tuple[str, dict[str, Any]]] = []
+    for root in extract_json_root_strings(content):
+        data = _parse_json_root_object(root)
+        if data is not None and _is_tool_request(data):
+            valid.append((root, data))
+    if len(valid) == 1 and content.endswith(valid[0][0]):
+        return valid[0][1]
+    return None
 
 
 def is_misformatted_tool_request(content: str) -> bool:
