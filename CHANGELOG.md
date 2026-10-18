@@ -9,6 +9,7 @@ A real installer, Agent Zero running its own local model server, long chats that
 **Behaviour changes:** remote access now needs a sign-in (Remote Control is refused while no login is set), and the llama.cpp provider's default address is `http://127.0.0.1:8090/v1`.
 
 ### New
+- **Speed measurement** (start of the local-speed work): every turn now records where its time went - each model call's wait for the GPU, time to first word, hidden "thinking", answer length and speed, plus tool time, hook time and moments the UI froze. One summary line per turn in the console; details in `usr/perf/` (numbers only, never chat text). The workflow benchmark reports the same totals.
 - **llama.cpp server plugin**: Agent Zero starts, watches and stops its own `llama-server.exe`, so LM Studio is no longer required (it keeps working as a provider). Download the official build from the plugin's settings (installed only if its SHA-256 matches the one GitHub publishes), pick a GGUF model, Start. It listens on 127.0.0.1 only, checks that the model you chose is the one loaded, refuses to start when an NVIDIA GPU clearly lacks memory, restarts after a crash, and never leaves a stray server behind. The llama.cpp provider now defaults to it (`http://127.0.0.1:8090/v1`).
 
 ### Improved

@@ -1,11 +1,12 @@
 from abc import abstractmethod
 from typing import Any, Awaitable, Type, cast
 from helpers import modules, files
-from helpers import cache
+from helpers import cache, perf
 from typing import TYPE_CHECKING
 from functools import wraps
 import inspect
 import os
+import time
 
 from helpers.print_style import PrintStyle
 
@@ -302,23 +303,45 @@ async def call_extensions_async(
     classes = _get_extension_classes(extension_point, agent=agent, **kwargs)
 
     # execute unique extensions
+    context_id = _perf_context_id(agent)
     for cls in classes:
-        if cls.FAIL_LOUD:
-            result = cls(agent=agent).execute(**kwargs)
-            if isinstance(result, Awaitable):
-                await result
-            continue
-
-        # Isolated by default: one extension's failure must not abort every
-        # other extension still queued at this call site. For system_prompt
-        # that used to mean every future turn until whatever broke was
-        # fixed; for the rest, the current turn.
+        started = time.monotonic()
         try:
-            result = cls(agent=agent).execute(**kwargs)
-            if isinstance(result, Awaitable):
-                await result
-        except Exception as e:
-            _log_extension_failure(extension_point, cls, agent, e)
+            if cls.FAIL_LOUD:
+                result = cls(agent=agent).execute(**kwargs)
+                if isinstance(result, Awaitable):
+                    await result
+                continue
+
+            # Isolated by default: one extension's failure must not abort every
+            # other extension still queued at this call site. For system_prompt
+            # that used to mean every future turn until whatever broke was
+            # fixed; for the rest, the current turn.
+            try:
+                result = cls(agent=agent).execute(**kwargs)
+                if isinstance(result, Awaitable):
+                    await result
+            except Exception as e:
+                _log_extension_failure(extension_point, cls, agent, e)
+        finally:
+            if context_id:
+                perf.add_hook_time(
+                    context_id, extension_point, _perf_extension_name(cls), time.monotonic() - started
+                )
+
+
+def _perf_context_id(agent) -> str:
+    """Chat id to charge hook time to (helpers/perf.py), "" when none."""
+    try:
+        context = getattr(agent, "context", None) if agent is not None else None
+        return str(getattr(context, "id", "") or "") or perf.CONTEXT_ID.get()
+    except Exception:
+        return ""
+
+
+def _perf_extension_name(cls) -> str:
+    module = str(getattr(cls, "__module__", "") or "")
+    return module.rsplit(".", 1)[-1] or cls.__name__
 
 
 def call_extensions_sync(extension_point: str, agent: "Agent|None" = None, **kwargs):

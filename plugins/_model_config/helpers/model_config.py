@@ -700,18 +700,22 @@ def build_chat_model(agent=None):
     """Build and return a LiteLLMChatWrapper from config."""
     cfg = apply_sampling(get_chat_model_config(agent), get_sampling(agent))
     mc = build_model_config(cfg, models.ModelType.CHAT)
-    return models.get_chat_model(
+    model = models.get_chat_model(
         mc.provider, mc.name, model_config=mc, **mc.build_kwargs()
     )
+    model.a0_perf_role = "main"  # helpers/perf.py: which slot a call came from
+    return model
 
 
 def build_utility_model(agent=None):
     """Build and return a LiteLLMChatWrapper for utility tasks."""
     cfg = apply_sampling(get_utility_model_config(agent), get_sampling(agent))
     mc = build_model_config(cfg, models.ModelType.CHAT)
-    return models.get_chat_model(
+    model = models.get_chat_model(
         mc.provider, mc.name, model_config=mc, **utility_kwargs(mc.provider, mc.build_kwargs())
     )
+    model.a0_perf_role = "utility"
+    return model
 
 
 def utility_kwargs(provider: str, kwargs: dict) -> dict:
@@ -738,9 +742,11 @@ def build_vision_model(agent=None):
     """
     cfg = get_vision_model_config(agent)
     mc = build_model_config(cfg, models.ModelType.CHAT)
-    return models.get_chat_model(
+    model = models.get_chat_model(
         mc.provider, mc.name, model_config=mc, **mc.build_kwargs()
     )
+    model.a0_perf_role = "vision"
+    return model
 
 
 def build_embedding_model(agent=None):

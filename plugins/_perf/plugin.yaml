@@ -1,0 +1,5 @@
+name: _perf
+title: Speed Measurement
+description: Records where each turn's time goes (model calls, queue waits, thinking, tools, hooks, UI stalls) to usr/perf and prints a one-line summary per turn. Numbers only, never chat content.
+version: 1.0.0
+always_enabled: false

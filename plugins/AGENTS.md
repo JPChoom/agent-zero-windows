@@ -97,6 +97,7 @@ Direct child DOX files:
 | [_orchestrator/AGENTS.md](_orchestrator/AGENTS.md) | Load-on-demand skill for delegating coding work to external terminal coding agent CLIs. |
 | [_personality/AGENTS.md](_personality/AGENTS.md) | Per-chat personality system-prompt overlays. |
 | [_permissions/AGENTS.md](_permissions/AGENTS.md) | Per-tool permission gate, per-chat in-memory modes, and the password-locked Bypass mode. |
+| [_perf/AGENTS.md](_perf/AGENTS.md) | Per-turn latency records (model calls, waits, thinking, tools, hooks, UI stalls). |
 | [_plugin_installer/AGENTS.md](_plugin_installer/AGENTS.md) | Plugin install and update flows from ZIP, Git, and Plugin Index. |
 | [_plugin_scan/AGENTS.md](_plugin_scan/AGENTS.md) | LLM-guided security scanner for third-party plugins. |
 | [_plugin_validator/AGENTS.md](_plugin_validator/AGENTS.md) | Plugin manifest, structure, convention, and security validator. |

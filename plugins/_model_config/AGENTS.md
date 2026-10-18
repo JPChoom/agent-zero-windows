@@ -15,6 +15,7 @@
 
 - `single_model_mode`: the Utility slot uses the Main model's identity fields (keeping its own `ctx_input` and rate limits) and `is_vision_model_configured` is False (no separate sidecar).
 - `build_utility_model` runs the Utility slot through `utility_kwargs`: on `lm_studio` it uses the chat-completions route with `extra_body.reasoning_effort = "none"` so reasoning models answer instead of thinking past the 180 s utility timeout (slot kwargs override).
+- The `build_*_model` helpers tag each wrapper with `a0_perf_role` (`main`, `utility`, `vision`) so `helpers/perf.py` can tell which slot a model call came from.
 - `sampling` (temperature, top_p, top_k, repeat_penalty; empty = provider default) is merged into Main/Utility kwargs by `apply_sampling`; a model's own kwargs win. top_k and repeat_penalty go in `extra_body` and only to `LOCAL_SAMPLING_PROVIDERS`.
 - Dynamic sampling is EXPERIMENTAL and off by default (`sampling.dynamic`): `extensions/python/chat_model_call_before/_20_dynamic_sampling.py` adjusts only unlocked values on the per-call model object, using the visible `sampling.dynamic_rules`; `helpers/dynamic_sampling.py` holds the pure classify/adjust logic. The UI asks for confirmation before enabling it.
 - `hooks.py get_plugin_config` backfills `BACKFILLED_KEYS` (vision_model, single_model_mode, sampling) into configs saved before they existed.

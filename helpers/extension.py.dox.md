@@ -36,6 +36,8 @@
 - Observed side-effect areas: filesystem reads, WebSocket state, plugin state.
 - Imported dependency areas include: `abc`, `functools`, `helpers`, `helpers.print_style`, `inspect`, `os`, `typing`.
 
+- `call_extensions_async` times each extension and charges it to the chat turn in `helpers/perf.py` (`add_hook_time`); timing wraps both FAIL_LOUD and isolated extensions and never changes their error handling.
+
 ## Key Concepts
 
 - Important called helpers/classes observed in the source: `_Unset`, `inspect.iscoroutinefunction`, `wraps`, `_log_extension_call`, `_get_extension_classes`, `subagents.get_paths`, `cache.determine_cache_key`, `cache.add`, `files.get_abs_path`, `modules.load_classes_from_folder`, `watchdog.add_watchdog`, `os.path.join`, `_get_agent`, `_prepare_inputs`, `_process_result`, `call_extensions_sync`, `cls.execute`, `files.deabsolute_path`, `_get_file_from_module`, `module_name.split`.

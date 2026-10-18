@@ -1,0 +1,2 @@
+# Print a one-line timing summary in the console at the end of each turn.
+print_summary: true

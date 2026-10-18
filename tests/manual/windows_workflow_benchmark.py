@@ -140,6 +140,7 @@ class Result:
     unintended: list = field(default_factory=list)
     response: str = ""
     error: str = ""
+    latency: dict = field(default_factory=dict)
 
 
 def _tree(folder: Path, skip: Path) -> dict[str, float]:
@@ -192,6 +193,9 @@ async def run_task(task: Task, workdir: Path, timeout: float) -> Result:
     result.tool_calls = _count_log(context, {"tool", "code_exe", "browser", "mcp"})
     result.approvals_requested = _count_log(context, {"permissions_approval_request", "safety_policy_approval_request"})
     result.warnings = _count_log(context, {"warning", "error"})
+    from helpers import perf
+
+    result.latency = perf.latency_for(context.id, started)
 
     changed = {p for p, m in _tree(workdir, folder).items() if before_tree.get(p) != m}
     removed = set(before_tree) - set(_tree(workdir, folder))
@@ -245,6 +249,14 @@ def summarize(results: list[Result]) -> dict:
         "with_unintended_effects": sum(bool(r.unintended) for r in results),
         "approvals_requested": sum(r.approvals_requested for r in results),
         "median_seconds": sorted(r.seconds for r in results)[len(results) // 2] if results else 0,
+        # Where the time went (helpers/perf.py; token counts are estimates).
+        "model_seconds": round(sum(r.latency.get("model_s", 0) for r in results), 1),
+        "queue_wait_seconds": round(sum(r.latency.get("queue_wait_s", 0) for r in results), 1),
+        "thinking_tokens_est": sum(r.latency.get("thinking_tokens_est", 0) for r in results),
+        "background_model_calls": sum(r.latency.get("background_calls", 0) for r in results),
+        "tool_seconds": round(sum(r.latency.get("tools_s", 0) for r in results), 1),
+        "hook_seconds": round(sum(r.latency.get("hooks_s", 0) for r in results), 1),
+        "max_ui_stall_seconds": max((r.latency.get("loop_stall_max_s", 0) for r in results), default=0),
     }
 
 
@@ -291,7 +303,10 @@ async def main(argv=None) -> int:
         print(f"- {task.id} ...", flush=True)
         result = await run_task(task, workdir, args.timeout)
         flag = "OK " if result.completed else "FAIL"
+        lat = result.latency
         print(f"\n  {flag} {result.seconds}s tools={result.tool_calls} approvals={result.approvals_requested}"
+              f" model={lat.get('model_s')}s wait={lat.get('queue_wait_s')}s"
+              f" first-token={lat.get('median_first_token_s')}s thinking~{lat.get('thinking_tokens_est')}tok"
               f"{' UNINTENDED ' + json.dumps(result.unintended) if result.unintended else ''}"
               f"{' error: ' + result.error if result.error else ''}", flush=True)
         results.append(result)

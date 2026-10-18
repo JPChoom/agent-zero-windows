@@ -20,7 +20,7 @@ import litellm
 import openai
 
 from helpers import dotenv
-from helpers import model_concurrency, settings, images
+from helpers import model_concurrency, settings, images, perf
 from helpers.dotenv import load_dotenv
 from helpers.providers import ModelType as ProviderModelType, get_provider_config, native_host
 from helpers.rate_limiter import RateLimiter
@@ -374,6 +374,20 @@ def apply_rate_limiter_sync(
     return run_sync(apply_rate_limiter(model_config, input_text, rate_limiter_callback))
 
 
+def _prompt_chars(messages: Any) -> int:
+    """Length of the text in converted messages (images not counted)."""
+    total = 0
+    for message in messages or []:
+        content = message.get("content") if isinstance(message, dict) else getattr(message, "content", "")
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    total += len(part["text"])
+    return total
+
+
 class LiteLLMChatWrapper(SimpleChatModel):
     model_name: str
     provider: str
@@ -642,6 +656,9 @@ class LiteLLMChatWrapper(SimpleChatModel):
         # still serializes them against each other as before; it only
         # stops serializing calls that share no backend at all.
         concurrency_key = model_concurrency.backend_key(self.model_name, call_kwargs)
+        timing = perf.start_model_call(
+            self.model_name, getattr(self, "a0_perf_role", "other"), _prompt_chars(msgs_conv)
+        )
 
         attempt = 0
         while True:
@@ -655,6 +672,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
                 # See helpers/model_concurrency.py for why this is needed
                 # at all despite each Agent's own loop being single-threaded.
                 async with model_concurrency.model_call_slot(concurrency_key):
+                    timing.slot_acquired()
                     if stream:
                         stop_response: str | None = None
                         stream_iter = transport.astream()
@@ -673,6 +691,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
                                 )
                             got_any_chunk = True
                             output = result.add_chunk(parsed)
+                            timing.chunk(output["reasoning_delta"], output["response_delta"])
 
                             # collect reasoning delta and call callbacks
                             if output["reasoning_delta"]:
@@ -714,6 +733,7 @@ class LiteLLMChatWrapper(SimpleChatModel):
                             transport.acomplete(), timeout=total_call_timeout_s
                         )
                         output = result.add_chunk(parsed)
+                        timing.chunk(output["reasoning_delta"], output["response_delta"])
                         if limiter:
                             if output["response_delta"]:
                                 limiter.add(output=approximate_tokens(output["response_delta"]))
@@ -721,11 +741,18 @@ class LiteLLMChatWrapper(SimpleChatModel):
                                 limiter.add(output=approximate_tokens(output["reasoning_delta"]))
 
                 # Successful completion of stream
+                timing.finish()
                 return result, transport, msgs_conv
 
-            except Exception as e:
+            except BaseException as e:
                 # Retry only if no chunks received and error is transient
-                if got_any_chunk or not _is_transient_litellm_error(e) or attempt >= max_retries:
+                if (
+                    not isinstance(e, Exception)
+                    or got_any_chunk
+                    or not _is_transient_litellm_error(e)
+                    or attempt >= max_retries
+                ):
+                    timing.finish(e)
                     raise
                 attempt += 1
                 await asyncio.sleep(retry_delay_s)
