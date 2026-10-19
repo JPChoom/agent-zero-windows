@@ -1,3 +1,4 @@
+import hashlib
 import re
 import json
 import time
@@ -6,8 +7,10 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from helpers import plugins
+from helpers import extract_tools
 from helpers import history as history_helpers
 from helpers.errors import HandledException
+from helpers import perf
 from plugins._safety_policy.helpers import approval_registry
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -19,14 +22,32 @@ PLUGIN_NAME = "_infection_check"
 DATA_KEY = f"_plugin.{PLUGIN_NAME}"
 DATA_KEY_PASSED = f"{DATA_KEY}.passed"
 DATA_KEY_MONO = f"{DATA_KEY}.mono"
+# Per chat: tool calls (name + exact arguments) that already passed the check.
+DATA_KEY_ALLOWED_CALLS = f"{DATA_KEY}.allowed_calls"
+MAX_ALLOWED_CALLS = 200
 
 _RE_OK = re.compile(r"<ok\s*/>")
 _RE_TERMINATE = re.compile(r"<terminate\s*/>")
 _RE_CLARIFY = re.compile(r"<clarify>(.*?)</clarify>", re.DOTALL)
 
 
+# SHA-256 of earlier shipped default prompts. Settings save the whole config,
+# so a user who never edited the prompt still has an old default stored; such
+# a copy is swapped for the current default. An edited prompt is kept as is.
+_PREVIOUS_DEFAULT_PROMPTS = {
+    # asked for "a few sentences" of analysis: ~100 tokens, ~3 s per check
+    "783566eccee89d9b40be2f02e7ef80bd088ec81c5c2258759ed591c1d85e31d0",
+}
+
+
 def get_config(agent: "Agent") -> dict:
-    return plugins.get_plugin_config(PLUGIN_NAME, agent=agent) or {}
+    config = plugins.get_plugin_config(PLUGIN_NAME, agent=agent) or {}
+    prompt = config.get("prompt")
+    if isinstance(prompt, str) and hashlib.sha256(prompt.encode("utf-8")).hexdigest() in _PREVIOUS_DEFAULT_PROMPTS:
+        default = (plugins.get_default_plugin_config(PLUGIN_NAME) or {}).get("prompt")
+        if isinstance(default, str) and default:
+            config = {**config, "prompt": default}
+    return config
 
 
 def get_checker(agent: "Agent") -> "InfectionChecker":
@@ -91,6 +112,36 @@ def _retire_stale_requests(agent: "Agent", keep: str) -> None:
         pass
 
 
+def _canonical(args) -> str:
+    try:
+        return json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+    except Exception:
+        return str(args)
+
+
+def _call_key(tool_name: str, tool_args: dict | None) -> str:
+    return f"{tool_name}\n{_canonical(tool_args or {})}" if tool_name else ""
+
+
+def _allowed_calls(agent: "Agent") -> list:
+    try:
+        allowed = agent.context.get_data(DATA_KEY_ALLOWED_CALLS)
+    except Exception:
+        return []
+    return allowed if isinstance(allowed, list) else []
+
+
+def _remember_allowed(agent: "Agent", call_key: str) -> None:
+    if not call_key:
+        return
+    try:
+        allowed = [key for key in _allowed_calls(agent) if key != call_key]
+        allowed.append(call_key)
+        agent.context.set_data(DATA_KEY_ALLOWED_CALLS, allowed[-MAX_ALLOWED_CALLS:])
+    except Exception:
+        pass
+
+
 class InfectionChecker:
 
     def __init__(self, config: dict, iteration: int):
@@ -115,6 +166,9 @@ class InfectionChecker:
         # Background analysis task
         self._task: asyncio.Task | None = None
         self._check_msgs: list = []
+        # Response text the background task judged; it only counts for a
+        # tool call when it contains that exact call (see _snapshot_covers).
+        self._snapshot_response = ""
 
     # -- collection ----------------------------------------------------------
 
@@ -135,7 +189,26 @@ class InfectionChecker:
         snapshot = self._build_log()
         if not snapshot.strip():
             return
+        self._snapshot_response = self.response_log
         self._task = asyncio.create_task(self._run_check(agent, snapshot))
+
+    def _snapshot_covers(self, tool_name: str, tool_args: dict | None) -> bool:
+        """Did the background check see this exact tool call?
+
+        A verdict on the thoughts alone says nothing about the arguments -
+        and the arguments are where exfiltration happens - so it may only
+        stand in for the gate's own check when the call it saw is identical.
+        """
+        if not tool_name or not self._snapshot_response:
+            return False
+        request = extract_tools.extract_tool_request(self._snapshot_response)
+        if request is None:
+            return False
+        try:
+            name, args = extract_tools.normalize_tool_request(request)
+        except ValueError:
+            return False
+        return name == tool_name and _canonical(args) == _canonical(tool_args or {})
 
     # -- gate (called before every tool execution) ---------------------------
 
@@ -160,6 +233,13 @@ class InfectionChecker:
             return
         if not self.reasoning_log and not self.response_log:
             return
+        call_key = _call_key(tool_name, tool_args)
+        if call_key and call_key in _allowed_calls(agent):
+            # The same call, with the same arguments, already passed in this
+            # chat (retries, repeated checks). Repeating it adds nothing an
+            # attacker could not already get.
+            agent.set_data(DATA_KEY_PASSED, True)
+            return
 
         _log = agent.context.log
         _log.set_progress("Infection check: analyzing...")
@@ -177,13 +257,17 @@ class InfectionChecker:
 
         action, detail, cot = None, "", ""
 
-        # Fast path: reuse result if background task already finished.
-        if self._task is not None and self._task.done():
+        # Fast path: the background check already judged this exact call -
+        # use its verdict, waiting for it if it is still running. Cancelling
+        # and restarting it (the old behaviour whenever it had not finished)
+        # threw away GPU work and doubled the wait.
+        if self._task is not None and self._snapshot_covers(tool_name, tool_args):
             try:
-                action, detail, cot = self._task.result()
+                _log.set_progress("Infection check: waiting for the running check...")
+                action, detail, cot = await self._task
                 _log.set_progress("Infection check: evaluating result...")
-            except Exception:
-                pass
+            except (asyncio.CancelledError, Exception):
+                action = None
 
         # Slow path: rebuild with full tool context.
         if action is None:
@@ -211,6 +295,7 @@ class InfectionChecker:
         if action == "ok":
             _log.set_progress("Infection check: passed")
             agent.set_data(DATA_KEY_PASSED, True)
+            _remember_allowed(agent, call_key)
             return
 
         if action == "clarify":
@@ -223,6 +308,7 @@ class InfectionChecker:
             if action == "ok":
                 warn.update(heading="Infection check: clarification passed")
                 agent.set_data(DATA_KEY_PASSED, True)
+                _remember_allowed(agent, call_key)
                 return
 
         # terminate
@@ -249,6 +335,7 @@ class InfectionChecker:
             return agent.get_chat_model()
         return agent.get_utility_model()
 
+    @perf.tagged("infection_check")
     async def _run_check(self, agent: "Agent", log_text: str) -> tuple[str, str, str]:
         # Build context from recent history
         hist = agent.history.output()
@@ -397,6 +484,7 @@ class InfectionChecker:
         except Exception:
             pass
 
+    @perf.tagged("infection_check_clarify")
     async def _clarify_with_agent(
         self, agent: "Agent", clarify_text: str, log_item: "LogItem"
     ) -> tuple[str, str, str]:

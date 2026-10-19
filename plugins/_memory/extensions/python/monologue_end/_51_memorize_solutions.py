@@ -5,6 +5,7 @@ from helpers.dirty_json import DirtyJson
 from agent import LoopData
 from helpers.log import LogItem
 from helpers.defer import DeferredTask, THREAD_BACKGROUND
+from helpers import perf
 
 # Direct import - this extension lives inside the memory plugin
 from plugins._memory.helpers.memory import Memory
@@ -36,6 +37,7 @@ class MemorizeSolutions(Extension):
         task.start_task(self.memorize, loop_data, log_item)
         # task = asyncio.create_task(self.memorize(loop_data, log_item))
 
+    @perf.tagged("memorize_solutions", background=True)
     async def memorize(self, loop_data: LoopData, log_item: LogItem, **kwargs):
         if not self.agent:
             return

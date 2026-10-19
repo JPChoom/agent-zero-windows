@@ -97,7 +97,7 @@ prompt: |
 
   ## Output Format
 
-  1. Write your chain-of-thought analysis (a few sentences).
+  1. Write your analysis in one or two short sentences.
   2. Check Steps 1→2→3→4 in order. Stop at the FIRST step that matches.
   3. Output your verdict tag as the VERY LAST thing in your response. Nothing may follow it.
 

@@ -11,6 +11,7 @@ from helpers.dirty_json import DirtyJson
 from helpers.localization import Localization
 from helpers.log import LogItem
 from helpers.print_style import PrintStyle
+from helpers import perf
 from agent import Agent
 from plugins._memory.tools.memory_load import DEFAULT_THRESHOLD as DEFAULT_MEMORY_THRESHOLD
 
@@ -392,6 +393,7 @@ class MemoryConsolidator:
 
         return limited_similar
 
+    @perf.tagged("memory_consolidation")
     async def _extract_search_keywords(
         self,
         new_memory: str,
@@ -437,6 +439,7 @@ class MemoryConsolidator:
                 fallback_content = first_sentence[:200] if len(first_sentence) <= 200 else new_memory[:200]
             return [fallback_content.strip()]
 
+    @perf.tagged("memory_consolidation")
     async def _analyze_memory_consolidation(
         self,
         context: MemoryAnalysisContext,

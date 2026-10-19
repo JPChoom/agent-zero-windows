@@ -14,6 +14,7 @@ from helpers.persist_chat import (
 )
 from helpers.state_monitor_integration import mark_dirty_all
 from helpers.localization import Localization
+from helpers import perf
 
 MIN_COMPACTION_TOKENS = 1000
 COMPACTION_CHUNK_TARGET_RATIO = 0.9
@@ -86,6 +87,7 @@ def _build_model(use_chat_model: bool, preset_name: str | None, agent):
         return cfg, build_utility_model(agent)
 
 
+@perf.tagged("chat_compaction")
 async def run_compaction(
     context,
     use_chat_model: bool = True,

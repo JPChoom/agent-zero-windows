@@ -7,6 +7,7 @@ import math
 import uuid
 from typing import Coroutine, Literal, TypedDict, cast, Union, Dict, List, Any
 from helpers import messages, tokens, settings, call_llm
+from helpers import perf
 from enum import Enum
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
 from plugins._model_config.helpers.model_config import (
@@ -340,6 +341,7 @@ class Bulk(Record):
         return bulk
 
 
+@perf.tagged("history_compression")
 async def summarize_content(agent, content: str) -> str:
     """Summarize text with the utility model, trimmed to what it can read.
 

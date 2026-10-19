@@ -10,7 +10,7 @@ This plugin collects streamed reasoning and response text, analyzes that content
 
 1. **Collection** — During streaming, the plugin collects the agent's reasoning and response text via `reasoning_stream_chunk` and `response_stream_chunk` extensions.
 2. **Analysis** — A security audit model analyzes the collected text against the configurable prompt.
-3. **Gate** — Before any tool executes, `gate()` blocks until the check completes. If the background task already finished (thoughts mode), the result is reused instantly. Otherwise the task is rebuilt with full tool context (name + arguments) for maximum accuracy.
+3. **Gate** — Before any tool executes, `gate()` blocks until the check completes. If the background check saw this exact tool call (same name and arguments), its verdict is used - waiting for it if it is still running. Otherwise the check is redone with the call that will actually run. A call that already passed in this chat, with identical arguments, is not checked again.
 4. **Action** — Based on the verdict:
    - `<ok/>` — Tool execution proceeds silently.
    - `<terminate/>` — Agent is stopped immediately with a warning log and desktop notification.
@@ -20,7 +20,7 @@ This plugin collects streamed reasoning and response text, analyzes that content
 
 | Mode | What is Analyzed | When Analysis Starts | Latency |
 |---|---|---|---|
-| **thoughts** (default) | Reasoning + thoughts | When `heading` or `tool_name` appear in response stream | Low — runs in parallel while tool args still stream |
+| **thoughts** (default) | Reasoning + response + tool call | As soon as the tool call in the stream is complete | Low — starts before the stream is drained |
 | **complete** | Reasoning + full response | After the entire response stream ends | Higher — blocking wait before tool execution |
 
 ## Clarification Loop

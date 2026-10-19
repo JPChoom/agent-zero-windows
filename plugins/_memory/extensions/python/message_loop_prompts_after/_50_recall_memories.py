@@ -2,6 +2,7 @@ import asyncio
 from helpers.extension import Extension
 from agent import LoopData
 from helpers import dirty_json, errors, log, plugins
+from helpers import perf
 
 # Direct import - this extension lives inside the memory plugin
 from plugins._memory.helpers import provenance
@@ -79,6 +80,7 @@ class RecallMemories(Extension):
         self.agent.set_data(DATA_NAME_TASK, task)
         self.agent.set_data(DATA_NAME_ITER, loop_data.iteration)
 
+    @perf.tagged("memory_recall")
     async def search_memories(self, log_item: log.LogItem, loop_data: LoopData, **kwargs):
         if not self.agent:
             return

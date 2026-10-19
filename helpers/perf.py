@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import functools
 import json
 import os
 import threading
@@ -30,6 +31,13 @@ from typing import Any
 # tasks created from that turn inherit it. Background work on its own thread
 # (memorize, deferred tasks) has no turn and is recorded as background.
 CONTEXT_ID: contextvars.ContextVar[str] = contextvars.ContextVar("a0_perf_context_id", default="")
+
+# What made the current model call ("infection_check", "memorize_fragments",
+# ...); empty for the agent's own turn. Set with the `tagged` decorator.
+CALLER: contextvars.ContextVar[str] = contextvars.ContextVar("a0_perf_caller", default="")
+# True for work that is not part of answering the user (memorizing, naming
+# the chat): it competes with the next turn for the same model.
+BACKGROUND: contextvars.ContextVar[bool] = contextvars.ContextVar("a0_perf_background", default=False)
 
 PERF_DIR_PARTS = ("usr", "perf")
 MAX_LOG_BYTES = 5 * 1024 * 1024
@@ -63,6 +71,8 @@ class ModelCall:
     role: str
     context_id: str
     prompt_chars: int
+    caller: str = ""
+    background: bool = False
     started: float = field(default_factory=time.monotonic)
     slot_at: float | None = None
     first_chunk_at: float | None = None
@@ -104,7 +114,8 @@ class ModelCall:
             "model": self.model,
             "role": self.role,
             "context_id": self.context_id,
-            "background": not self.context_id,
+            "caller": self.caller,
+            "background": self.background or not self.context_id,
             "queue_wait_s": round(slot - self.started, 3),
             "first_token_s": round(first - slot, 3) if first is not None else None,
             "total_s": round(end - self.started, 3),
@@ -119,7 +130,34 @@ class ModelCall:
 
 
 def start_model_call(model: str, role: str, prompt_chars: int) -> ModelCall:
-    return ModelCall(model=str(model), role=role or "other", context_id=CONTEXT_ID.get(), prompt_chars=prompt_chars)
+    return ModelCall(
+        model=str(model),
+        role=role or "other",
+        context_id=CONTEXT_ID.get(),
+        prompt_chars=prompt_chars,
+        caller=CALLER.get(),
+        background=BACKGROUND.get(),
+    )
+
+
+def tagged(caller: str, background: bool = False):
+    """Decorator for an async function whose model calls should be recorded
+    as made by `caller` (and as background work, if so)."""
+
+    def wrap(func):
+        @functools.wraps(func)
+        async def inner(*args, **kwargs):
+            caller_token = CALLER.set(caller)
+            background_token = BACKGROUND.set(background or BACKGROUND.get())
+            try:
+                return await func(*args, **kwargs)
+            finally:
+                CALLER.reset(caller_token)
+                BACKGROUND.reset(background_token)
+
+        return inner
+
+    return wrap
 
 
 # --------------------------------------------------------------------------

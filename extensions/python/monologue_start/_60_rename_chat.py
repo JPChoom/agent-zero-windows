@@ -4,6 +4,7 @@ from helpers.extension import Extension
 from helpers.notification import NotificationManager, NotificationPriority, NotificationType
 from helpers.print_style import PrintStyle
 from helpers.state_monitor_integration import mark_dirty_all
+from helpers import perf
 from agent import LoopData
 import asyncio
 
@@ -13,6 +14,7 @@ class RenameChat(Extension):
     async def execute(self, loop_data: LoopData = LoopData(), **kwargs):
         asyncio.create_task(self.change_name())
 
+    @perf.tagged("rename_chat", background=True)
     async def change_name(self):
         if not self.agent:
             return
