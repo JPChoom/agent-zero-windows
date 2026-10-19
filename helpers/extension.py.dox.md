@@ -28,7 +28,7 @@
 
 ## Runtime Contracts
 
-- `_get_extension_classes` merges by file name (first occurrence wins) but never lets a same-named file replace an entry of `PROTECTED_GATES` (the kill switch, safety floor, permission gate, secret-destination guard, parallel-recursion guard, infection check and coding completion gate); such a file is skipped with a one-time warning, even when the gate's own folder is inactive.
+- `_get_extension_classes` merges by file name (first occurrence wins) but never lets a same-named file replace an entry of `PROTECTED_GATES` (the kill switch, safety floor, permission gate, secret-destination guard, parallel-recursion guard, infection check, startup tripwire (before and after) and coding completion gate); such a file is skipped with a one-time warning, even when the gate's own folder is inactive.
 
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.

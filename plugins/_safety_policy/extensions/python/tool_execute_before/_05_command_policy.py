@@ -33,7 +33,7 @@ import uuid
 from helpers.extension import Extension
 from helpers.errors import RepairableException
 from helpers import kill_switch
-from plugins._safety_policy.helpers import approval_registry, audit_log, policy
+from plugins._safety_policy.helpers import approval_registry, audit_log, denials, policy
 from plugins._safety_policy.helpers.config import get_config
 
 _SOURCE_RUNTIMES = {"python", "nodejs"}
@@ -65,6 +65,29 @@ def _as_code_execution(tool_name: str, tool_args: dict) -> dict | None:
             return {"runtime": "input", "code": str(tool_args.get("code", "") if keyboard is None else keyboard)}
         return {"runtime": runtime, "code": str(tool_args.get("code", ""))}
     return None
+
+
+# Said to the agent after every refusal. The old wording ended with "if this
+# was legitimate, the user can run it themselves, or add an exception in this
+# plugin's settings" - which an agent read as license to get the same result
+# another way (observed 2026-10-18: it split 'Current' + 'Version\Run' to
+# dodge the match and wrote the autorun). A refusal is final for this chat.
+DO_NOT_WORK_AROUND = (
+    "Do not try to reach the same result another way - not by rewording, splitting "
+    "or encoding the command, building it at runtime, switching language or tool, or "
+    "changing safety settings. Such attempts are treated as evasion and end the task. "
+    "Stop and tell the user what you were asked to do, that the safety policy blocked "
+    "it, and that they can do it themselves if they want it."
+)
+
+
+def denial_message(subject: str, decision) -> str:
+    return (
+        f"[safety_policy] Denied: this {subject} matches the '{decision.category}' "
+        f"deny category (matched '{decision.matched_text}'). This kind of operation is "
+        f"blocked regardless of intent. {DO_NOT_WORK_AROUND}"
+        f"{_format_network_destination_note(decision)}"
+    )
 
 
 class SafetyCommandPolicy(Extension):
@@ -145,13 +168,8 @@ class SafetyCommandPolicy(Extension):
             }
         )
 
-        message = (
-            f"[safety_policy] Denied: this {subject} matches the '{decision.category}' "
-            f"deny category (matched '{decision.matched_text}'). This kind of operation is blocked "
-            "regardless of intent - it is not something a normal coding task needs. If this was "
-            "legitimate, the user can run it themselves, or add an exception in this plugin's settings."
-            f"{_format_network_destination_note(decision)}"
-        )
+        denials.record(self.agent, decision.category, decision.matched_text, code)
+        message = denial_message(subject, decision)
         self._log_warning(message)
         raise RepairableException(message)
 
@@ -221,16 +239,18 @@ class SafetyCommandPolicy(Extension):
         except TimeoutError:
             approval_registry.cleanup(approval_id)
             self._finish_approval(log_item, approval_id, approved=False, outcome="timeout")
+            denials.record(self.agent, decision.category, decision.matched_text, code)
             raise RepairableException(
                 f"[safety_policy] Denied: no Approve/Deny response for this {subject} "
-                f"within {timeout}s - treated as denied."
+                f"within {timeout}s - treated as denied. {DO_NOT_WORK_AROUND}"
             )
 
         if not approved:
             self._finish_approval(log_item, approval_id, approved=False, outcome="denied")
+            denials.record(self.agent, decision.category, decision.matched_text, code)
             raise RepairableException(
                 f"[safety_policy] Denied: the user denied this {subject} "
-                f"(matched '{decision.category}')."
+                f"(matched '{decision.category}'). {DO_NOT_WORK_AROUND}"
             )
 
         self._finish_approval(log_item, approval_id, approved=True, outcome="approved")

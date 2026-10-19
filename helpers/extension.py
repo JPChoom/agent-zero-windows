@@ -410,6 +410,8 @@ PROTECTED_GATES: dict[tuple[str, str], str] = {
     ("tool_execute_before", "_09_secret_destination_guard"): "extensions/python/tool_execute_before",
     ("tool_execute_before", "_20_block_parallel_recursion"): "extensions/python/tool_execute_before",
     ("tool_execute_before", "_50_infection_check"): "plugins/_infection_check/extensions/python/tool_execute_before",
+    ("tool_execute_before", "_90_startup_tripwire"): "plugins/_safety_policy/extensions/python/tool_execute_before",
+    ("tool_execute_after", "_01_startup_tripwire"): "plugins/_safety_policy/extensions/python/tool_execute_after",
     ("tool_execute_after", "_80_completion_gate"): "plugins/_coding_controller/extensions/python/tool_execute_after",
 }
 

@@ -26,6 +26,8 @@ def get_config(agent) -> dict:
     cfg = plugins.get_plugin_config("_safety_policy", agent=agent) or {}
     return {
         "enforce_policy": _as_bool_fail_closed(cfg.get("enforce_policy", True)),
+        # Fail closed like enforce_policy: only an explicit false turns it off.
+        "startup_tripwire": _as_bool_fail_closed(cfg.get("startup_tripwire", True)),
         "custom_deny_patterns": _parse_patterns(cfg.get("custom_deny_patterns", "")),
         "approval_tier_categories": _resolve_approval_categories(cfg),
         "approval_timeout_seconds": _as_int(cfg.get("approval_timeout_seconds", 300), default=300),

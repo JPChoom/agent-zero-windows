@@ -8,10 +8,14 @@ user-customizable/possibly-absent plugin would be fragile), covering the
 categories it doesn't: BITS downloads, firewall/Defender changes, privilege
 escalation, account changes, shadow-copy deletion, and Invoke-Expression.
 
-This is regex/substring matching on the literal command text, not a real
+This is regex/substring matching on the command text, not a real
 PowerShell parser - it catches the obvious, common cases and is explicitly
-NOT a sandbox. A determined adversarial payload can still evade it (string
-concatenation, variable indirection, alternate aliases). See README.md.
+NOT a sandbox. Simple disguises are undone before matching (normalize_text:
+'Current' + 'Version\\Run', backtick and caret escapes, string prefixes,
+paths split across Join-Path / os.path.join arguments), but variable
+indirection, encoding and alternate APIs can still evade it. Persistence is
+also caught after the fact by the startup tripwire (startup_watch.py).
+See README.md.
 """
 
 import re
@@ -33,6 +37,10 @@ _DENY_CATEGORIES: dict[str, tuple[str, ...]] = {
         # New-ItemProperty, winreg, a file copied into the Startup folder).
         # The user turns Agent Zero's own entry on in Settings instead.
         r"currentversion[\\/]+(?:run|runonce)\b",
+        # The same path built from pieces: Join-Path ...\CurrentVersion Run,
+        # os.path.join(r"...\CurrentVersion", "Run") - matched against the
+        # normalized text, where quotes and joins are gone.
+        r"currentversion[\\/\s,]+(?:run|runonce)\b",
         r"start menu[\\/]+programs[\\/]+startup|shell:startup",
     ),
     "credential_access": (
@@ -50,7 +58,11 @@ _DENY_CATEGORIES: dict[str, tuple[str, ...]] = {
         r"\b(?:remove-item|del|erase|rd|rmdir)\b[^\r\n]*(?:\\windows|\\program files|\\users\\[^\\]+\\(?:appdata|ntuser))",
     ),
     "disk_and_reboot": (
-        r"\b(?:shutdown|restart-computer|stop-computer|format|diskpart|bcdedit)\b",
+        r"\b(?:shutdown|restart-computer|stop-computer|diskpart|bcdedit|format-volume|clear-disk|initialize-disk)\b",
+        # The format.com disk command takes a drive ("format D:", "format
+        # /fs:ntfs E:"); the bare word "format" also appears in Format-Hex,
+        # Format-Table, Format-List, -Format and str.format, all harmless.
+        r"(?<![\w-])format(?:\.com)?\s+(?:/\S+\s+)*[a-z]:",
         r"\bvssadmin\b[^\r\n]*\bdelete\b",
     ),
     "firewall_and_defender": (
@@ -135,7 +147,62 @@ def is_allowed_network_destination(host: str, allowlist) -> bool:
     return any(host == d or host.endswith("." + d) for d in normalized)
 
 
+_STRING_PREFIX = re.compile(r"(?<![\w])[rRbBuUfF]{1,2}(?=['\"])")
+_CONCAT_JOIN = re.compile(r"(['\"])\s*(?:\+|&|\.\.|\|\|)\s*(['\"])")
+_PS_BACKTICK = re.compile(r"`(?=[A-Za-z])")
+_CMD_CARET = re.compile(r"\^(?=\S)")
+_QUOTES = re.compile(r"['\"]")
+_SPACES = re.compile(r"[ \t]+")
+
+
+def normalize_text(text: str) -> str:
+    """The command with simple disguises undone, for matching only.
+
+    Joins quoted pieces ('Current' + 'Version\\Run', "a" & "b", 'a'..'b'),
+    drops Python/JS string prefixes (r'...', b'...'), PowerShell backtick
+    escapes inside words (Cur`rentVersion) and cmd caret escapes
+    (c^urrentversion), then removes the remaining quotes and collapses
+    spaces - so a path split across Join-Path / os.path.join arguments reads
+    as one. Never executed; only ever matched against.
+    """
+    text = _STRING_PREFIX.sub("", text)
+    previous = None
+    while previous != text:
+        previous = text
+        text = _CONCAT_JOIN.sub("", text)
+    text = _PS_BACKTICK.sub("", text)
+    text = _CMD_CARET.sub("", text)
+    text = _QUOTES.sub("", text)
+    return _SPACES.sub(" ", text)
+
+
 def _match_builtin_categories(
+    text: str,
+    approval_categories,
+    *,
+    enable_network_allowlist: bool = False,
+    network_allowlist=None,
+) -> PolicyDecision:
+    """First category match in the text as written, then in its normalized
+    form (see normalize_text)."""
+    decision = _match_builtin_categories_in(
+        text, approval_categories,
+        enable_network_allowlist=enable_network_allowlist,
+        network_allowlist=network_allowlist,
+    )
+    if decision.category or not decision.allowed:
+        return decision
+    normalized = normalize_text(text)
+    if normalized == text:
+        return decision
+    return _match_builtin_categories_in(
+        normalized, approval_categories,
+        enable_network_allowlist=enable_network_allowlist,
+        network_allowlist=network_allowlist,
+    )
+
+
+def _match_builtin_categories_in(
     text: str,
     approval_categories,
     *,
@@ -189,12 +256,13 @@ def _match_builtin_categories(
 
 
 def _match_custom_patterns(text: str, custom_patterns: list[str] | None) -> PolicyDecision:
+    normalized = normalize_text(text)
     for pattern in custom_patterns or []:
         pattern = str(pattern or "").strip()
         if not pattern:
             continue
         try:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, text, re.IGNORECASE) or re.search(pattern, normalized, re.IGNORECASE)
         except re.error:
             continue  # invalid user-supplied regex - skip rather than fail closed on a typo
         if match:
@@ -330,6 +398,12 @@ def classify_source_code(
         if decision.category or not decision.allowed:
             return decision
 
+    # Logon-autorun paths are specific enough to look for anywhere in the
+    # source: Python's winreg and Node's registry modules never pass a shell.
+    persistence = _match_persistence_paths(text, categories)
+    if persistence is not None:
+        return persistence
+
     list_match = _SOURCE_LIST_ARG_DENY_PATTERN.search(text)
     if list_match:
         return PolicyDecision(
@@ -351,6 +425,26 @@ def classify_source_code(
         return http_decision
 
     return custom_decision
+
+
+_PERSISTENCE_PATH_PATTERNS = tuple(
+    pattern for pattern in _DENY_CATEGORIES["persistence"] if "currentversion" in pattern or "startup" in pattern
+)
+
+
+def _match_persistence_paths(text: str, approval_categories) -> PolicyDecision | None:
+    for candidate in (text, normalize_text(text)):
+        for pattern in _PERSISTENCE_PATH_PATTERNS:
+            match = re.search(pattern, candidate, re.IGNORECASE)
+            if match:
+                return PolicyDecision(
+                    allowed=False,
+                    category="persistence",
+                    pattern=pattern,
+                    matched_text=match.group(0),
+                    tier="approve" if "persistence" in approval_categories else "deny",
+                )
+    return None
 
 
 # Python/Node HTTP clients. Downloads made from inside a script never pass a

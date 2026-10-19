@@ -16,6 +16,14 @@ This plugin collects streamed reasoning and response text, analyzes that content
    - `<terminate/>` — Agent is stopped immediately with a warning log and desktop notification.
    - `<clarify>` — The agent is asked to explain; a back-and-forth loop runs until resolved.
 
+## After a safety-policy refusal
+
+When the safety policy has refused a command in a chat, every later call in
+that chat is checked (even before any untrusted content), and the check is
+shown what was refused. Its rule H5 ends the task if the agent tries to get
+the same result another way - rewording, splitting or encoding the command,
+switching language or tool, or touching the safety plugins' settings.
+
 ## Modes
 
 | Mode | What is Analyzed | When Analysis Starts | Latency |

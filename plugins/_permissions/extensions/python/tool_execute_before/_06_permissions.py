@@ -35,6 +35,12 @@ PROTECTED_MARKERS = (
     "permissions_bypass",          # usr/permissions_bypass.json + /api/permissions_bypass_password
     "permissions_mode",            # /api/permissions_mode
     "security_audit",              # usr/security_audit.jsonl
+    # The safety plugins' code and settings: changing them switches the
+    # floor off, and reading them is how an agent looks for a way around a
+    # refusal (observed 2026-10-18). The user changes them in Settings.
+    "plugins/_safety_policy",
+    "plugins/_infection_check",
+    "plugins/_permissions",
 )
 
 

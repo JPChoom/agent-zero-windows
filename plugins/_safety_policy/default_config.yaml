@@ -3,6 +3,13 @@
 # only ever intervenes on commands no legitimate coding workflow needs.
 enforce_policy: true
 
+# Startup tripwire: around every tool call that can change the system, note
+# the places Windows starts programs from at sign-in (Run/RunOnce registry
+# values, Startup folders, scheduled tasks, services) and undo anything new
+# the call added, then stop the task. Catches what text matching misses.
+# Undone items are kept in usr/safety_quarantine/. See README.md.
+startup_tripwire: true
+
 # Extra deny patterns beyond the built-in categories (one regex per line,
 # case-insensitive). Use this to tighten the policy further. Custom
 # patterns always hard-deny - the approval tier below only applies to the

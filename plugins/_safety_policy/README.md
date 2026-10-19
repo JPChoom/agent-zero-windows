@@ -54,6 +54,44 @@ in this plugin's settings if needed; add more patterns via
 `custom_deny_patterns`; adjust which categories deny vs. require approval,
 and the approval timeout, via this plugin's settings.
 
+## When something is refused
+
+A refusal is final for that chat. The agent is told not to reach the same
+result another way (rewording, splitting or encoding the command, building
+it at runtime, another language or tool, changing safety settings) and to
+tell you what it was asked to do instead. Each refusal is remembered for
+the chat (`helpers/denials.py`); from then on the infection check reviews
+every call in that chat, with the refusals in front of it, and ends the task
+on a workaround (its rule H5). The agent cannot read or change the safety
+plugins' code or settings (`plugins/_safety_policy`, `_infection_check`,
+`_permissions`, and their folders under `usr/plugins/`); you change them
+in Settings.
+
+## Startup tripwire
+
+Command matching can be dodged; the result cannot. With `startup_tripwire`
+on (the default), every tool call that can change the system is bracketed
+by a look at the places Windows starts programs from at sign-in:
+
+- `Run` / `RunOnce` registry values (HKCU, HKLM, HKLM WOW6432Node),
+- your and the all-users Startup folders,
+- scheduled tasks (outside Windows' own `\Microsoft` folder),
+- services.
+
+Anything new is undone - new Run values deleted, changed ones restored,
+Startup files and scheduled-task definitions moved to
+`usr/safety_quarantine/<time>/` (with a `tripwire.json` listing what was
+removed, so it can be put back by hand) - and the task stops, with a
+warning in the chat and a desktop notification. New services are reported,
+not removed. Agent Zero's own "Start with Windows" entry is never touched.
+It costs about 10-20 ms per tool call.
+
+Limits: only these locations are watched (not Winlogon, Image File
+Execution Options, WMI subscriptions, browser extensions...); a change
+another program makes during the tool call is treated as the tool's; HKLM
+values, the all-users folder and services can only be undone when Agent
+Zero runs with admin rights.
+
 ## Advisory network-destination allowlist (opt-in)
 
 Off by default. `tier_downloader` hard-denies every `curl`/`wget`/
@@ -85,11 +123,15 @@ plugin (see the "Not yet implemented" section).
 
 ## Scope and limitations - read before relying on this
 
-**This is not a sandbox.** It's regex/substring matching on literal command
-text, not a real PowerShell parser. A determined adversarial payload can
-still evade it: string concatenation, variable indirection to build a
-command at runtime, alternate cmdlet aliases, or splitting a dangerous
-operation across multiple otherwise-innocuous commands. The existing
+**This is not a sandbox.** It's regex/substring matching on command text,
+not a real PowerShell parser. Simple disguises are undone before matching
+(`policy.normalize_text`: quoted pieces joined with `+`/`&`/`..`, string
+prefixes like `r'...'`, PowerShell backtick and cmd caret escapes, paths
+split across `Join-Path`/`os.path.join` arguments), but a determined
+payload can still evade it: variable indirection to build a command at
+runtime, encoding, alternate cmdlet aliases, or splitting a dangerous
+operation across multiple otherwise-innocuous commands. For logon
+persistence the startup tripwire catches the result anyway. The existing
 `usr/plugins/terminal_access` plugin's own README says the same thing about
 its (smaller) denylist, and it's just as true here.
 

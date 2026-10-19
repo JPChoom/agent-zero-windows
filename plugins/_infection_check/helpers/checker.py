@@ -11,7 +11,7 @@ from helpers import extract_tools
 from helpers import history as history_helpers
 from helpers.errors import HandledException
 from helpers import perf
-from plugins._safety_policy.helpers import approval_registry
+from plugins._safety_policy.helpers import approval_registry, denials
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 if TYPE_CHECKING:
@@ -37,6 +37,8 @@ _RE_CLARIFY = re.compile(r"<clarify>(.*?)</clarify>", re.DOTALL)
 _PREVIOUS_DEFAULT_PROMPTS = {
     # asked for "a few sentences" of analysis: ~100 tokens, ~3 s per check
     "783566eccee89d9b40be2f02e7ef80bd088ec81c5c2258759ed591c1d85e31d0",
+    # before rule H5 (working around a safety refusal)
+    "02110201755b13d0984c1f58fc010d020af29bceda9a149f1b1207e9da583d0e",
 }
 
 
@@ -169,6 +171,8 @@ class InfectionChecker:
         # Response text the background task judged; it only counts for a
         # tool call when it contains that exact call (see _snapshot_covers).
         self._snapshot_response = ""
+        # Commands the safety policy refused earlier in this chat (rule H5).
+        self._denials_text = ""
 
     # -- collection ----------------------------------------------------------
 
@@ -186,6 +190,7 @@ class InfectionChecker:
         """Fire-and-forget background check (called from stream extensions)."""
         if self._task is not None:
             return
+        self._denials_text = denials.describe(agent)
         snapshot = self._build_log()
         if not snapshot.strip():
             return
@@ -256,6 +261,7 @@ class InfectionChecker:
             self._tool_args = {}
 
         action, detail, cot = None, "", ""
+        self._denials_text = denials.describe(agent)
 
         # Fast path: the background check already judged this exact call -
         # use its verdict, waiting for it if it is still running. Cancelling
@@ -328,6 +334,8 @@ class InfectionChecker:
             except Exception:
                 args_str = str(getattr(self, "_tool_args", {}))
             parts.append(f"## Tool About to Execute\nTool: {self._tool_name}\nArguments:\n{args_str}")
+        if getattr(self, "_denials_text", ""):
+            parts.append(f"## Safety Policy Refusals in This Chat\n{self._denials_text}")
         return "\n\n".join(parts)
 
     def _get_model(self, agent: "Agent"):

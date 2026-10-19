@@ -23,7 +23,7 @@
 
 - The mode is per chat (`AgentContext` id) and never persisted: restart, new chat, and project switch return to settings `permissions_default_mode` (default `manual`; can never be `bypass`). A `mode` key in plugin config is ignored.
 - `bypass` needs the Bypass password and expires after settings `bypass_auto_off_hours` (0 = only on restart/new chat/project switch). The gate logs a chat warning when it expires.
-- The gate refuses, in every mode, any tool call whose args reference `permissions_bypass`, `permissions_mode`, or `security_audit` (the agent must not unlock itself or erase the trail).
+- The gate refuses, in every mode, any tool call whose args reference `permissions_bypass`, `permissions_mode`, `security_audit` (the agent must not unlock itself or erase the trail), or the safety plugins' code and settings (`plugins/_safety_policy`, `plugins/_infection_check`, `plugins/_permissions`, which also covers their `usr/plugins/` folders): changing them switches a floor off, and reading them is how an agent looks for a way around a refusal.
 - `_safety_policy`'s `_05_` floor runs before this `_06_` gate; deny rules bind even in bypass.
 - Messaging chats are capped: `config.get_config` detects the channel from context data (`CHANNEL_MARKERS`: telegram, whatsapp, email, discord, slack) and lowers the mode to `channel_mode_caps[channel]` (default manual; bypass is never a valid cap). New channel plugins must set their marker key on the chat context.
 - Honest limit: an agent already in Bypass runs as the same Windows user; the lock protects against other people and accidental Bypass, not a compromised unlocked agent.

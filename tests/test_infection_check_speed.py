@@ -159,15 +159,19 @@ def test_unedited_old_default_prompt_is_replaced(monkeypatch):
     assert C.get_config(_Agent())["prompt"] == "my own rules"
 
 
-def test_shipped_old_prompt_hash_matches_the_previous_default():
+def test_shipped_old_prompt_hashes_match_the_previous_defaults():
     from helpers import yaml as yaml_helper
     from helpers import files
 
     current = yaml_helper.loads(files.read_file(files.get_abs_path("plugins/_infection_check/default_config.yaml")))["prompt"]
-    previous = current.replace("1. Write your analysis in one or two short sentences.",
-                               "1. Write your chain-of-thought analysis (a few sentences).")
-    assert hashlib.sha256(previous.encode("utf-8")).hexdigest() in C._PREVIOUS_DEFAULT_PROMPTS
-
+    start = current.index("H5. ")
+    end = current.index("If any H1–H5 apply")
+    before_h5 = (current[:start] + current[end:]).replace("If any H1–H5 apply", "If any H1–H4 apply")
+    before_short = before_h5.replace("1. Write your analysis in one or two short sentences.",
+                                     "1. Write your chain-of-thought analysis (a few sentences).")
+    for previous in (before_h5, before_short):
+        assert hashlib.sha256(previous.encode("utf-8")).hexdigest() in C._PREVIOUS_DEFAULT_PROMPTS
+    assert hashlib.sha256(current.encode("utf-8")).hexdigest() not in C._PREVIOUS_DEFAULT_PROMPTS
 
 def test_thoughts_mode_starts_only_once_the_tool_call_is_complete(monkeypatch):
     from plugins._infection_check.extensions.python.response_stream import _50_infection_analyze as ext

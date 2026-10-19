@@ -245,5 +245,7 @@ def test_gate_runs_after_the_safety_policy():
     )
     safety_names = sorted(p.name for p in safety.glob("_*.py"))
     perms_names = sorted(p.name for p in perms.glob("_*.py"))
-    assert safety_names and perms_names
-    assert max(safety_names) < min(perms_names)
+    assert "_05_command_policy.py" in safety_names and perms_names
+    assert "_05_command_policy.py" < min(perms_names)
+    # The startup tripwire snapshot is meant to run last, after every gate.
+    assert "_90_startup_tripwire.py" in safety_names

@@ -1,6 +1,7 @@
 from helpers import untrusted_content
 from helpers.extension import Extension
 from plugins._infection_check.helpers.checker import get_checker, get_config
+from plugins._safety_policy.helpers import denials
 
 
 class InfectionAwaitCheck(Extension):
@@ -17,7 +18,14 @@ class InfectionAwaitCheck(Extension):
         # injected instructions. Configurable: the check also polices
         # credential exfiltration a user asks for directly, which this skip
         # leaves to the safety policy's credential_access floor.
-        if get_config(self.agent).get("only_after_untrusted_content", True) and not untrusted_content.is_tainted(self.agent):
+        # A chat where the safety policy refused something is checked from
+        # then on regardless: the likeliest next step is a workaround
+        # (rule H5), and it needs no untrusted content to happen.
+        if (
+            get_config(self.agent).get("only_after_untrusted_content", True)
+            and not untrusted_content.is_tainted(self.agent)
+            and not denials.recent(self.agent)
+        ):
             return
 
         await get_checker(self.agent).gate(

@@ -26,6 +26,18 @@
 
                 <div class="field">
                     <div class="field-label">
+                        <div class="field-title">Startup tripwire</div>
+                        <div class="field-description">
+                            Around every tool call that can change the system, note where Windows starts programs from at sign-in (Run registry values, Startup folders, scheduled tasks, services). Anything new a call adds is undone and the task stops - this catches what command matching misses. Removed items are kept in usr/safety_quarantine. Agent Zero's own "Start with Windows" entry is never touched.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" x-model="config.startup_tripwire" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
                         <div class="field-title">Custom deny patterns</div>
                         <div class="field-description">
                             Extra regular expressions (one per line, case-insensitive) to deny beyond the built-in categories. Custom patterns always hard-deny - the approval tier below only applies to the built-in categories.
