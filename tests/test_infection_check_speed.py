@@ -173,9 +173,13 @@ def test_thoughts_mode_starts_only_once_the_tool_call_is_complete(monkeypatch):
     from plugins._infection_check.extensions.python.response_stream import _50_infection_analyze as ext
 
     started = []
+    collected = []
 
     class _Checker:
         mode = "thoughts"
+
+        def collect_response(self, text):
+            collected.append(text)
 
         def start_analysis(self, agent):
             started.append(True)
@@ -188,6 +192,38 @@ def test_thoughts_mode_starts_only_once_the_tool_call_is_complete(monkeypatch):
     complete = json.dumps(_call())
     asyncio.run(hook.execute(text=complete, parsed=_call()))
     assert started == [True]
+    assert collected == [complete]  # judged the whole call, not the last-but-one chunk
+
+
+def test_stream_ending_at_the_tool_call_is_covered_by_one_check(monkeypatch):
+    """Through the real hooks: the last chunk never reaches the chunk
+    collector (the agent stops reading at a complete call)."""
+    from plugins._infection_check.extensions.python.response_stream import _50_infection_analyze as ext
+    from plugins._infection_check.extensions.python.response_stream_chunk import _50_infection_collect as collect
+
+    monkeypatch.setattr(C, "get_config", lambda agent: {"prompt": "p", "mode": "thoughts"})
+
+    async def run():
+        agent = _Agent()
+        agent.loop_data = type("L", (), {"iteration": 0})()
+        call = _call()
+        complete = json.dumps(call)
+        checker = C.get_checker(agent)
+        calls = []
+
+        async def fake_run(a, snapshot):
+            calls.append(snapshot)
+            await asyncio.sleep(0.05)
+            return "ok", "", "<ok/>"
+
+        checker._run_check = fake_run
+        await collect.InfectionCollectResponse(agent=agent).execute(stream_data={"full": complete[:-1]})
+        await ext.InfectionAnalyzeThoughts(agent=agent).execute(text=complete, parsed=call)
+        await asyncio.sleep(0.01)  # the background check is under way
+        await checker.gate(agent, tool_name=call["tool_name"], tool_args=call["tool_args"])
+        return calls
+
+    assert len(asyncio.run(run())) == 1
 
 
 def test_checker_model_calls_are_tagged():

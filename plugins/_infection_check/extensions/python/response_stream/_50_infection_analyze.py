@@ -16,4 +16,9 @@ class InfectionAnalyzeThoughts(Extension):
         # Starting earlier (on the heading) meant the gate had to cancel it
         # and start over - double the model time on every tool call.
         if parsed.get("tool_name") and extract_tools.extract_tool_request(text or "") is not None:
+            # The agent stops reading the stream as soon as the call is
+            # complete, before the response_stream_chunk collector sees the
+            # last chunk - take the complete text from here, or the check
+            # judges a truncated call and the gate has to run it again.
+            checker.collect_response(text)
             checker.start_analysis(self.agent)
