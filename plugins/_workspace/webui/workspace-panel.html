@@ -1,11 +1,16 @@
-<div
-  x-data
-  class="ws-shell"
-  x-create="$store.workspace?.onMount()"
-  x-destroy="$store.workspace?.onUnmount()"
->
+<html>
+<head>
+  <!-- The docked panel is loaded on its own (the canvas restores it after a
+       reload without ever opening main.html), so it must load its store. -->
+  <script type="module">
+    import { store } from "/plugins/_workspace/webui/workspace-store.js";
+  </script>
+</head>
+<body>
+<div x-data class="ws-shell">
   <template x-if="$store.workspace">
-    <div class="ws" x-data="{ get ws() { return $store.workspace } }">
+    <div class="ws" x-data="{ get ws() { return $store.workspace } }"
+         x-init="ws.onMount()" x-destroy="ws.onUnmount()">
 
       <div class="ws-bar">
         <div class="ws-filters" role="tablist" aria-label="Show">
@@ -197,3 +202,5 @@
     }
   </style>
 </div>
+</body>
+</html>

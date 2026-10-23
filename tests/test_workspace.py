@@ -621,3 +621,17 @@ async def test_api_assign_moves_an_app_to_another_agent_of_its_chat(api, proc, c
     assert result["ok"] and workspace.apps()[0].owner_agent == "A1"
     assert ("workspace_assign", "local") in api.events
     assert "no longer" in (await api.call(action="assign", id="res-gone", agent="A0"))["error"]
+
+
+def test_docked_panel_loads_its_own_store():
+    """The right canvas restores a docked Workspace after a reload without
+    ever opening main.html, which was the only file importing the store, so
+    the panel stayed blank. It must import the store itself and start
+    polling only once the store exists."""
+    from pathlib import Path
+
+    panel = Path("plugins/_workspace/webui/workspace-panel.html").read_text(encoding="utf-8")
+    assert 'import { store } from "/plugins/_workspace/webui/workspace-store.js"' in panel
+    gate = panel.index('<template x-if="$store.workspace">')
+    assert panel.index('x-init="ws.onMount()"') > gate
+    assert "$store.workspace?.onMount()" not in panel

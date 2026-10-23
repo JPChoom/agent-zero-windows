@@ -13,6 +13,7 @@
 
 ## Local Contracts
 
+- `webui/workspace-panel.html` imports `workspace-store.js` itself and starts polling from `x-init` inside the `$store.workspace` gate: the right canvas restores a docked panel after a reload without loading `main.html`, so the panel cannot rely on the modal having loaded the store.
 - An app's name shows its ownership history (newest first) as a tooltip, from `history` in the API payload.
 
 - Group by chat, current chat first; orphaned apps (their chat was deleted) form their own group on top.
