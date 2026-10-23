@@ -4,7 +4,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## v1.4
 
-Faster and steadier on a local GPU (in the workflow benchmark: total time 1,494 s -> 773 s, all tasks passing), Agent Zero running its own local model server, long chats that no longer run out of context, and a much tighter permission and security core - including protection against an agent working its way around a refusal.
+Faster and steadier on a local GPU (in the workflow benchmark: total time 1,494 s -> 705 s, all tasks passing), Agent Zero running its own local model server, long chats that no longer run out of context, and a much tighter permission and security core - including protection against an agent working its way around a refusal.
 
 **Behaviour changes:** remote access now needs a sign-in (Remote Control is refused while no login is set), and the llama.cpp provider's default address is `http://127.0.0.1:8090/v1`.
 
