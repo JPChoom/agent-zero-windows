@@ -122,7 +122,7 @@ def test_loopback_allows_ipv6():
 
 
 def test_loopback_rejects_remote():
-    result = _check_security(_LoopbackHandler, _ctx(remote_addr="192.168.1.50"))
+    result = _check_security(_LoopbackHandler, _ctx(remote_addr="203.0.113.50"))
     assert result is not None
     assert result["code"] == "FORBIDDEN"
 

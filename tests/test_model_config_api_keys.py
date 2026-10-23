@@ -550,8 +550,8 @@ def test_native_runs_reach_local_servers_through_loopback(monkeypatch):
     saved = models.get_chat_model("ollama", "m", api_base="http://host.docker.internal:11434")
     assert saved.kwargs["api_base"] == "http://127.0.0.1:11434"
     # An address the user chose on purpose is left alone.
-    custom = models.get_chat_model("lm_studio", "m", api_base="http://192.168.1.50:1234/v1")
-    assert custom.kwargs["api_base"] == "http://192.168.1.50:1234/v1"
+    custom = models.get_chat_model("lm_studio", "m", api_base="http://203.0.113.50:1234/v1")
+    assert custom.kwargs["api_base"] == "http://203.0.113.50:1234/v1"
 
     monkeypatch.setattr(runtime, "is_dockerized", lambda: True)
     assert models.get_chat_model("lm_studio", "m").kwargs["api_base"] == "http://host.docker.internal:1234/v1"
