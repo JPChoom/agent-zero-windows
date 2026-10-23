@@ -374,6 +374,12 @@ def apply_rate_limiter_sync(
     return run_sync(apply_rate_limiter(model_config, input_text, rate_limiter_callback))
 
 
+# Background calls whose work is simply redone later when they give their
+# slot to the user's turn. Memory consolidation is not here: it runs per
+# saved item inside the memorize loop, which would swallow the interruption.
+PREEMPTIBLE_CALLERS = frozenset({"memorize_fragments", "memorize_solutions", "rename_chat"})
+
+
 def _prompt_chars(messages: Any) -> int:
     """Length of the text in converted messages (images not counted)."""
     total = 0
@@ -659,10 +665,16 @@ class LiteLLMChatWrapper(SimpleChatModel):
         timing = perf.start_model_call(
             self.model_name, getattr(self, "a0_perf_role", "other"), _prompt_chars(msgs_conv)
         )
+        # Background work (perf.tagged(..., background=True)) waits behind
+        # calls for the user's turn; extraction calls that can simply be
+        # redone later also give up a running slot (helpers/model_concurrency).
+        background = timing.background
+        preemptible = background and not stream and timing.caller in PREEMPTIBLE_CALLERS
 
         attempt = 0
         while True:
             got_any_chunk = False
+            holder = None
             try:
                 # Held for the whole call (including the full streaming
                 # duration, not just connection setup) - a local
@@ -671,7 +683,9 @@ class LiteLLMChatWrapper(SimpleChatModel):
                 # so serializing here is the actual fix, not overcaution.
                 # See helpers/model_concurrency.py for why this is needed
                 # at all despite each Agent's own loop being single-threaded.
-                async with model_concurrency.model_call_slot(concurrency_key):
+                async with model_concurrency.model_call_slot(
+                    concurrency_key, background=background, preemptible=preemptible
+                ) as holder:
                     timing.slot_acquired()
                     if stream:
                         stop_response: str | None = None
@@ -744,6 +758,18 @@ class LiteLLMChatWrapper(SimpleChatModel):
                 timing.finish()
                 return result, transport, msgs_conv
 
+            except asyncio.CancelledError as e:
+                if holder is not None and holder.preempted:
+                    # Our own preemption, not a real cancel: hand the caller
+                    # a retryable error and leave the task un-cancelled.
+                    task = asyncio.current_task()
+                    if task is not None and hasattr(task, "uncancel"):
+                        task.uncancel()
+                    preempted = model_concurrency.Preempted("gave the model to the user's turn")
+                    timing.finish(preempted)
+                    raise preempted from e
+                timing.finish(e)
+                raise
             except BaseException as e:
                 # Retry only if no chunks received and error is transient
                 if (

@@ -4,7 +4,7 @@ from helpers.extension import Extension
 from helpers.notification import NotificationManager, NotificationPriority, NotificationType
 from helpers.print_style import PrintStyle
 from helpers.state_monitor_integration import mark_dirty_all
-from helpers import perf
+from helpers import model_concurrency, perf
 from agent import LoopData
 import asyncio
 
@@ -44,9 +44,15 @@ class RenameChat(Extension):
             )
             # call utility model
             try:
-                new_name = await self.agent.call_utility_model(
-                    system=system, message=message, background=True
+                # In a gap between turns, so naming never holds up an answer
+                # (helpers/model_concurrency.run_when_idle).
+                new_name = await model_concurrency.run_when_idle(
+                    lambda: self.agent.call_utility_model(
+                        system=system, message=message, background=True
+                    )
                 )
+            except model_concurrency.Preempted:
+                return  # the chat stayed busy; the next turn names it
             except Exception as e:
                 PrintStyle.error(f"Automatic chat rename failed (utility model call): {format_error(e)}")
                 NotificationManager.send_notification(

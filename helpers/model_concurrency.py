@@ -72,12 +72,23 @@ sleeps at all; contended waiters back off from 20ms to 200ms, which is
 noise next to a model call and costs no executor threads (asyncio.to_thread
 would consume one per waiter and can deadlock against its own bounded
 pool when the limit is small).
+
+Priority (local-speed item B2). Calls made for the user's turn come first;
+background work (memorizing, naming the chat - tagged with perf.tagged(...,
+background=True)) only takes a free slot when no turn call is waiting for
+that backend. A *preemptible* background call that is already running is
+interrupted when a turn call needs its slot: the holder's task is cancelled
+on its own loop and models.py turns that into `Preempted`, which the caller
+(the memorize extensions) answers by waiting for the user to be idle and
+trying again. Measured before this: background calls queued ahead of the
+next turn cost ~200 s of waiting across the 8-task workflow benchmark.
 """
 
 import asyncio
 import contextlib
-
 import threading
+import time
+from dataclasses import dataclass, field
 
 # Guards the dict below. A plain threading.Lock because it is touched
 # from arbitrary threads and held only for a couple of assignments.
@@ -91,6 +102,84 @@ _POLL_MIN_SECONDS = 0.02
 _POLL_MAX_SECONDS = 0.2
 
 DEFAULT_BACKEND_KEY = "default"
+
+
+class Preempted(Exception):
+    """A background model call gave its slot to a call for the user's turn.
+
+    Raised by models.py only for calls started with preemptible=True; the
+    caller should wait (wait_for_foreground_idle) and try again later.
+    """
+
+
+@dataclass
+class _Holder:
+    """A preemptible background call currently holding a slot."""
+    loop: asyncio.AbstractEventLoop
+    task: asyncio.Task
+    preempted: bool = False
+
+
+@dataclass
+class _Activity:
+    waiting: int = 0          # turn calls waiting for a slot
+    active: int = 0           # turn calls holding a slot
+    holders: list = field(default_factory=list)  # preemptible background holders
+
+
+# Per backend key; guarded by _state_lock.
+_activity: dict[str, _Activity] = {}
+# Last moment any turn call was waiting or running, any backend (monotonic).
+_last_foreground = 0.0
+
+
+def _act(key: str) -> _Activity:
+    entry = _activity.get(key)
+    if entry is None:
+        entry = _activity[key] = _Activity()
+    return entry
+
+
+def foreground_busy() -> bool:
+    """Is a call for someone's turn waiting or running on any backend?"""
+    with _state_lock:
+        return any(a.waiting or a.active for a in _activity.values())
+
+
+async def wait_for_foreground_idle(settle_seconds: float = 3.0, max_wait_seconds: float | None = None) -> bool:
+    """Wait until no turn call has waited or run for `settle_seconds`.
+
+    Background work calls this before starting, so it runs in the gaps
+    between turns rather than in front of them. Returns False if
+    `max_wait_seconds` ran out first (the caller may go ahead anyway).
+    """
+    started = time.monotonic()
+    while True:
+        now = time.monotonic()
+        if foreground_busy():
+            _mark_foreground()
+        elif now - _last_foreground >= settle_seconds:
+            return True
+        if max_wait_seconds is not None and now - started >= max_wait_seconds:
+            return False
+        await asyncio.sleep(0.25)
+
+
+def _mark_foreground() -> None:
+    global _last_foreground
+    _last_foreground = time.monotonic()
+
+
+def _preempt_holders(key: str) -> None:
+    with _state_lock:
+        holders = [h for h in _act(key).holders if not h.preempted]
+        for holder in holders:
+            holder.preempted = True
+    for holder in holders:
+        try:
+            holder.loop.call_soon_threadsafe(holder.task.cancel)
+        except RuntimeError:
+            pass  # that loop has closed; its call is gone anyway
 
 
 def backend_key(model_name: str, kwargs: dict | None = None) -> str:
@@ -154,7 +243,7 @@ def _get_semaphore(key: str) -> threading.Semaphore:
         return entry["semaphore"]
 
 
-async def _acquire(semaphore: threading.Semaphore) -> None:
+async def _acquire(semaphore: threading.Semaphore, key: str = "", background: bool = False) -> None:
     """Take a slot without blocking the event loop.
 
     semaphore.acquire() would block the whole loop, including the
@@ -162,18 +251,30 @@ async def _acquire(semaphore: threading.Semaphore) -> None:
     stall. The non-blocking attempt comes first so an uncontended call
     never sleeps.
     """
-    if semaphore.acquire(blocking=False):
+    def turn_waiting() -> bool:
+        if not background:
+            return False
+        with _state_lock:
+            return _act(key).waiting > 0
+
+    if not turn_waiting() and semaphore.acquire(blocking=False):
         return
+    if not background:
+        # The slot is taken: if a preemptible background call holds it, it
+        # gives it up now (models.py raises Preempted in that call).
+        _preempt_holders(key)
     delay = _POLL_MIN_SECONDS
     while True:
         await asyncio.sleep(delay)
-        if semaphore.acquire(blocking=False):
+        if not turn_waiting() and semaphore.acquire(blocking=False):
             return
         delay = min(delay * 1.5, _POLL_MAX_SECONDS)
 
 
 @contextlib.asynccontextmanager
-async def model_call_slot(key: str = DEFAULT_BACKEND_KEY):
+async def model_call_slot(
+    key: str = DEFAULT_BACKEND_KEY, *, background: bool = False, preemptible: bool = False
+):
     """Async context manager: `async with model_call_slot(key=...): ...`
     around the actual network call. Held only for the duration of the
     call itself, not message construction or rate-limiter bookkeeping.
@@ -184,10 +285,53 @@ async def model_call_slot(key: str = DEFAULT_BACKEND_KEY):
     for callers that don't know their backend's identity (matches the
     pre-keying behavior of full global serialization)."""
     semaphore = _get_semaphore(key)
-    await _acquire(semaphore)
+    holder: _Holder | None = None
+    if not background:
+        with _state_lock:
+            _act(key).waiting += 1
+        _mark_foreground()
     try:
-        yield
+        await _acquire(semaphore, key, background)
     finally:
+        if not background:
+            with _state_lock:
+                _act(key).waiting -= 1
+    with _state_lock:
+        if not background:
+            _act(key).active += 1
+        elif preemptible:
+            task = asyncio.current_task()
+            if task is not None:
+                holder = _Holder(loop=asyncio.get_running_loop(), task=task)
+                _act(key).holders.append(holder)
+    try:
+        yield holder
+    finally:
+        with _state_lock:
+            if not background:
+                _act(key).active -= 1
+            elif holder is not None and holder in _act(key).holders:
+                _act(key).holders.remove(holder)
+        if not background:
+            _mark_foreground()
         # Release the object that was acquired, not whatever _get_semaphore
         # would hand back now - the limit may have changed in between.
         semaphore.release()
+
+
+async def run_when_idle(make_call, *, attempts: int = 5, settle_seconds: float = 3.0, max_wait_seconds: float = 900.0):
+    """Run a background model call in a gap between turns.
+
+    Waits for the user's turns to go quiet, runs `make_call()` (a coroutine
+    factory), and if the call gives its slot to a turn (`Preempted`) waits
+    and tries again, up to `attempts` times; then raises `Preempted`. Waiting
+    happens before the call, so time-limited callers (the 180 s utility-call
+    limit) only count the call itself.
+    """
+    for _ in range(max(1, attempts)):
+        await wait_for_foreground_idle(settle_seconds, max_wait_seconds)
+        try:
+            return await make_call()
+        except Preempted:
+            continue
+    raise Preempted(f"still interrupted by the user's turns after {attempts} tries")

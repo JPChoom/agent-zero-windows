@@ -26,6 +26,8 @@
 - The health report never changes or deletes memories; thresholds are on the store's (1 + cosine) / 2 relevance scale.
 - Recall injects at most `memory_recall_memories_max_result` (3) memories and `memory_recall_solutions_max_result` (2) solutions above similarity 0.75, each capped at `RECALL_ENTRY_MAX_CHARS` (1500) with a pointer to `memory_load` for the full entry.
 
+- The end-of-turn memorizers send only messages added since their last successful run (`helpers/memorize_scope.py`: per agent, by history sequence, plus `CONTEXT_MESSAGES` before them), skip turns below `MIN_CHARS` (and, for solutions, turns where the agent used no tool other than `response`), and run through `model_concurrency.run_when_idle`. A postponed run (`Preempted` after its attempts) is not marked done, so the next turn includes its messages.
+
 ## Work Guidance
 
 - Coordinate tool, prompt, and consolidation changes so saved memories remain useful and bounded.

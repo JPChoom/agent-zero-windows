@@ -5,11 +5,11 @@ from helpers.dirty_json import DirtyJson
 from agent import LoopData
 from helpers.log import LogItem
 from helpers.defer import DeferredTask, THREAD_BACKGROUND
-from helpers import perf
+from helpers import model_concurrency, perf
 
 # Direct import - this extension lives inside the memory plugin
 from plugins._memory.helpers.memory import Memory
-from plugins._memory.helpers import provenance
+from plugins._memory.helpers import memorize_scope, provenance
 from plugins._memory.helpers.memory_quality import filter_auto_memory_fragments
 from plugins._memory.tools.memory_load import DEFAULT_THRESHOLD as DEFAULT_MEMORY_THRESHOLD
 
@@ -53,29 +53,33 @@ class MemorizeMemories(Extension):
 
             # get system message and chat history for util llm
             system = self.agent.read_prompt("memory.memories_sum.sys.md")
-            msgs_text = self.agent.concat_messages(self.agent.history)
+            # Only what was added since the last memorize (memorize_scope).
+            msgs_text, newest = memorize_scope.new_messages(self.agent, "fragments")
             # Fragments are facts from the user and the agent's own work.
             # External text (web pages, files, tool output) never feeds them:
             # an injected instruction memorized here would be recalled into
             # every future chat as trusted context.
             from helpers.untrusted_content import strip_untrusted_blocks
             msgs_text = strip_untrusted_blocks(msgs_text)
-            # Keep only recent context to avoid utility-model context-window overflow.
-            MAX_MSGS_CHARS = 80000
-            if len(msgs_text) > MAX_MSGS_CHARS:
-                msgs_text = msgs_text[-MAX_MSGS_CHARS:]
+            if not memorize_scope.worth_memorizing("fragments", msgs_text):
+                memorize_scope.mark_done(self.agent, "fragments", newest)
+                log_item.update(heading="Nothing new to memorize.")
+                return
 
-            # # log query streamed by LLM
-            # async def log_callback(content):
-            #     log_item.stream(content=content)
-
-            # call util llm to find info in history
-            memories_json = await self.agent.call_utility_model(
-                system=system,
-                message=msgs_text,
-                # callback=log_callback,
-                background=True,
-            )
+            # call util llm to find info in history - in a gap between turns,
+            # giving the model back as soon as a turn needs it
+            try:
+                memories_json = await model_concurrency.run_when_idle(
+                    lambda: self.agent.call_utility_model(
+                        system=system,
+                        message=msgs_text,
+                        background=True,
+                    )
+                )
+            except model_concurrency.Preempted:
+                log_item.update(heading="Memorizing postponed: the chat stayed busy.")
+                return  # not marked done: the next turn includes these messages
+            memorize_scope.mark_done(self.agent, "fragments", newest)
 
             # log data < no need for streaming utility messages
             log_item.update(content=memories_json)
