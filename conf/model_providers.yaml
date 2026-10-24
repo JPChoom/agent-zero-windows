@@ -96,6 +96,9 @@ chat:
     kwargs:
       api_base: "http://127.0.0.1:8090/v1"
       api_key: "llama-cpp"
+      # llama-server's chat-completions route returns the model's thinking
+      # (reasoning_content); its Responses route dropped it.
+      a0_api_mode: "chat_completions"
   mistral:
     name: Mistral AI
     litellm_provider: mistral

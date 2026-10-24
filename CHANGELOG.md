@@ -2,6 +2,12 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Improved
+- Changing a llama.cpp server setting no longer fails now and then with "Port 8090 is already used by another program": the old server's port is given a moment to be released.
+- **llama.cpp server works fully with thinking models**: Agent Zero now talks to llama-server over its chat-completions route, where the model's thinking comes back and shows in the chat (the Responses route dropped it), and utility calls (memorizing, titles, summaries) turn thinking off there too, as they already did on LM Studio.
+
 ## v1.4
 
 Faster and steadier on a local GPU (in the workflow benchmark: total time 1,494 s -> 705 s, all tasks passing), Agent Zero running its own local model server, long chats that no longer run out of context, and a much tighter permission and security core - including protection against an agent working its way around a refusal.

@@ -730,6 +730,15 @@ def utility_kwargs(provider: str, kwargs: dict) -> dict:
         extra_body = dict(kwargs.get("extra_body") or {})
         extra_body.setdefault("reasoning_effort", "none")
         kwargs["extra_body"] = extra_body
+    elif provider == "llama_cpp":
+        # llama-server (with --jinja) passes chat_template_kwargs to the
+        # model's template; Qwen-style templates skip the thinking block.
+        kwargs.setdefault("a0_api_mode", "chat_completions")
+        extra_body = dict(kwargs.get("extra_body") or {})
+        template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
+        template_kwargs.setdefault("enable_thinking", False)
+        extra_body["chat_template_kwargs"] = template_kwargs
+        kwargs["extra_body"] = extra_body
     return kwargs
 
 

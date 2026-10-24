@@ -16,3 +16,14 @@ def test_user_kwargs_win():
 
 def test_other_providers_are_untouched():
     assert utility_kwargs("openai", {"a": 1}) == {"a": 1}
+
+
+def test_llama_cpp_utility_calls_turn_thinking_off():
+    out = utility_kwargs("llama_cpp", {})
+    assert out["a0_api_mode"] == "chat_completions"
+    assert out["extra_body"]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_llama_cpp_user_template_kwargs_win():
+    out = utility_kwargs("llama_cpp", {"extra_body": {"chat_template_kwargs": {"enable_thinking": True, "x": 1}}})
+    assert out["extra_body"]["chat_template_kwargs"] == {"enable_thinking": True, "x": 1}

@@ -21,6 +21,8 @@
 - Download is only run on an explicit user click (or the installer's `-Llama` choice), only from a local (not tunnel) session, only from `github.com/ggml-org/llama.cpp` releases, and only when the asset's SHA-256 published by GitHub matches; archives are zip-slip checked. Models are never downloaded or bundled.
 - Status reads take no lock (a start can hold it for minutes while loading).
 
+- After replacing a leftover server, `_launch` waits up to `PORT_RELEASE_SECONDS` for the port to be free (checked by binding, not connecting: a busy listener that never accepts fills its backlog and then refuses connects) before reporting the port as taken by another program.
+
 ## Verification
 
 - `pytest tests/test_llama_server_supervisor.py tests/test_llama_server_plugin.py` (a Python stand-in for llama-server; no download, no GPU).

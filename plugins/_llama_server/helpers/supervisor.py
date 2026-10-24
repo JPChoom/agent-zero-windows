@@ -164,6 +164,29 @@ def port_in_use(port: int) -> bool:
         return sock.connect_ex((HOST, port)) == 0
 
 
+PORT_RELEASE_SECONDS = 5.0
+
+
+def _can_bind(port: int) -> bool:
+    # Binding, not connecting: repeated connects to a listener that never
+    # accepts fill its backlog and then fail, which would read as "free".
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((HOST, port))
+            return True
+        except OSError:
+            return False
+
+
+def wait_port_free(port: int, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if _can_bind(port):
+            return True
+        time.sleep(0.2)
+    return _can_bind(port)
+
+
 def served_models(port: int) -> list[str]:
     status, body = _http_json(port, "/v1/models")
     if status != 200:
@@ -287,7 +310,10 @@ class Supervisor:
         self._config = config
         if self._try_adopt(config):
             return
-        if port_in_use(config.port):
+        # A leftover server just stopped by _try_adopt can hold the port for
+        # a moment after its process exits (seen on Windows), so allow a
+        # few seconds before calling the port taken.
+        if port_in_use(config.port) and not wait_port_free(config.port, PORT_RELEASE_SECONDS):
             raise SupervisorError(f"Port {config.port} is already used by another program. Choose another port.")
         # After adoption: a server we adopt already holds its VRAM.
         self._check_vram(config)
