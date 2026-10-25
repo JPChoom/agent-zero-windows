@@ -1,5 +1,10 @@
 """Agent Zero owns a local llama.cpp server (`llama-server.exe`).
 
+Settings: Settings > Agent > Models > Local model server (helpers/local_server.py
+turns them into a ServerConfig; api/llama_server.py is the control endpoint;
+extensions/python/job_loop/_40_llama_server.py starts it and applies saved
+changes).
+
 One supervised process per A0W instance, bound to 127.0.0.1 only. It is one
 more model provider (`llama_cpp` in conf/model_providers.yaml); LM Studio
 and every other provider keep working.
@@ -282,6 +287,11 @@ class Supervisor:
             "last_error": self.last_error,
             "log": log_path(),
         }
+
+    def running_identity(self) -> str:
+        """identity() of the settings the running server was started with ("" when not running)."""
+        cfg = self._config
+        return cfg.identity() if cfg is not None and self.state == "running" else ""
 
     # -- launch ------------------------------------------------------------
 

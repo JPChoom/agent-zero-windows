@@ -86,7 +86,7 @@ chat:
     kwargs:
       api_base: "http://host.docker.internal:1234/v1"
       api_key: "lm-studio"
-  # Defaults to the server Agent Zero manages (plugins/_llama_server, port 8090).
+  # Defaults to the server Agent Zero manages (Settings > Models > Local model server, port 8090).
   llama_cpp:
     name: llama.cpp
     litellm_provider: hosted_vllm

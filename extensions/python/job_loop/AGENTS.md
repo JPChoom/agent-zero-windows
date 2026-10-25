@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- Ordered Python files own cleanup of expired API chats (`_20_`), the stall watchdog (`_30_`), cache trimming (`_50_`), and future job-loop tasks.
+- Ordered Python files own cleanup of expired API chats (`_20_`), the stall watchdog (`_30_`), the local model server (`_40_`: autostart once per start, and restarting a running server whose saved settings changed while no model call is waiting or running), cache trimming (`_50_`), and future job-loop tasks.
 
 ## Local Contracts
 

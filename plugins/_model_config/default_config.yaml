@@ -101,3 +101,27 @@ sampling:
       creative: {temperature: 0.3, top_p: 0.04, repeat_penalty: 0.4}
       reasoning: {}
     base: {temperature: 0.6, top_p: 0.95, repeat_penalty: 1.0}
+
+# Local model server: Agent Zero starts, watches and stops its own
+# llama.cpp server (llama-server.exe) on 127.0.0.1 (helpers/local_server.py,
+# helpers/llama_server.py). Picking a model in Settings points the Main and
+# Utility slots at it. preset: coding (fast flags, plus MTP self-drafting
+# when the model has an MTP layer) | balanced | low_memory | custom
+# (extra_args as typed). The context size follows the Main slot while Main
+# runs on this server; context_size is used otherwise.
+local_server:
+  autostart: false
+  model_path: ""
+  preset: "coding"
+  extra_args: ""
+  vision: false
+  port: 8090
+  context_size: 32768
+  gpu_layers: 99
+  threads: 0
+  parallel: 1
+  model_folders: []
+  binary_path: ""
+  download_variant: ""
+  vram_check: true
+  startup_timeout_seconds: 300

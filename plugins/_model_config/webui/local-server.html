@@ -1,0 +1,228 @@
+<html>
+<head><title>Local model server</title></head>
+<body>
+<div class="model-section local-server"
+     x-data="{
+       info: null, busy: false, error: '', note: '', plan: null, modelInfo: null, timer: null,
+       get ls() { return config.local_server; },
+       presets: [
+         { id: 'coding', label: 'Coding (fast)', hint: 'Flash attention, 8-bit memory cache, prompt reuse; plus MTP self-drafting when the model has an MTP layer (about 2.5x faster answers on a 27B Qwen).' },
+         { id: 'balanced', label: 'Balanced', hint: 'The same fast settings without drafting.' },
+         { id: 'low_memory', label: 'Low memory', hint: 'Stores the memory cache at 4 bits: fits a longer context or a bigger model, slightly lower quality.' },
+         { id: 'custom', label: 'Custom', hint: 'Your own llama-server arguments.' },
+       ],
+       async call(action, extra = {}) {
+         this.busy = true; this.error = '';
+         try {
+           const api = await import('/js/api.js');
+           const r = await api.callJsonApi('llama_server', { action, ...extra });
+           this.info = r;
+           if (!r.ok) this.error = r.error || 'Failed';
+           if (r.plan) this.plan = r.plan;
+           if (r.model_info) this.modelInfo = r.model_info;
+         } catch (e) { this.error = e?.message || 'Failed'; }
+         finally { this.busy = false; this.poll(); }
+       },
+       poll() {
+         clearTimeout(this.timer);
+         if (this.info?.status?.state === 'starting') this.timer = setTimeout(() => this.call('status'), 3000);
+       },
+       state() { return this.info?.status?.state || ''; },
+       stateLabel() {
+         return { running: 'Running', starting: 'Starting (loading the model)...', failed: 'Failed', stopped: 'Stopped' }[this.state()] || 'Checking...';
+       },
+       mb(n) { return n >= 1024 ? (n / 1024).toFixed(1) + ' GB' : n + ' MB'; },
+       base() { return 'http://127.0.0.1:' + (this.ls.port || 8090) + '/v1'; },
+       chatOnServer() {
+         const c = config.chat_model || {};
+         return c.provider === 'llama_cpp' && (!c.api_base || c.api_base === this.base());
+       },
+       selected() { return (this.info?.models || []).find(m => m.path === this.ls.model_path); },
+       pick(path) {
+         const m = (this.info?.models || []).find(x => x.path === path);
+         if (!m) return;
+         this.ls.model_path = m.path;
+         for (const slot of ['chat_model', 'utility_model']) {
+           Object.assign(config[slot], { provider: 'llama_cpp', name: m.alias, api_base: this.base() });
+         }
+         if (!m.has_mmproj) this.ls.vision = false;
+         config.chat_model.vision = !!this.ls.vision;
+         this.note = 'Main and Utility now use ' + m.alias + ' on this server. Save to apply; a running server restarts with it on its own.';
+         this.call('model_info', { path: m.path });
+       },
+       setVision(on) {
+         this.ls.vision = on;
+         if (this.chatOnServer()) config.chat_model.vision = on;
+       },
+       setPort(port) {
+         const old = this.base();
+         this.ls.port = port;
+         for (const slot of ['chat_model', 'utility_model']) {
+           if (config[slot]?.provider === 'llama_cpp' && config[slot].api_base === old) config[slot].api_base = this.base();
+         }
+       },
+     }"
+     x-init="config.local_server = Object.assign({ preset: 'coding', port: 8090, model_folders: [] }, config.local_server || {}); await call('status'); if (ls.model_path) call('model_info', { path: ls.model_path })"
+     x-destroy="clearTimeout(timer)">
+  <div class="section-title">Local model server (llama.cpp)</div>
+  <div class="section-description">
+    Agent Zero runs its own <code>llama-server.exe</code> on this PC (127.0.0.1 only), so LM Studio does not need to be open.
+    Picking a model here points the Main and Utility models at it. Close other GPU apps (for example LM Studio with a model loaded) first.
+  </div>
+
+  <!-- status -->
+  <div class="field">
+    <div class="field-label">
+      <div class="field-title">Server</div>
+      <div class="field-description">
+        <span x-text="stateLabel()"></span>
+        <template x-if="state() === 'running'">
+          <span> - <code x-text="info.status.alias"></code> at <code x-text="info.status.api_base"></code><span x-show="info.status.adopted"> (kept from before a restart)</span></span>
+        </template>
+        <div x-show="info?.status?.last_error" class="ls-error" x-text="info?.status?.last_error"></div>
+        <div x-show="error" class="ls-error" x-text="error"></div>
+        <div x-show="info" class="field-description">Log: <code x-text="info?.status?.log"></code></div>
+      </div>
+    </div>
+    <div class="field-control ls-row">
+      <button class="btn btn-field" :disabled="busy || !info?.binary_exists" x-show="!['running','starting'].includes(state())" @click="call('start')">Start</button>
+      <button class="btn btn-field" :disabled="busy" x-show="['running','starting'].includes(state())" @click="call('restart')">Restart</button>
+      <button class="btn btn-field" :disabled="busy" x-show="['running','starting'].includes(state())" @click="call('stop')">Stop</button>
+      <button class="btn btn-field" :disabled="busy" @click="call('status')">Refresh</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="field-label">
+      <div class="field-title">Start with Agent Zero</div>
+      <div class="field-description">Starts the server when Agent Zero starts and stops it when Agent Zero exits. Start, Restart and Stop use the saved settings.</div>
+    </div>
+    <div class="field-control">
+      <label class="toggle"><input type="checkbox" x-model="ls.autostart" /><span class="toggler"></span></label>
+    </div>
+  </div>
+
+  <!-- model -->
+  <div class="field">
+    <div class="field-label">
+      <div class="field-title">Model</div>
+      <div class="field-description">
+        GGUF files from
+        <template x-for="(f, i) in (info?.folders || [])" :key="f.path"><span><span x-show="i"> and </span><span x-text="f.label" :title="f.path"></span></span></template>.
+        Models are not included: put a <code>.gguf</code> file in <code x-text="info?.own_models_dir || 'usr/llama-cpp/models'"></code>, use one you already have in LM Studio, or enter a path.
+        <template x-if="selected() && info?.gpu_total_mib">
+          <div>File <span x-text="mb(selected().size_mb)"></span> of <span x-text="mb(info.gpu_total_mib)"></span> GPU memory, plus about 1-4 GB for the context.</div>
+        </template>
+        <div x-show="note" class="ls-note" x-text="note"></div>
+      </div>
+    </div>
+    <div class="field-control ls-col">
+      <select @change="pick($event.target.value)" :disabled="!info">
+        <option value="">Choose a model...</option>
+        <template x-for="m in (info?.models || [])" :key="m.path">
+          <option :value="m.path" :selected="m.path === ls.model_path" x-text="m.folder + ': ' + m.name + ' (' + mb(m.size_mb) + ')'"></option>
+        </template>
+      </select>
+      <input type="text" x-model="ls.model_path" placeholder="C:\path\to\model.gguf" @change="call('model_info', { path: ls.model_path })" />
+      <input type="text" :value="(ls.model_folders || []).join('; ')" placeholder="More model folders (separate with ;)"
+             @change="ls.model_folders = $event.target.value.split(';').map(s => s.trim()).filter(Boolean)" />
+    </div>
+  </div>
+
+  <!-- preset -->
+  <div class="field">
+    <div class="field-label">
+      <div class="field-title">Preset</div>
+      <div class="field-description">
+        <span x-text="(presets.find(p => p.id === ls.preset) || presets[0]).hint"></span>
+        <template x-if="ls.preset === 'coding' && modelInfo && modelInfo.path === ls.model_path">
+          <div x-text="modelInfo.has_mtp ? 'This model has an MTP layer: drafting is on.' : 'This model has no MTP layer, so no drafting (same as Balanced).'"></div>
+        </template>
+      </div>
+    </div>
+    <div class="field-control ls-col">
+      <select x-model="ls.preset">
+        <template x-for="p in presets" :key="p.id"><option :value="p.id" :selected="p.id === ls.preset" x-text="p.label"></option></template>
+      </select>
+      <input type="text" x-show="ls.preset === 'custom'" x-model="ls.extra_args" placeholder="-fa on -ctk q8_0 -ctv q8_0 --jinja" />
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="field-label">
+      <div class="field-title">Vision</div>
+      <div class="field-description">Load the model's own image projector (<code>mmproj-*.gguf</code> in the same folder, about 1 GB of GPU memory), so the Main model can see images itself.</div>
+    </div>
+    <div class="field-control">
+      <template x-if="modelInfo && modelInfo.path === ls.model_path && !modelInfo.mmproj"><span class="field-description">No mmproj file next to this model.</span></template>
+      <label class="toggle" x-show="!(modelInfo && modelInfo.path === ls.model_path && !modelInfo.mmproj)">
+        <input type="checkbox" :checked="ls.vision" @change="setVision($event.target.checked)" /><span class="toggler"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="field-label">
+      <div class="field-title">Context size</div>
+      <div class="field-description" x-text="chatOnServer() ? 'Follows the Main model\'s context length above (' + (config.chat_model.ctx_length || '?') + ' tokens).' : 'Tokens. Larger uses more memory.'"></div>
+    </div>
+    <div class="field-control"><input type="number" min="512" step="512" x-model.number="ls.context_size" :disabled="chatOnServer()" /></div>
+  </div>
+
+  <!-- advanced -->
+  <details class="ls-advanced">
+    <summary>Advanced</summary>
+    <div class="field">
+      <div class="field-label"><div class="field-title">Port</div><div class="field-description">On 127.0.0.1. Models that use this server follow it.</div></div>
+      <div class="field-control"><input type="number" min="1024" max="65535" :value="ls.port" @change="setPort(parseInt($event.target.value) || 8090)" /></div>
+    </div>
+    <div class="field">
+      <div class="field-label"><div class="field-title">GPU layers</div><div class="field-description">99 = everything on the GPU; lower to move part of the model to the CPU (slower).</div></div>
+      <div class="field-control"><input type="number" min="0" max="999" x-model.number="ls.gpu_layers" /></div>
+    </div>
+    <div class="field">
+      <div class="field-label"><div class="field-title">Check GPU memory before starting</div><div class="field-description">NVIDIA only: refuse to start when free memory is clearly too small.</div></div>
+      <div class="field-control"><label class="toggle"><input type="checkbox" x-model="ls.vram_check" /><span class="toggler"></span></label></div>
+    </div>
+    <div class="field">
+      <div class="field-label">
+        <div class="field-title">llama-server.exe</div>
+        <div class="field-description">
+          <span x-show="info?.binary_exists">Installed<span x-show="info?.installed"> (release <code x-text="info?.installed?.tag"></code>, <span x-text="info?.installed?.variant"></span>)</span>.</span>
+          <span x-show="info && !info.binary_exists">Not installed yet.</span>
+          Download fetches the official build from github.com/ggml-org/llama.cpp (MIT license) and installs it only if its SHA-256 matches the one GitHub publishes. Leave the path empty to use the downloaded one.
+        </div>
+      </div>
+      <div class="field-control ls-col">
+        <input type="text" x-model="ls.binary_path" placeholder="usr/llama-cpp/bin/llama-server.exe" />
+        <div class="ls-row">
+          <select x-model="ls.download_variant">
+            <option value="" x-text="'Build: automatic (' + (info?.suggested_variant || 'cpu') + ')'"></option>
+            <option value="cuda">Build: NVIDIA (CUDA)</option>
+            <option value="vulkan">Build: Vulkan (AMD / Intel / NVIDIA)</option>
+            <option value="rocm">Build: AMD ROCm (needs AMD's HIP runtime)</option>
+            <option value="cpu">Build: CPU only</option>
+          </select>
+          <button class="btn btn-field" :disabled="busy" @click="call('download_plan', { variant: ls.download_variant })">Check download</button>
+          <button class="btn btn-field" :disabled="busy || !plan" @click="call('download', { variant: ls.download_variant })">Download and install</button>
+        </div>
+        <template x-if="plan">
+          <div class="field-description">Release <code x-text="plan.tag"></code>:
+            <template x-for="a in plan.assets" :key="a.name"><div><code x-text="a.name"></code> (<span x-text="mb(Math.round(a.size / 1048576))"></span>)</div></template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </details>
+
+  <style>
+    .local-server .ls-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .local-server .ls-col { display: flex; flex-direction: column; gap: 6px; }
+    .local-server .ls-error { color: var(--color-error, #c33); }
+    .local-server .ls-note { color: var(--color-primary, #4a90e2); margin-top: 4px; }
+    .local-server .ls-advanced { margin-top: 8px; }
+    .local-server .ls-advanced summary { cursor: pointer; opacity: 0.85; padding: 4px 0; }
+  </style>
+</div>
+</body>
+</html>

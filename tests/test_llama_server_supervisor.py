@@ -1,4 +1,4 @@
-"""The managed llama.cpp server supervisor (plugins/_llama_server), driven
+"""The managed llama.cpp server supervisor (helpers/llama_server.py), driven
 against a Python stand-in (tests/fixtures/fake_llama_server.py): no download,
 no GPU. Real processes, real HTTP, real process-identity checks."""
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from plugins._llama_server.helpers import supervisor as sup
+from helpers import llama_server as sup
 
 FAKE = str(Path(__file__).resolve().parent / "fixtures" / "fake_llama_server.py")
 

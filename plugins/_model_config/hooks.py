@@ -30,9 +30,15 @@ def get_plugin_config(default=None, **kwargs):
 
     default_cfg = plugins.get_default_plugin_config("_model_config") or {}
     for key in missing:
+        if key == "local_server":
+            # Takes over the settings of the former _llama_server plugin once.
+            from helpers import local_server
+
+            default[key] = local_server.migrated_settings()
+            continue
         default[key] = default_cfg.get(key, {} if key != "single_model_mode" else False)
     return default
 
 
 # Top-level keys added after configs were first saved (see the docstring above).
-BACKFILLED_KEYS = ("vision_model", "single_model_mode", "sampling")
+BACKFILLED_KEYS = ("vision_model", "single_model_mode", "sampling", "local_server")

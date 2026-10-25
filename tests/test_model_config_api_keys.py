@@ -327,7 +327,7 @@ def test_local_provider_defaults_are_docker_friendly():
         "http://host.docker.internal:1234"
     )
     assert provider_config["chat"]["llama_cpp"]["litellm_provider"] == "hosted_vllm"
-    # The managed llama.cpp server (plugins/_llama_server) listens here.
+    # The managed llama.cpp server (helpers/llama_server.py) listens here.
     assert provider_config["chat"]["llama_cpp"]["kwargs"]["api_base"] == (
         "http://127.0.0.1:8090/v1"
     )

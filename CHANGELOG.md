@@ -4,6 +4,9 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## Unreleased
 
+### New
+- **Local model server is part of the Models settings.** The llama.cpp server is no longer a separate plugin: *Settings > Agent > Models > Local model server* lists your GGUF files (including LM Studio's), and picking one points the Main and Utility models at it. Presets replace hand-typed server options: **Coding (fast)** (flash attention, 8-bit memory cache, prompt reuse, plus MTP self-drafting when the model has an MTP layer - about 2.5x faster answers with Qwen3.8-27B on an RTX 4090: 47 -> ~130 tokens/s), **Balanced**, **Low memory** and **Custom**. A Vision switch loads the model's own image projector so the Main model can see images. The context size follows the Main model's, and a running server restarts with saved changes on its own (never in the middle of a turn). Settings of the former plugin are carried over.
+
 ### Improved
 - Changing a llama.cpp server setting no longer fails now and then with "Port 8090 is already used by another program": the old server's port is given a moment to be released.
 - **llama.cpp server works fully with thinking models**: Agent Zero now talks to llama-server over its chat-completions route, where the model's thinking comes back and shows in the chat (the Responses route dropped it), and utility calls (memorizing, titles, summaries) turn thinking off there too, as they already did on LM Studio.

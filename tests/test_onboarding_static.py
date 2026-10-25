@@ -99,7 +99,7 @@ def test_onboarding_provider_grid_names_are_present_in_metadata():
     assert 'docs_url: "https://lmstudio.ai/docs/developer/core/authentication"' in provider_ui
     assert 'logo: "/plugins/_onboarding/webui/assets/provider-logos/llama-cpp.svg"' in provider_ui
     assert 'docs_url: "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md"' in provider_ui
-    assert 'default_api_base: "http://127.0.0.1:8090/v1"' in provider_ui  # plugins/_llama_server
+    assert 'default_api_base: "http://127.0.0.1:8090/v1"' in provider_ui  # helpers/llama_server.py
     assert 'logo: "/plugins/_onboarding/webui/assets/provider-logos/omlx.svg"' in provider_ui
     assert 'docs_url: "https://github.com/jundot/omlx#readme"' in provider_ui
     assert 'default_api_base: "http://host.docker.internal:8000/v1"' in provider_ui

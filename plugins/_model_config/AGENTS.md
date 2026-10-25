@@ -29,6 +29,8 @@
 - Repair provider-specific model-config aliases at the model-config read/build boundary; keep provider-specific repairs out of provider-agnostic core wrappers such as `models.py`.
 - `vision_model` is an optional fourth slot (alongside chat/utility/embedding): a sidecar model `tools/vision_load.py` calls to caption an image when the Main model's own `vision` flag is false. Unlike chat/utility, it has no per-chat override or preset resolution (`get_vision_model_config`/`build_vision_model` are simple passthroughs) - it is a single global fallback. `hooks.py`'s `get_plugin_config` hook backfills a missing `vision_model` key from `default_config.yaml` for every config read through the generic `helpers.plugins.get_plugin_config()` path (settings UI, model_config helpers, everything) - a saved config.json from before this slot existed is otherwise returned as-is, with no merge against current defaults. `model_config_set` and `hooks.py`'s `save_plugin_config` must keep `vision_model` in the same per-slot cleanup/extraction lists as the other three slots.
 
+- `local_server` (Local model server, `webui/local-server.html`): settings of the llama.cpp server Agent Zero runs (logic in `helpers/local_server.py`, process in `helpers/llama_server.py`, control `api/llama_server.py`). Picking a model sets Main and Utility to `llama_cpp` with the model's alias and this server's address, and Main's vision to the Vision toggle; while Main runs on the server, its context length is the server's. Start/Restart/Stop act on the saved settings; a running server picks up saved changes within a minute (job loop).
+
 ## Work Guidance
 
 - Keep backend model config shape and frontend settings fields synchronized.

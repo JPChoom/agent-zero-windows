@@ -137,23 +137,21 @@ function Install-LlamaServer($choice) {
     $script = @'
 import sys
 sys.path.insert(0, ".")
-from plugins._llama_server.helpers import download
+from helpers import llama_download as download
 variant = sys.argv[1]
 if variant == "auto":
     variant = download.suggested_variant()
 print("Downloading the llama.cpp server (" + variant + " build)...")
 record = download.download(variant)
 print("Installed llama.cpp release " + record["tag"] + " (" + record["variant"] + ")")
-from helpers import plugins
-plugins.toggle_plugin("_llama_server", True)
-print("The llama.cpp server plugin is on: add a .gguf model in Settings > Agent > llama.cpp server.")
+print("Pick a .gguf model in Settings > Agent > Models > Local model server.")
 '@
     $tmp = Join-Path $env:TEMP ("a0-llama-" + [guid]::NewGuid().ToString("N") + ".py")
     Set-Content -Path $tmp -Value $script -Encoding UTF8
     Push-Location $app
     try {
         & $venvPython $tmp $choice
-        if ($LASTEXITCODE -ne 0) { Write-Host "The llama.cpp server could not be installed (see above). Everything else is installed; you can retry in Settings > Agent > llama.cpp server." -ForegroundColor Yellow }
+        if ($LASTEXITCODE -ne 0) { Write-Host "The llama.cpp server could not be installed (see above). Everything else is installed; you can retry in Settings > Agent > Models > Local model server." -ForegroundColor Yellow }
     } finally { Pop-Location; Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
 }
 
