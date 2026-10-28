@@ -1,0 +1,4 @@
+# Keys allowed to sign Agent Zero for Windows release tags (git allowed-signers format).
+# The in-app updater (helpers/windows_update.py) refuses a release tag not signed by one of these.
+# A new key is only ever added in a release signed by a key already listed here.
+JPChoom@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGnYkgiTU77cGSXFZgnbr/kSVzRG+VDp3Lv4H856tz1p Agent Zero for Windows release signing

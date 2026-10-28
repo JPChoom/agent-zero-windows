@@ -18,6 +18,8 @@
 - Defaults must work in a clean checkout and in Docker.
 - Templates must avoid accidentally unignoring private runtime content.
 
+- `release_signers` lists the public keys allowed to sign release tags (git allowed-signers format, principal `JPChoom@users.noreply.github.com`). `helpers/windows_update.verify_release_tag` reads the installed copy, so a release cannot vouch for itself. Only add or replace a key in a release signed by a key already listed; never put a private key in the repository.
+
 ## Work Guidance
 
 - Prefer adding provider metadata here only when it is broadly useful to shipped Agent Zero.
