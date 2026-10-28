@@ -2,6 +2,11 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### New
+- **Thinking budget** for the Main model (*Settings > Agent > Models > Thinking*): **On** (default, as before), **Off** (fastest), or **Auto (Experimental)**: the model thinks on the first step of a turn, where it plans, and after a step that failed, errored or was refused, and skips thinking on the routine steps in between. Works with the local model server (llama.cpp) and LM Studio. The workflow benchmark takes `--thinking on|off|auto` to compare.
+
 ## v1.5
 
 Signed releases checked by the updater, packages installed by hash, a faster safety check on local models, and a hardware report for the local model server.

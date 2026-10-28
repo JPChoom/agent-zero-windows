@@ -71,6 +71,14 @@ vision_model:
 # separate. Handy with one local model (LM Studio or the llama.cpp server).
 single_model_mode: false
 
+# Thinking budget for the Main model (helpers/thinking.py):
+#   on   - the model thinks as it decides (default)
+#   off  - never think (fastest, weaker on hard problems)
+#   auto - EXPERIMENTAL: think on the first step of a turn and after a failed
+#          or refused step, skip it on routine steps in between
+# Applied on llama.cpp and LM Studio only.
+thinking: "on"
+
 # Sampling for the Main and Utility models. Empty (null) = the provider's
 # default. A model's own kwargs (in its settings) win over these.
 # temperature and top_p go to every provider; top_k and repeat_penalty only

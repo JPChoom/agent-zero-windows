@@ -48,6 +48,30 @@
           </div>
         </div>
 
+        <!-- Thinking budget -->
+        <div class="model-section">
+          <div class="section-title">Thinking</div>
+          <div class="section-description">How much the Main model thinks before it answers. Thinking is often most of a step's time on a local GPU. Applied on llama.cpp and LM Studio; other providers are not changed.</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Thinking</div>
+              <div class="field-description" x-text="{
+                on: 'The model decides, as before.',
+                off: 'Never think: fastest, but weaker on hard problems.',
+                auto: 'Think on the first step of a turn and after a step that failed or was refused; skip it on routine steps in between.'
+              }[config.thinking || 'on']"></div>
+            </div>
+            <div class="field-control">
+              <select x-init="config.thinking = config.thinking || 'on'" :value="config.thinking"
+                      @change="if ($event.target.value === 'auto' && !confirm('Experimental feature.\n\nAuto thinking skips the model\'s thinking on routine steps (after a tool result) and keeps it for planning and after errors. It is faster but can make the agent miss things on hard tasks.\n\nTurn it on?')) { $event.target.value = config.thinking; } else { config.thinking = $event.target.value; }">
+                <option value="on">On (default)</option>
+                <option value="auto">Auto (Experimental)</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <!-- Sampling -->
         <template x-if="config.sampling">
         <div class="model-section">

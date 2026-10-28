@@ -36,9 +36,10 @@ def get_plugin_config(default=None, **kwargs):
 
             default[key] = local_server.migrated_settings()
             continue
-        default[key] = default_cfg.get(key, {} if key != "single_model_mode" else False)
+        fallback = {"single_model_mode": False, "thinking": "on"}.get(key, {})
+        default[key] = default_cfg.get(key, fallback)
     return default
 
 
 # Top-level keys added after configs were first saved (see the docstring above).
-BACKFILLED_KEYS = ("vision_model", "single_model_mode", "sampling", "local_server")
+BACKFILLED_KEYS = ("vision_model", "single_model_mode", "sampling", "local_server", "thinking")

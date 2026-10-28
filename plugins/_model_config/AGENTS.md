@@ -31,6 +31,8 @@
 
 - `local_server` (Local model server, `webui/local-server.html`): settings of the llama.cpp server Agent Zero runs (logic in `helpers/local_server.py`, process in `helpers/llama_server.py`, control `api/llama_server.py`). Picking a model sets Main - and Utility, unless "Also use it for the Utility model" is unticked - to `llama_cpp` with the model's alias and this server's address, and Main's vision to the Vision toggle; while Main runs on the server, its context length is the server's. Start/Restart/Stop act on the saved settings; a running server picks up saved changes within a minute (job loop).
 
+- `thinking` (`on` default / `off` / `auto` EXPERIMENTAL, `helpers/thinking.py`, hook `chat_model_call_before/_25_thinking.py`): turns the Main model's thinking off per call on llama.cpp (`chat_template_kwargs.enable_thinking`) and LM Studio (`reasoning_effort: none`, chat-completions route); `auto` thinks on iteration 0 and after a step whose last message looks like trouble (error, denied, traceback, misformat, timeout...). Other providers are not changed.
+
 ## Work Guidance
 
 - Keep backend model config shape and frontend settings fields synchronized.

@@ -265,6 +265,8 @@ async def main(argv=None) -> int:
     parser.add_argument("--only", default="", help="comma-separated task ids")
     parser.add_argument("--with-apps", action="store_true", help="include tasks that drive desktop apps")
     parser.add_argument("--dynamic-sampling", choices=("on", "off", "settings"), default="settings")
+    parser.add_argument("--thinking", choices=("on", "off", "auto", "settings"), default="settings",
+                        help="Main-model thinking budget for this run (Settings > Models > Thinking)")
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--model", default="", help="run with this LM Studio model as Main and Utility model")
     parser.add_argument("--out", default="usr/workflow-benchmark.json")
@@ -283,6 +285,14 @@ async def main(argv=None) -> int:
             return values
 
         model_config.get_sampling = patched
+
+    if args.thinking != "settings":
+        original_config = model_config.get_config
+
+        def with_thinking(*a, **k):
+            return {**(original_config(*a, **k) or {}), "thinking": args.thinking}
+
+        model_config.get_config = with_thinking
 
     if args.model:
         chat_cfg, util_cfg = model_config.get_chat_model_config, model_config._get_utility_model_config
@@ -314,6 +324,7 @@ async def main(argv=None) -> int:
     report = {
         "when": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "dynamic_sampling": args.dynamic_sampling,
+        "thinking": args.thinking,
         "model": model_config.get_chat_model_config().get("name", ""),
         "summary": summarize(results),
         "results": [r.__dict__ for r in results],
