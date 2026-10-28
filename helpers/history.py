@@ -27,6 +27,15 @@ LARGE_MESSAGE_TO_CURRENT_TOPIC_RATIO = 0.5
 LARGE_MESSAGE_TO_HISTORY_TOPIC_RATIO = 0.2
 RAW_MESSAGE_OUTPUT_TEXT_TRIM = 100
 COMPRESSION_TARGET_RATIO = 0.8
+# Early ("soft") compression: started in the background once history passes
+# SOFT_TRIGGER_RATIO of its budget, so a turn rarely reaches the hard limit
+# and has to wait for the summarizing. It ends in the same state a hard pass
+# would (SOFT_TARGET_RATIO == COMPRESSION_TARGET_RATIO: the per-part shares
+# are derived from the target, so a lower target would squeeze the current
+# topic harder than the limit itself does); it only summarizes and merges and
+# never drops a record.
+SOFT_TRIGGER_RATIO = 0.85
+SOFT_TARGET_RATIO = COMPRESSION_TARGET_RATIO
 DEFAULT_OUTPUT_RESERVE_RATIO = 0.1  # fallback when ctx_output is unset
 MIN_HISTORY_RATIO = 0.2  # never squeeze history below this, however large the prompt
 DEFAULT_UTILITY_CTX_INPUT = 0.7  # fallback when ctx_input is unset
@@ -578,7 +587,14 @@ class History(Record):
         data = self.to_dict()
         return _json_dumps(data)
 
-    async def compress(self):
+    async def compress(self, soft: bool = False):
+        """Shrink history until it fits.
+
+        Hard (default): only when over the budget, down to
+        COMPRESSION_TARGET_RATIO of it; may drop the oldest bulk as a last
+        resort. Soft: starts at SOFT_TRIGGER_RATIO, goes down to
+        SOFT_TARGET_RATIO, and never drops anything.
+        """
         compressed = False
         total = self._get_ctx_size_for_history()
         curr, hist, bulk = (
@@ -586,10 +602,10 @@ class History(Record):
             self.get_topics_tokens(),
             self.get_bulks_tokens(),
         )
-        if (curr + hist + bulk) <= total:
+        if (curr + hist + bulk) <= total * (SOFT_TRIGGER_RATIO if soft else 1.0):
             return False
 
-        target = total * COMPRESSION_TARGET_RATIO
+        target = total * (SOFT_TARGET_RATIO if soft else COMPRESSION_TARGET_RATIO)
         prev_total = curr + hist + bulk + 1
         while True:
             curr, hist, bulk = (
@@ -618,7 +634,7 @@ class History(Record):
                     elif over_part == "history_topic":
                         compressed_part = await self.compress_topics()
                     else:
-                        compressed_part = await self.compress_bulks()
+                        compressed_part = await self.compress_bulks(allow_drop=not soft)
                     if compressed_part:
                         break
 
@@ -653,11 +669,13 @@ class History(Record):
             return True
         return False
 
-    async def compress_bulks(self):
+    async def compress_bulks(self, allow_drop: bool = True):
         # merge bulks if possible
         compressed = await self.merge_bulks_by(BULK_MERGE_COUNT)
-        # remove oldest bulk if necessary
+        # remove oldest bulk if necessary (never in a soft pass)
         if not compressed:
+            if not allow_drop:
+                return False
             self.bulks.pop(0)
             return True
         return compressed

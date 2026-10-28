@@ -4,6 +4,9 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## Unreleased
 
+### Improved
+- **Long chats compress before they have to.** History compression only started once the history was already over its limit, so the next step waited for the summarizing (about 3% of turn time over a day, 7% over three days, in bursts of 30 s and more). It now starts in the background at 85% of the limit, runs behind your turn at low priority, steps aside the moment your turn needs the model, and only summarizes - it never drops anything. The hard, blocking pass is still there as the safety net.
+
 ### New
 - **Thinking budget** for the Main model (*Settings > Agent > Models > Thinking*): **On** (default, as before), **Off** (fastest), or **Auto (Experimental)**: the model thinks on the first step of a turn, where it plans, and after a step that failed, errored or was refused, and skips thinking on the routine steps in between. Works with the local model server (llama.cpp) and LM Studio. The workflow benchmark takes `--thinking on|off|auto` to compare.
 

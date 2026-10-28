@@ -1,8 +1,23 @@
 from helpers.extension import Extension
 from agent import LoopData
 from helpers.defer import DeferredTask, THREAD_BACKGROUND
+from helpers import model_concurrency, perf
 
 DATA_NAME_TASK = "_organize_history_task"
+
+
+async def soft_compress(history):
+    """Early compression at low priority (see history.SOFT_TRIGGER_RATIO).
+
+    Its model calls are background work: they queue behind the user's turn and
+    are interrupted when a turn needs the model. Returns None when that
+    happened, so the waiting side knows nothing was achieved and retries
+    itself; a False/True result is the usual "compressed anything?".
+    """
+    try:
+        return await perf.tagged("history_compression", background=True)(history.compress)(soft=True)
+    except model_concurrency.Preempted:
+        return None
 
 
 class OrganizeHistory(Extension):
@@ -17,6 +32,6 @@ class OrganizeHistory(Extension):
 
         # start task
         task = DeferredTask(thread_name=THREAD_BACKGROUND)
-        task.start_task(self.agent.history.compress)
+        task.start_task(soft_compress, self.agent.history)
         # set to agent to be able to wait for it
         self.agent.set_data(DATA_NAME_TASK, task)

@@ -377,7 +377,7 @@ def apply_rate_limiter_sync(
 # Background calls whose work is simply redone later when they give their
 # slot to the user's turn. Memory consolidation is not here: it runs per
 # saved item inside the memorize loop, which would swallow the interruption.
-PREEMPTIBLE_CALLERS = frozenset({"memorize_fragments", "memorize_solutions", "rename_chat"})
+PREEMPTIBLE_CALLERS = frozenset({"memorize_fragments", "memorize_solutions", "rename_chat", "history_compression"})
 
 
 def _prompt_chars(messages: Any) -> int:

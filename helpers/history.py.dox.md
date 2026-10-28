@@ -75,6 +75,7 @@
 
 ## Runtime Contracts
 
+- `History.compress(soft=False)`: the hard pass runs only over the budget and may drop the oldest bulk as a last resort (`compress_bulks(allow_drop=True)`). The soft pass starts at `SOFT_TRIGGER_RATIO` (0.85) of the budget, ends where a hard pass would (`SOFT_TARGET_RATIO` = `COMPRESSION_TARGET_RATIO`) and never drops a record. `extensions/python/message_loop_end/_10_organize_history.py` starts it after every loop iteration as a background task (`soft_compress`: model calls tagged `history_compression`, background priority, interruptible; returns `None` when a turn took the model); `_90_organize_history_wait.py` still blocks only when truly over the limit and compresses itself when the early pass returned `None`.
 - Compression aims at `prompt_budget.effective_ctx_length` (the window the server really loaded, smaller after an overflow), not only the configured `ctx_length`; the utility summary budget uses the utility server's real window.
 
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.

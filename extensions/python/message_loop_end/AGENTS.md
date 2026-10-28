@@ -10,6 +10,7 @@
 
 ## Local Contracts
 
+- `_10_organize_history.py` starts the early history compression (`History.compress(soft=True)`) as a low-priority background task each loop; it must stay summarize-only (never drop records), and a `Preempted` from the model layer ends it quietly (result `None`).
 - Preserve history consistency before saving chats.
 - Do not skip persistence for successful loops unless the hook contract explicitly permits it.
 

@@ -33,7 +33,8 @@ class OrganizeHistoryWait(Extension):
                 # turn continues with whatever history already fits, rather
                 # than aborting prompt assembly for this extension point.
                 try:
-                    compressed = bool(await task.result())
+                    result = await task.result()
+                    compressed = None if result is None else bool(result)
                 except Exception as e:
                     self.agent.set_data(DATA_NAME_TASK, None)
                     self._log_compression_stalled(
@@ -43,6 +44,19 @@ class OrganizeHistoryWait(Extension):
 
                 # Clear the coroutine data after it's done
                 self.agent.set_data(DATA_NAME_TASK, None)
+
+                if compressed is None:
+                    # The early pass stepped aside for a model call of a turn
+                    # (it returns None then): nothing was achieved, so
+                    # compress now, in this turn, which is not interrupted.
+                    if passes < MAX_SYNC_COMPRESSION_PASSES:
+                        continue
+                    self._log_compression_stalled(
+                        before_tokens,
+                        self.agent.history.get_tokens(),
+                        max_passes=True,
+                    )
+                    break
 
                 if already_done:
                     # The task finished before this loop even started, so its
