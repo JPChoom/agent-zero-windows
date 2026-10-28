@@ -180,6 +180,14 @@
     <div class="field-control"><input type="number" min="512" step="512" x-model.number="ls.context_size" :disabled="chatOnServer()" /></div>
   </div>
 
+  <div class="field" x-show="ls.preset !== 'custom'">
+    <div class="field-label">
+      <div class="field-title">Thinking limit</div>
+      <div class="field-description">Tokens a thinking model may think before it has to answer. Very long thinking rarely ends in an answer: it fills the context window and the reply comes back empty ("misformat"). 0 = no limit.</div>
+    </div>
+    <div class="field-control"><input type="number" min="0" step="1024" :value="ls.thinking_budget ?? 6144" @change="ls.thinking_budget = Math.max(0, parseInt($event.target.value) || 0)" /></div>
+  </div>
+
   <!-- advanced -->
   <details class="ls-advanced">
     <summary>Advanced</summary>

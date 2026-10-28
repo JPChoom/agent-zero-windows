@@ -28,6 +28,7 @@
 - Streaming tool snapshots use the same valid-tool preference through `extract_json_root_string`, while preserving the first complete object fallback when no valid tool-call object is present.
 - A tool request whose `"thoughts"` array was never closed (`"headline"`, `"tool_name"`, `"tool_args"` swallowed as array strings) is repaired by closing the array at the first stray key, and only accepted if the result is a valid tool request.
 - `extract_tool_request` accepts a whole-message tool call, or one prose sentence followed by exactly one valid tool call that ends the message (`_trailing_tool_request`). A call followed by more text, two competing calls, or a call quoted mid-reply is still not executed.
+- A call wrapped in a model's native tool-call tags (`<tool_call>`, `<tool>`, `<invoke>`, `<function_call>` and their closing tags) is accepted only when the reply ends in a closing tag (`_tagged_tool_request`): that marks the end of the call, so a call still streaming is never completed early. The repair may add up to two missing closing braces or unescape a final `\"` before them; it never edits a value, never strips tags inside the call, and the result must be the single valid tool request at the end of the reply.
 - Root extraction ignores objects nested inside an open parent object, so streamed wrapper tools such as `parallel` cannot stop early on the first nested `tool_calls` item.
 - Imported dependency areas include: `dirty_json`, `helpers.modules`, `re`, `regex`, `typing`.
 

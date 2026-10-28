@@ -4,6 +4,9 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## Unreleased
 
+### Fixed
+- **"Message misformat" and "I stopped myself here" while coding on a local Qwen model.** Two causes, found in the logs (41 rejected replies). Three quarters were tool calls the model wrapped in its own `<tool_call>` tags and left one closing brace short; they were rejected, the model sent the same reply again ("You have sent the same message again") and the turn ended after six tries. Such a call is now repaired and run when it ends in a closing tag (only missing closing braces are added, nothing else). The rest were replies with no answer at all: the model thought until the context window was full. Over 4,500 logged steps, replies after up to 6k tokens of thinking were almost never empty; past 8k, 29% were, and past 16k all of them. The local model server now ends thinking after 6,144 tokens and has the model answer (*Settings > Agent > Models > Local model server > Thinking limit*, 0 = no limit). The misformat warning now tells the model what to fix.
+
 ### Improved
 - **Long chats compress before they have to.** History compression only started once the history was already over its limit, so the next step waited for the summarizing (about 3% of turn time over a day, 7% over three days, in bursts of 30 s and more). It now starts in the background at 85% of the limit, runs behind your turn at low priority, steps aside the moment your turn needs the model, and only summarizes - it never drops anything. The hard, blocking pass is still there as the safety net.
 

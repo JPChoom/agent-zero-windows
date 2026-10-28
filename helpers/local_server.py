@@ -12,6 +12,12 @@ next to the model slots that use the server. This module turns them into a
 - **context size** follows the Main model slot when Main runs on this
   server, so the two can never disagree; otherwise `context_size`.
 - **vision** adds the model's own `mmproj-*.gguf` from the same folder.
+- **thinking_budget** ends a thinking model's thinking after that many
+  tokens (`--reasoning-budget`) with a nudge to answer now. Measured on a
+  27B Qwen over 4,500 Main-model calls: replies after up to 6k tokens of
+  thinking were almost never empty (about 1%), past 8k they were empty 29%
+  of the time and past 16k always - the thinking ran until the context
+  window was full and no answer came. 0 = no limit. Not for `custom`.
 
 It also lists GGUF files from the usual places (Agent Zero's own models
 folder, LM Studio's, and any folders the user adds), reads a GGUF header to
@@ -33,6 +39,7 @@ PRESETS = ("coding", "balanced", "low_memory", "custom")
 FAST_FLAGS = ["-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "--jinja", "--cache-reuse", "256"]
 LOW_MEMORY_FLAGS = ["-fa", "on", "-ctk", "q4_0", "-ctv", "q4_0", "--jinja", "--cache-reuse", "256"]
 MTP_FLAGS = ["--spec-type", "draft-mtp", "--spec-draft-n-max", "6"]
+THINKING_BUDGET_MESSAGE = "\n\nI have thought about this enough. Now I reply with one JSON tool call.\n"
 DEFAULT_PORT = 8090
 
 DEFAULTS: dict = {
@@ -52,6 +59,7 @@ DEFAULTS: dict = {
     "download_variant": "",
     "vram_check": True,
     "startup_timeout_seconds": 300,
+    "thinking_budget": 6144,
 }
 
 # Files that are never a chat model.
@@ -97,6 +105,14 @@ def preset_args(preset: str, model_path: str, extra_args: str = "") -> list[str]
     return args
 
 
+def thinking_args(preset: str, budget) -> list[str]:
+    """Flags that cap thinking (see the module docstring); none for custom."""
+    budget = _as_int(budget, 0)
+    if preset == "custom" or budget <= 0:
+        return []
+    return ["--reasoning-budget", str(budget), "--reasoning-budget-message", THINKING_BUDGET_MESSAGE]
+
+
 def server_config(cfg: dict | None = None):
     """The ServerConfig the current settings describe."""
     from helpers import llama_server
@@ -109,7 +125,9 @@ def server_config(cfg: dict | None = None):
     if _uses_this_server(chat, port):
         context = _as_int(chat.get("ctx_length"), context)
     model = str(s.get("model_path") or "").strip()
-    extra = preset_args(str(s.get("preset") or "coding"), model, str(s.get("extra_args") or ""))
+    preset = str(s.get("preset") or "coding")
+    extra = preset_args(preset, model, str(s.get("extra_args") or ""))
+    extra += thinking_args(preset, s.get("thinking_budget"))
     if s.get("vision"):
         override = str(s.get("mmproj_path") or "").strip()
         projector = override if override and os.path.isfile(override) else mmproj_for(model)

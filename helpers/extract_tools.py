@@ -27,10 +27,71 @@ def extract_tool_request(content: str) -> dict[str, Any] | None:
     content = content.strip()
     root = extract_json_root_string(content)
     if root != content:
-        return _trailing_tool_request(content)
+        return _trailing_tool_request(content) or _tagged_tool_request(content)
 
     request = _parse_json_root_object(root)
     return request if request is not None and _is_tool_request(request) else None
+
+
+# Qwen-style models fall back to their native tool-call wrapper and wrap the
+# JSON in tags (<tool_call> ... </tool_call>, sometimes </tool> or </invoke>).
+_OPENING_TAGS = re.compile(r"<(tool_call|tool|invoke|function_call)>\s*", re.IGNORECASE)
+_CLOSING_TAGS = re.compile(r"(\s*</(tool_call|tool|invoke|function_call)>)+\s*$", re.IGNORECASE)
+# ...and then often leave the last brace out, or escape the final quote of
+# the last string ('...done\"}}').
+_ESCAPED_FINAL_QUOTE = re.compile(r'\\"(\s*\}+)$')
+
+
+def _tagged_tool_request(content: str) -> dict[str, Any] | None:
+    """A tool call wrapped in tool-call tags, possibly one brace short.
+
+    Only when the reply ends in a closing tag: that marks where the model
+    meant the call to end, so a call still being streamed is never
+    completed and run early. The repair only adds the missing closing
+    braces (at most two) or unescapes the last quote; it never invents a
+    value, and the result must still be a single valid tool request.
+    """
+    closing = _CLOSING_TAGS.search(content)
+    if not closing:
+        return None
+    content = content[: closing.start()].rstrip()
+    starts = _json_root_object_starts(content)
+    if not starts:
+        return None
+    # tags are removed from the text before the call only, never from
+    # inside it (code in an argument may well contain "<tool>")
+    prefix = _OPENING_TAGS.sub("", content[: starts[-1]])
+    call = content[starts[-1]:]
+    for candidate in (call, _ESCAPED_FINAL_QUOTE.sub(r'"\1', call)):
+        depth, in_string = _open_depth(candidate)
+        if in_string or not 0 <= depth <= 2:
+            continue
+        repaired = _trailing_tool_request(prefix + candidate + "}" * depth)
+        if repaired is not None:
+            return repaired
+    return None
+
+
+def _open_depth(text: str) -> tuple[int, bool]:
+    """(unclosed { and [ count, ends inside a string) for a JSON fragment."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "{[":
+            depth += 1
+        elif char in "}]":
+            depth -= 1
+    return depth, in_string
 
 
 def _trailing_tool_request(content: str) -> dict[str, Any] | None:

@@ -1,1 +1,1 @@
-You have misformatted your message. Follow system prompt instructions on JSON message formatting precisely.
+You have misformatted your message: it contained no valid tool call. Reply with exactly one JSON object as the system prompt shows: no <tool_call> tags, nothing after it, every brace closed. If you were thinking at length, stop and act now with one tool call.

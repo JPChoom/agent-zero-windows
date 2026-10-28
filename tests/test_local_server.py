@@ -261,6 +261,18 @@ def test_presets(tmp_path):
         local_server.preset_args("custom", mtp, "--host 0.0.0.0")
 
 
+def test_thinking_is_capped_unless_custom_or_off(tmp_path):
+    model = _gguf(tmp_path / "Qwen.gguf", nextn=1)
+    cfg = {"local_server": {"model_path": model}}
+    args = local_server.server_config(cfg).extra_args
+    assert args[args.index("--reasoning-budget") + 1] == "6144"  # the default
+    assert args[args.index("--reasoning-budget-message") + 1] == local_server.THINKING_BUDGET_MESSAGE
+    cfg["local_server"]["thinking_budget"] = 0
+    assert "--reasoning-budget" not in local_server.server_config(cfg).extra_args
+    cfg["local_server"].update(thinking_budget=4096, preset="custom", extra_args="-fa on")
+    assert local_server.server_config(cfg).extra_args == ["-fa", "on"]  # custom is taken as typed
+
+
 def test_context_follows_the_main_slot_while_main_uses_this_server(tmp_path):
     model = _gguf(tmp_path / "Qwen.gguf", nextn=1)
     cfg = {"chat_model": {"provider": "llama_cpp", "api_base": "http://127.0.0.1:8090/v1", "ctx_length": 49152},
@@ -277,9 +289,9 @@ def test_coding_preset_builds_the_benchmarked_command(tmp_path):
     cfg = {"chat_model": {"provider": "llama_cpp", "ctx_length": 49152},
            "local_server": {"model_path": model, "preset": "coding"}}
     cmd = local_server.server_config(cfg).command()
-    tail = " ".join(cmd[cmd.index("-c"):])
+    tail = " ".join(cmd[cmd.index("-c"):cmd.index("--reasoning-budget-message")])
     assert tail == ("-c 49152 -ngl 99 -np 1 -fa on -ctk q8_0 -ctv q8_0 --jinja --cache-reuse 256 "
-                    "--spec-type draft-mtp --spec-draft-n-max 6")
+                    "--spec-type draft-mtp --spec-draft-n-max 6 --reasoning-budget 6144")
 
 
 def test_vision_adds_the_models_own_projector(tmp_path):
