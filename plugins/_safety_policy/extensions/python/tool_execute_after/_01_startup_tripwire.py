@@ -18,8 +18,9 @@ from plugins._safety_policy.helpers import audit_log, denials, startup_watch
 DATA_KEY = "_plugin._safety_policy.startup_snapshot"
 
 
-async def check(agent, pending: dict) -> None:
-    """Compare against `pending`'s snapshot; undo and stop on any change."""
+async def check(agent, pending: dict, stop: bool = True) -> None:
+    """Compare against `pending`'s snapshot; undo on any change and, unless
+    `stop` is off (the turn has already ended), stop the task."""
     agent.set_data(DATA_KEY, None)
     before = pending.get("snapshot")
     if before is None:
@@ -80,7 +81,8 @@ async def check(agent, pending: dict) -> None:
         )
     except Exception:
         pass
-    raise HandledException(Exception("Startup tripwire: autostart change undone"))
+    if stop:
+        raise HandledException(Exception("Startup tripwire: autostart change undone"))
 
 
 class StartupTripwireAfter(Extension):

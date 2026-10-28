@@ -3,7 +3,7 @@
 <body>
 <div class="model-section local-server"
      x-data="{
-       info: null, busy: false, error: '', note: '', plan: null, modelInfo: null, timer: null,
+       info: null, busy: false, error: '', note: '', plan: null, modelInfo: null, timer: null, alsoUtility: true,
        get ls() { return config.local_server; },
        presets: [
          { id: 'coding', label: 'Coding (fast)', hint: 'Flash attention, 8-bit memory cache, prompt reuse; plus MTP self-drafting when the model has an MTP layer (about 2.5x faster answers on a 27B Qwen).' },
@@ -42,12 +42,12 @@
          const m = (this.info?.models || []).find(x => x.path === path);
          if (!m) return;
          this.ls.model_path = m.path;
-         for (const slot of ['chat_model', 'utility_model']) {
+         for (const slot of this.alsoUtility ? ['chat_model', 'utility_model'] : ['chat_model']) {
            Object.assign(config[slot], { provider: 'llama_cpp', name: m.alias, api_base: this.base() });
          }
          if (!m.has_mmproj) this.ls.vision = false;
          config.chat_model.vision = !!this.ls.vision;
-         this.note = 'Main and Utility now use ' + m.alias + ' on this server. Save to apply; a running server restarts with it on its own.';
+         this.note = (this.alsoUtility ? 'Main and Utility now use ' : 'Main now uses ') + m.alias + ' on this server. Save to apply; a running server restarts with it on its own.';
          this.call('model_info', { path: m.path });
        },
        setVision(on) {
@@ -123,6 +123,7 @@
           <option :value="m.path" :selected="m.path === ls.model_path" x-text="m.folder + ': ' + m.name + ' (' + mb(m.size_mb) + ')'"></option>
         </template>
       </select>
+      <label class="ls-check"><input type="checkbox" x-model="alsoUtility" /> Also use it for the Utility model (memory, titles, safety checks). Untick to keep a separate Utility model, for example a small one on another PC.</label>
       <input type="text" x-model="ls.model_path" placeholder="C:\path\to\model.gguf" @change="call('model_info', { path: ls.model_path })" />
       <input type="text" :value="(ls.model_folders || []).join('; ')" placeholder="More model folders (separate with ;)"
              @change="ls.model_folders = $event.target.value.split(';').map(s => s.trim()).filter(Boolean)" />
@@ -159,6 +160,16 @@
         <input type="checkbox" :checked="ls.vision" @change="setVision($event.target.checked)" /><span class="toggler"></span>
       </label>
     </div>
+  </div>
+  <div class="field" x-show="ls.vision">
+    <div class="field-label">
+      <div class="field-title">Image projector file</div>
+      <div class="field-description">
+        <span x-show="modelInfo && modelInfo.path === ls.model_path && modelInfo.mmproj">Found: <code x-text="modelInfo.mmproj"></code>.</span>
+        Chosen by name from the model's folder; enter a path to use a different one. A projector from another model loads but gives wrong answers.
+      </div>
+    </div>
+    <div class="field-control"><input type="text" x-model="ls.mmproj_path" placeholder="C:\path\to\mmproj-model.gguf" /></div>
   </div>
 
   <div class="field">
@@ -219,6 +230,7 @@
     .local-server .ls-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .local-server .ls-col { display: flex; flex-direction: column; gap: 6px; }
     .local-server .ls-error { color: var(--color-error, #c33); }
+    .local-server .ls-check { display: flex; gap: 6px; align-items: flex-start; font-size: 0.9em; opacity: 0.9; }
     .local-server .ls-note { color: var(--color-primary, #4a90e2); margin-top: 4px; }
     .local-server .ls-advanced { margin-top: 8px; }
     .local-server .ls-advanced summary { cursor: pointer; opacity: 0.85; padding: 4px 0; }

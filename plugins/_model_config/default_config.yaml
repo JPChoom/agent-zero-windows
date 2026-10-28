@@ -115,6 +115,7 @@ local_server:
   preset: "coding"
   extra_args: ""
   vision: false
+  mmproj_path: ""
   port: 8090
   context_size: 32768
   gpu_layers: 99

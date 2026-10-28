@@ -18,6 +18,16 @@ from plugins._autostart.helpers import startup
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows Startup entry")
 
 
+@pytest.fixture(autouse=True)
+def _a_venv_pythonw_exists(tmp_path, monkeypatch):
+    """enable() refuses without the install's .venv\Scripts\pythonw.exe,
+    which a clean checkout (CI) does not have; give it a stand-in file."""
+    fake = tmp_path / "Scripts" / "pythonw.exe"
+    fake.parent.mkdir()
+    fake.write_bytes(b"")
+    monkeypatch.setattr(startup, "pythonw", lambda: fake)
+
+
 class FakeRegistry:
     def __init__(self):
         self.values = {}

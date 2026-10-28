@@ -271,7 +271,8 @@ def test_write_private_json_does_not_follow_preexisting_temp_symlink(tmp_path):
     assert leak_target.read_text(encoding="utf-8") == "safe"
     assert stale_tmp.is_symlink()
     assert '"token": "secret"' in path.read_text(encoding="utf-8")
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows has no owner-only permission bits; it keeps the file ACL
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 @pytest.mark.posix_only

@@ -282,6 +282,27 @@ def test_tripwire_gates_are_protected():
 
     assert ("tool_execute_before", "_90_startup_tripwire") in extension.PROTECTED_GATES
     assert ("tool_execute_after", "_01_startup_tripwire") in extension.PROTECTED_GATES
+    assert ("monologue_end", "_01_startup_tripwire") in extension.PROTECTED_GATES
+
+
+def test_a_tool_that_raised_is_checked_when_the_turn_ends(monkeypatch):
+    """A tool that raised never reaches tool_execute_after; the end of the
+    turn must still undo what it added (without raising: the turn is over)."""
+    from plugins._safety_policy.extensions.python.monologue_end import _01_startup_tripwire as end
+    from plugins._safety_policy.extensions.python.tool_execute_after import _01_startup_tripwire as after
+    from plugins._safety_policy.helpers import audit_log
+
+    added = _snap(run_values={"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Evil": ("x.exe", 1)})
+    undone = []
+    monkeypatch.setattr(startup_watch, "take_snapshot", lambda: added)
+    monkeypatch.setattr(startup_watch, "undo", lambda changes, b: undone.extend(changes) or "C:\q")
+    monkeypatch.setattr(audit_log, "append_denial", lambda *a, **k: None)
+    agent = _Agent()
+    agent.set_data(after.DATA_KEY, {"tool": "code_execution_tool", "snapshot": _snap()})
+    asyncio.run(end.StartupTripwireTurnEnd(agent=agent).execute())  # no exception
+    assert [c.target.rsplit("\\", 1)[-1] for c in undone] == ["Evil"]
+    assert denials.recent(agent)[0]["category"] == "persistence"
+    assert agent.get_data(after.DATA_KEY) is None
 
 
 @pytest.mark.skipif(os.name != "nt", reason="reads the Windows registry")

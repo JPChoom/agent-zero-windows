@@ -24,19 +24,22 @@ def _iter_prompt_files():
 
 async def _build_system_text(profile: str = "agent0") -> str:
     old_args = dict(runtime.args)
-    runtime.args.clear()
-    runtime.args["dockerized"] = "true"
-
-    ctx = AgentContext(
-        config=AgentConfig(
-            profile=profile,
-            knowledge_subdirs=["custom", "default"],
-            mcp_servers='{"mcpServers": {}}',
-        ),
-        type=AgentContextType.USER,
-        set_current=False,
-    )
+    ctx = None
     try:
+        # Inside the try: if building the context fails, the runtime
+        # arguments must still be restored (a leaked dockerized flag broke
+        # unrelated tests after it).
+        runtime.args.clear()
+        runtime.args["dockerized"] = "true"
+        ctx = AgentContext(
+            config=AgentConfig(
+                profile=profile,
+                knowledge_subdirs=["custom", "default"],
+                mcp_servers='{"mcpServers": {}}',
+            ),
+            type=AgentContextType.USER,
+            set_current=False,
+        )
         system = await ctx.agent0.get_system_prompt(ctx.agent0.loop_data)
         # Drop the parts that come from the local user's own data (their
         # usr/promptincludes files and saved behaviour rules): the budget
@@ -47,7 +50,8 @@ async def _build_system_text(profile: str = "agent0") -> str:
             if not part.lstrip().startswith(_USER_OWNED_SECTIONS)
         )
     finally:
-        AgentContext.remove(ctx.id)
+        if ctx is not None:
+            AgentContext.remove(ctx.id)
         runtime.args.clear()
         runtime.args.update(old_args)
 

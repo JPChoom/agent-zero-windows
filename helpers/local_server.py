@@ -41,6 +41,7 @@ DEFAULTS: dict = {
     "preset": "coding",
     "extra_args": "",
     "vision": False,
+    "mmproj_path": "",
     "port": DEFAULT_PORT,
     "context_size": 32768,
     "gpu_layers": 99,
@@ -110,7 +111,8 @@ def server_config(cfg: dict | None = None):
     model = str(s.get("model_path") or "").strip()
     extra = preset_args(str(s.get("preset") or "coding"), model, str(s.get("extra_args") or ""))
     if s.get("vision"):
-        projector = mmproj_for(model)
+        override = str(s.get("mmproj_path") or "").strip()
+        projector = override if override and os.path.isfile(override) else mmproj_for(model)
         if projector:
             extra += ["--mmproj", projector]
     return llama_server.ServerConfig(
@@ -184,13 +186,34 @@ def list_models(s: dict | None = None) -> list[dict]:
     return sorted(items, key=lambda m: (m["folder"] != "Agent Zero", m["folder"] != "LM Studio", m["name"].lower()))
 
 
+_QUANT_TOKEN = re.compile(r"^(q\d.*|iq\d.*|f16|f32|bf16|fp16|mxfp4|gguf|mmproj|nomtp)$", re.IGNORECASE)
+
+
+def _name_tokens(stem: str) -> set[str]:
+    return {t.lower() for t in re.split(r"[^A-Za-z0-9.]+", stem) if t and not _QUANT_TOKEN.match(t)}
+
+
 def mmproj_for(model_path: str) -> str:
-    """The vision projector next to a model (mmproj-*.gguf), or ""."""
+    """The vision projector that belongs to a model, or "".
+
+    Looks for mmproj-*.gguf next to the model. One file is taken as is; with
+    several, the one whose name shares the most words with the model's name
+    (quantization words left out) wins, and when none shares any the answer
+    is "" rather than a guess - a projector from another model loads without
+    complaint and then produces nonsense. The user can always name one
+    (local_server.mmproj_path).
+    """
     folder = os.path.dirname(model_path or "")
     if not folder or not os.path.isdir(folder):
         return ""
     candidates = sorted(n for n in os.listdir(folder) if n.lower().startswith("mmproj") and n.lower().endswith(".gguf"))
-    return os.path.join(folder, candidates[0]) if candidates else ""
+    if not candidates:
+        return ""
+    if len(candidates) == 1:
+        return os.path.join(folder, candidates[0])
+    wanted = _name_tokens(Path(model_path).stem)
+    scored = sorted(((len(wanted & _name_tokens(Path(n).stem)), n) for n in candidates), key=lambda x: (-x[0], x[1]))
+    return os.path.join(folder, scored[0][1]) if scored[0][0] > 0 else ""
 
 
 # ---------------------------------------------------------------- GGUF header

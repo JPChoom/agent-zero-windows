@@ -184,7 +184,22 @@ def test_saved_changes_restart_a_running_server_but_never_mid_turn(monkeypatch, 
     asyncio.run(ext.LlamaServerAutostart(agent=None).execute())
     assert sup.starts == []  # a turn is running: wait
 
+    # no model call is waiting, but a chat is mid-turn (a tool is running)
     monkeypatch.setattr(model_concurrency, "foreground_busy", lambda: False)
+    from agent import AgentContext
+
+    class _Ctx:
+        def __init__(self, running):
+            self._running = running
+
+        def is_running(self):
+            return self._running
+
+    monkeypatch.setattr(AgentContext, "all", staticmethod(lambda: [_Ctx(False), _Ctx(True)]))
+    asyncio.run(ext.LlamaServerAutostart(agent=None).execute())
+    assert sup.starts == []  # waits for the turn to finish
+
+    monkeypatch.setattr(AgentContext, "all", staticmethod(lambda: [_Ctx(False)]))
     asyncio.run(ext.LlamaServerAutostart(agent=None).execute())
     assert sup.stops == 1 and sup.starts[0].identity() == wanted
 
@@ -277,6 +292,40 @@ def test_vision_adds_the_models_own_projector(tmp_path):
     assert cmd[cmd.index("--mmproj") + 1] == str(projector)
 
 
+def test_projector_is_matched_to_the_model_by_name(tmp_path):
+    model = tmp_path / "Qwen3.8-27B-Uncensored-Q4_K_M.gguf"
+    model.write_bytes(b"x")
+    for name in ("mmproj-Gemma3-4B-F16.gguf", "mmproj-Qwen3.8-27B-Uncensored-F16.gguf", "mmproj-Aaa-F16.gguf"):
+        (tmp_path / name).write_bytes(b"x")
+    assert local_server.mmproj_for(str(model)).endswith("mmproj-Qwen3.8-27B-Uncensored-F16.gguf")
+
+
+def test_several_projectors_and_no_match_means_no_guess(tmp_path):
+    model = tmp_path / "Llama-3-8B-Q4_K_M.gguf"
+    model.write_bytes(b"x")
+    for name in ("mmproj-Gemma3-4B-F16.gguf", "mmproj-Qwen-VL-F16.gguf"):
+        (tmp_path / name).write_bytes(b"x")
+    assert local_server.mmproj_for(str(model)) == ""
+    only = tmp_path / "sub"
+    only.mkdir()
+    (only / "m.gguf").write_bytes(b"x")
+    (only / "mmproj-whatever-F16.gguf").write_bytes(b"x")
+    assert local_server.mmproj_for(str(only / "m.gguf")).endswith("mmproj-whatever-F16.gguf")  # a single file is taken
+
+
+def test_a_named_projector_overrides_the_guess(tmp_path):
+    model = _gguf(tmp_path / "Qwen.gguf")
+    mine = tmp_path / "elsewhere.gguf"
+    mine.write_bytes(b"x")
+    (tmp_path / "mmproj-Qwen-F16.gguf").write_bytes(b"x")
+    cfg = {"local_server": {"model_path": model, "vision": True, "preset": "balanced", "mmproj_path": str(mine)}}
+    cmd = local_server.server_config(cfg).command()
+    assert cmd[cmd.index("--mmproj") + 1] == str(mine)
+    cfg["local_server"]["mmproj_path"] = str(tmp_path / "missing.gguf")  # not a file: back to the name match
+    cmd = local_server.server_config(cfg).command()
+    assert cmd[cmd.index("--mmproj") + 1].endswith("mmproj-Qwen-F16.gguf")
+
+
 def test_model_list_skips_projectors_and_embeddings(tmp_path, monkeypatch):
     own, lms = tmp_path / "own", tmp_path / "lms" / "pub" / "repo"
     own.mkdir(); lms.mkdir(parents=True)
@@ -327,7 +376,8 @@ def test_settings_ui_wires_main_and_utility_on_pick():
     from pathlib import Path
 
     ui = Path("plugins/_model_config/webui/local-server.html").read_text(encoding="utf-8")
-    assert "for (const slot of ['chat_model', 'utility_model'])" in ui
+    assert "this.alsoUtility ? ['chat_model', 'utility_model'] : ['chat_model']" in ui  # Utility is optional
+    assert "alsoUtility: true" in ui  # on by default, as before
     assert "provider: 'llama_cpp', name: m.alias, api_base: this.base()" in ui
     config_html = Path("plugins/_model_config/webui/config.html").read_text(encoding="utf-8")
     assert "/plugins/_model_config/webui/local-server.html" in config_html

@@ -23,8 +23,12 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows install
 
 
 def ps(*args: str, timeout: int = 120) -> subprocess.CompletedProcess:
+    # Started from PowerShell 7 (the CI default shell), the inherited
+    # PSModulePath hides Windows PowerShell's own modules, so Get-FileHash and
+    # friends are "not recognized"; let powershell.exe build its own.
+    env = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
     return subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", *args],
-                          capture_output=True, text=True, timeout=timeout)
+                          capture_output=True, text=True, timeout=timeout, env=env)
 
 
 @pytest.mark.parametrize("script", ["install.ps1", "uninstall.ps1"])

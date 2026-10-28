@@ -2,6 +2,14 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Fixed
+- **The GitHub test check passes on a clean checkout.** It had failed on every release push since v1.2 because the suite assumed things only present on the developer's PC. One was a real bug: Agent Zero crashed listing plugins when `usr/plugins` did not exist yet (a fresh clone has no such folder); it is now treated as empty. Also: the memory "last used" stamp was never saved in the first ten minutes after the PC booted; a test that leaked a Docker flag into the tests after it; installer tests inheriting PowerShell 7's module path; autostart and Discord tests assuming an install and an optional package.
+- A running llama.cpp server is no longer restarted for a saved setting change while a chat is in the middle of a turn (between two model calls, while a tool runs); it waits until no chat is running.
+- The startup tripwire also checks when a turn ends, so an autostart entry added by a tool that then failed is undone straight away instead of at the next tool call.
+- The image projector for a local model is picked by name when a folder holds several, and never guessed; a path can be given instead. The model picker has an "Also use it for the Utility model" box, so a separate Utility model (for example on another PC) is not overwritten.
+
 ## v1.4.1
 
 The local model server (llama.cpp) is now part of the Models settings, with presets that make it fast for coding, and three llama.cpp fixes.

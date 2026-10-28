@@ -7,7 +7,8 @@ The job loop runs about once a minute:
   while running is the supervisor's own job.
 - A running server whose saved settings changed (another model, preset,
   context size...) is restarted with the new ones, but only while no
-  model call is waiting or running, so a turn is never cut off.
+  agent turn is running at all (a turn spends most of its time between model
+  calls, in tools), so a turn is never cut off.
 """
 
 import asyncio
@@ -18,6 +19,23 @@ from helpers.print_style import PrintStyle
 
 _tried = {"done": False}
 
+
+def _turn_active() -> bool:
+    """Is any chat in the middle of a turn, or a model call waiting or running?
+
+    A turn alternates model calls with tools, terminals and file edits; between
+    two model calls no call is waiting, so the model-call check alone lets a
+    restart land mid-turn (the model is gone for a few seconds and the next
+    call fails). Chat contexts report whether their task is alive.
+    """
+    if model_concurrency.foreground_busy():
+        return True
+    try:
+        from agent import AgentContext
+
+        return any(context.is_running() for context in AgentContext.all())
+    except Exception:
+        return True  # cannot tell: do not restart now
 
 class LlamaServerAutostart(Extension):
     async def execute(self, **kwargs):
@@ -44,7 +62,7 @@ class LlamaServerAutostart(Extension):
 
     async def _apply_changes(self, sup, config) -> None:
         running = sup.running_identity()
-        if not running or running == config.identity() or model_concurrency.foreground_busy():
+        if not running or running == config.identity() or _turn_active():
             return
         PrintStyle.standard("llama.cpp server settings changed - restarting it with the new ones.")
         try:

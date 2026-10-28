@@ -117,7 +117,10 @@ def touch(memory, docs) -> None:
     if not changed:
         return
     key = str(getattr(memory, "memory_subdir", ""))
-    if time.monotonic() - _last_saved.get(key, 0.0) >= _SAVE_INTERVAL_SECONDS:
+    # Never saved yet = save now. (A 0.0 default made a PC within its first
+    # _SAVE_INTERVAL_SECONDS of uptime skip the first save: monotonic() is
+    # seconds since boot.)
+    if time.monotonic() - _last_saved.get(key, float("-inf")) >= _SAVE_INTERVAL_SECONDS:
         _last_saved[key] = time.monotonic()
         try:
             memory._save_db()

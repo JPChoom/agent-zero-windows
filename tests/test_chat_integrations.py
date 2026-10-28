@@ -168,7 +168,7 @@ def captured(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_discord_dm_from_an_allowed_user_reaches_the_agent(captured, monkeypatch):
-    import discord
+    discord = pytest.importorskip("discord", reason="the Discord plugin's own requirements are not installed")
 
     seen, ctx = captured
 
@@ -204,7 +204,7 @@ async def test_discord_dm_from_an_allowed_user_reaches_the_agent(captured, monke
 
 @pytest.mark.asyncio
 async def test_discord_ignores_users_not_on_the_allowlist(captured, monkeypatch):
-    import discord
+    discord = pytest.importorskip("discord", reason="the Discord plugin's own requirements are not installed")
 
     seen, _ = captured
     monkeypatch.setattr(discord, "DMChannel", object)
