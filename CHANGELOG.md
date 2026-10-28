@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.5
+
+Signed releases checked by the updater, packages installed by hash, a faster safety check on local models, and a hardware report for the local model server.
 
 ### Improved
 - **The safety check reuses the model's prompt cache.** It showed the last 25 messages, a window that slid one message per tool step, so a local server re-read the whole check prompt every time (measured on an RTX 4090 with llama.cpp: about 22,000 tokens, 8.8 s per step). The window now starts at a fixed message and moves in steps of 12, so the prompt only grows at its end and the server reuses it; the check sees 25-36 messages instead of exactly 25.
@@ -12,7 +14,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ### Security
 - **Packages are installed by hash.** `requirements.lock.txt` now carries the SHA-256 of every file PyPI publishes for each locked version, and the in-app updater, the setup script and the GitHub test run install with `pip install --require-hashes`: a package that was changed or swapped on the index fails the install instead of running. The updater also installs from the lock when only the lock changed.
-- **Releases can be signed.** The in-app updater verifies a release tag's signature against the release keys shipped with the installed version (`conf/release_signers`) and refuses an unsigned or differently signed release; a version without keys skips the check.
+- **Releases are signed, and updates check it.** From this version on, every release tag is signed with the project's release key, and the in-app updater installs a release only when its signature matches a key shipped with the version you already have (`conf/release_signers`). An unsigned release, or one signed by any other key, is refused before anything changes - even if the GitHub account or the download path were taken over, a fake update would not install. The release key is password-protected and kept off the repository.
 
 ## v1.4.2
 
