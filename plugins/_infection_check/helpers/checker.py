@@ -114,6 +114,22 @@ def _retire_stale_requests(agent: "Agent", keep: str) -> None:
         pass
 
 
+def history_window_start(count: int, size: int) -> int:
+    """First history message the check shows: at least `size` messages.
+
+    A window of exactly the last `size` messages slides one message per tool
+    step, so the start of the prompt changes every time and a local server
+    re-reads all of it (measured: ~22,000 tokens, ~8.8 s per step on an RTX
+    4090). Anchored, the start stays put for `size // 2` steps and the prompt
+    only grows at the end, which the server's prompt cache reuses; the check
+    sees between `size` and `size + size // 2 - 1` messages.
+    """
+    if size <= 0 or count <= size:
+        return 0
+    step = max(1, size // 2)
+    return ((count - size) // step) * step
+
+
 def _canonical(args) -> str:
     try:
         return json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
@@ -348,7 +364,7 @@ class InfectionChecker:
         # Build context from recent history
         hist = agent.history.output()
         if self.history_size > 0:
-            hist = hist[-self.history_size :]
+            hist = hist[history_window_start(len(hist), self.history_size):]
 
         # Filter out previously blocked entries
         filtered: list = []

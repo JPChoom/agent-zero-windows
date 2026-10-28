@@ -4,6 +4,9 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## Unreleased
 
+### Improved
+- **The safety check reuses the model's prompt cache.** It showed the last 25 messages, a window that slid one message per tool step, so a local server re-read the whole check prompt every time (measured on an RTX 4090 with llama.cpp: about 22,000 tokens, 8.8 s per step). The window now starts at a fixed message and moves in steps of 12, so the prompt only grows at its end and the server reuses it; the check sees 25-36 messages instead of exactly 25.
+
 ### Docs
 - **[Local model server guide](docs/guides/local-model-server.md)** with measured speed on an RTX 4090 (Qwen3.8-27B Q4_K_M: 47 tokens/s with the fast flags, 99-136 with MTP drafting at 2-6 tokens, n-gram drafting no help), so the Coding preset's choice of 6 is documented, not assumed.
 

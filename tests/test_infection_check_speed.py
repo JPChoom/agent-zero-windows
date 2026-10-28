@@ -248,3 +248,14 @@ def test_checker_model_calls_are_tagged():
     asyncio.run(run())
     assert seen["caller"] == "infection_check"
     assert perf.CALLER.get() == ""  # reset afterwards
+
+
+def test_history_window_start_is_anchored_so_the_prompt_prefix_stays_the_same():
+    starts = [C.history_window_start(n, 25) for n in range(20, 80)]
+    # never fewer than 25 messages, never more than 25 + 12 - 1
+    for n, start in zip(range(20, 80), starts):
+        assert n - start >= min(n, 25) and n - start <= 36
+    # the start moves in jumps of 12, not one message per step
+    changes = sum(1 for a, b in zip(starts, starts[1:]) if a != b)
+    assert changes <= 5
+    assert C.history_window_start(10, 25) == 0 and C.history_window_start(10, 0) == 0
