@@ -169,3 +169,97 @@ async def test_update_notification_only_when_a_newer_release_exists(repos, monke
 
     monkeypatch.setattr(wu, "fetch_latest_release", _release("v1.0"))
     assert await update_check.check_version() == {}
+
+
+# -- signed releases (helpers/windows_update.verify_release_tag) ---------------
+
+import shutil  # noqa: E402
+
+needs_ssh_keygen = pytest.mark.skipif(shutil.which("ssh-keygen") is None, reason="ssh-keygen not available")
+
+
+def _key(folder, name):
+    path = folder / name
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", name, "-f", str(path)],
+                   check=True, capture_output=True)
+    return path
+
+
+def _signed_tag(repo, tag, key):
+    _git(repo, "-c", "gpg.format=ssh", "-c", f"user.signingkey={key}.pub", "tag", "-s", tag, "-m", tag)
+
+
+def _trust(local, *keys):
+    conf = local / "conf"
+    conf.mkdir(exist_ok=True)
+    lines = ["# release keys"]
+    for key in keys:
+        lines.append('t@example.com namespaces="git" ' + (key.parent / (key.name + ".pub")).read_text().strip())
+    (conf / "release_signers").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+@needs_ssh_keygen
+def test_a_release_signed_by_the_release_key_installs(repos, tmp_path):
+    key = _key(tmp_path, "release")
+    _trust(repos["local"], key)
+    _commit(repos["origin"], "app.py", "print(3)\n", "third")
+    _signed_tag(repos["origin"], "v1.2", key)
+    assert wu.apply("v1.2")["updated_to"] == "v1.2"
+
+
+@needs_ssh_keygen
+def test_an_unsigned_release_is_refused_and_nothing_changes(repos, tmp_path):
+    _trust(repos["local"], _key(tmp_path, "release"))
+    before = _git(repos["local"], "rev-parse", "HEAD")
+    with pytest.raises(wu.UpdateError, match="not signed by the Agent Zero for Windows release key"):
+        wu.apply("v1.1")  # a plain annotated tag, no signature
+    assert _git(repos["local"], "rev-parse", "HEAD") == before
+
+
+@needs_ssh_keygen
+def test_a_release_signed_by_another_key_is_refused(repos, tmp_path):
+    _trust(repos["local"], _key(tmp_path, "release"))
+    _commit(repos["origin"], "app.py", "print(3)\n", "third")
+    _signed_tag(repos["origin"], "v1.2", _key(tmp_path, "attacker"))
+    before = _git(repos["local"], "rev-parse", "HEAD")
+    with pytest.raises(wu.UpdateError, match="not signed"):
+        wu.apply("v1.2")
+    assert _git(repos["local"], "rev-parse", "HEAD") == before
+
+
+@needs_ssh_keygen
+def test_the_incoming_release_cannot_bring_its_own_key(repos, tmp_path):
+    """The trusted keys are the installed version's, not the release's."""
+    _trust(repos["local"], _key(tmp_path, "release"))
+    attacker = _key(tmp_path, "attacker")
+    conf = repos["origin"] / "conf"
+    conf.mkdir()
+    (conf / "release_signers").write_text(
+        't@example.com namespaces="git" ' + (tmp_path / "attacker.pub").read_text().strip() + "\n", encoding="utf-8")
+    _git(repos["origin"], "add", "conf/release_signers")
+    _git(repos["origin"], "commit", "-q", "-m", "swap the key")
+    _signed_tag(repos["origin"], "v1.2", attacker)
+    with pytest.raises(wu.UpdateError, match="not signed"):
+        wu.apply("v1.2")
+
+
+def test_without_release_keys_the_check_is_skipped(repos):
+    assert not (repos["local"] / "conf" / "release_signers").exists()
+    assert wu.apply("v1.1")["updated_to"] == "v1.1"  # releases from before signing began
+
+
+def test_packages_install_from_the_hashed_lock(repos):
+    (repos["local"] / "requirements.lock.txt").write_text("a==1 \\n    --hash=sha256:" + "0" * 64 + "\n", encoding="utf-8")
+    assert wu.install_command()[-3:] == ["--require-hashes", "-r", "requirements.lock.txt"]
+    (repos["local"] / "requirements.lock.txt").unlink()
+    assert wu.install_command()[-2:] == ["-r", "requirements.txt"]
+
+
+def test_shipped_lock_has_a_hash_for_every_pin():
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "requirements.lock.txt").read_text(encoding="utf-8")
+    entries = [block for block in text.split("\n") if "==" in block and not block.startswith("#")]
+    assert entries
+    blocks = text.split("==")[1:]
+    assert all("--hash=sha256:" in block.split("\n", 2)[1] for block in blocks)

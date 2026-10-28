@@ -16,6 +16,7 @@ docs focus on practical setup, screenshots, and user workflows.
 - **[First-Run Onboarding](guides/onboarding.md):** Choose Cloud, AI account, or Local access, then select main and utility models.
 - **[Installation Guide](setup/installation.md):** A0 Launcher downloads, A0 Install, direct Docker, updates, and advanced Docker setup (includes [How to Update](setup/installation.md#how-to-update-agent-zero)).
 - **[A0 CLI Connector](guides/a0-cli-connector.md):** Install the host connector for a running Agent Zero instance, use the command palette, and switch Browser modes.
+- **[Local Model Server](guides/local-model-server.md):** Run llama.cpp from Agent Zero, presets, and measured speed on an RTX 4090.
 - **[Self Update](guides/self-update.md):** How the in-app updater works (technical reference).
 - **[VPS Deployment](setup/vps-deployment.md):** Deploy Agent Zero on a remote server.
 - **[Development Setup](setup/dev-setup.md):** Set up a local development environment.
@@ -88,6 +89,7 @@ docs focus on practical setup, screenshots, and user workflows.
     - [Choosing Your LLMs](setup/installation.md#choosing-your-llms)
     - [Installing Ollama (Local Models)](setup/installation.md#installing-and-using-ollama-local-models)
     - [Using on Mobile Devices](setup/installation.md#using-agent-zero-on-your-mobile-device)
+  - [Local Model Server (llama.cpp)](guides/local-model-server.md)
   - [Self Update (technical)](guides/self-update.md)
   - [VPS Deployment](setup/vps-deployment.md)
   - [Development Setup](setup/dev-setup.md)

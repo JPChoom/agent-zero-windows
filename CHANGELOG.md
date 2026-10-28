@@ -2,6 +2,15 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Docs
+- **[Local model server guide](docs/guides/local-model-server.md)** with measured speed on an RTX 4090 (Qwen3.8-27B Q4_K_M: 47 tokens/s with the fast flags, 99-136 with MTP drafting at 2-6 tokens, n-gram drafting no help), so the Coding preset's choice of 6 is documented, not assumed.
+
+### Security
+- **Packages are installed by hash.** `requirements.lock.txt` now carries the SHA-256 of every file PyPI publishes for each locked version, and the in-app updater, the setup script and the GitHub test run install with `pip install --require-hashes`: a package that was changed or swapped on the index fails the install instead of running. The updater also installs from the lock when only the lock changed.
+- **Releases can be signed.** The in-app updater verifies a release tag's signature against the release keys shipped with the installed version (`conf/release_signers`) and refuses an unsigned or differently signed release; a version without keys skips the check.
+
 ## v1.4.2
 
 Fixes from a review of v1.4.1, and the GitHub test check passing again.

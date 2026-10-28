@@ -8,7 +8,7 @@
 ## Ownership
 
 - `clean_generated_files.ps1`, `export_safe_source.ps1` and `verify_install.ps1` are Windows maintenance scripts; they default to the repo root (`Split-Path -Parent $PSScriptRoot`), never a fixed install path.
-- `make_lock.py` writes `requirements.lock.txt` offline from the installed metadata of the environment it runs in (follow `requirements.txt` and its dependencies only, so plugin-installed or personal packages are never locked). Regenerate it from the venv the test suite passed in whenever `requirements.txt` changes.
+- `make_lock.py` writes `requirements.lock.txt` offline from the installed metadata of the environment it runs in (follow `requirements.txt` and its dependencies only, so plugin-installed or personal packages are never locked). Regenerate it from the venv the test suite passed in whenever `requirements.txt` changes. Each pin carries the SHA-256 of every file PyPI publishes for that version (PyPI JSON API, read-only), for `pip install --require-hashes`.
 - Additional repository maintenance scripts belong here when they are not runtime application code.
 
 ## Local Contracts

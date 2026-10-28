@@ -628,7 +628,7 @@ Start a server with a downloaded GGUF model:
 llama-server -m ~/models/model.gguf --port 8090 --alias local-gguf
 ```
 
-On Windows, Agent Zero can run llama-server for you: open *Settings > Agent > Models > Local model server*, download the official build there, pick a GGUF model (your LM Studio models are listed too; picking one points the Main and Utility models at it), choose a preset (*Coding (fast)* adds MTP self-drafting when the model has an MTP layer), save and click Start. It listens on `http://127.0.0.1:8090/v1`, which is also the llama.cpp provider's default address. If you run llama-server yourself instead, start it with `--port 8090` or change the provider's API base URL. The model name can be the model path returned by `/v1/models`, but using `--alias` gives you a short stable name such as `local-gguf` (the managed server uses the model file's name).
+On Windows, Agent Zero can run llama-server for you: open *Settings > Agent > Models > Local model server*, download the official build there, pick a GGUF model (your LM Studio models are listed too; picking one points the Main and Utility models at it), choose a preset (*Coding (fast)* adds MTP self-drafting when the model has an MTP layer), save and click Start. See [Local model server](../guides/local-model-server.md) for the presets and measured speed. It listens on `http://127.0.0.1:8090/v1`, which is also the llama.cpp provider's default address. If you run llama-server yourself instead, start it with `--port 8090` or change the provider's API base URL. The model name can be the model path returned by `/v1/models`, but using `--alias` gives you a short stable name such as `local-gguf` (the managed server uses the model file's name).
 
 ### Configuring llama.cpp in Agent Zero
 

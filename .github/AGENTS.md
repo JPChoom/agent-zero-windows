@@ -16,7 +16,8 @@
 
 ## Work Guidance
 
-- Keep the workflow in sync with `requirements.txt` / `requirements.dev.txt` and the Python version in the root `AGENTS.md`.
+- The workflow installs `requirements.lock.txt` with `--require-hashes` (exactly what installs and the updater use), then `requirements.dev.txt`. Regenerate the lock (`scripts/make_lock.py`) whenever `requirements.txt` changes, or CI fails.
+- Keep tests independent of the developer's machine: no `usr/` contents, no `.venv`, no optional plugin packages (`tmp_path`, `monkeypatch`, `pytest.importorskip`). Before a release, the suite must also pass on a clean checkout (`git archive HEAD` extracted elsewhere) and the last run on `main` must be green.
 
 ## Verification
 

@@ -22,13 +22,16 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
+            requirements.lock.txt
             requirements.dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements.dev.txt
+          # The same hash-checked lock installs use (fails if it is incomplete
+          # or a file on PyPI no longer matches), then the test tools.
+          python -m pip install --require-hashes -r requirements.lock.txt
+          python -m pip install -r requirements.dev.txt
 
       - name: Run tests
         run: python -m pytest -q -p no:cacheprovider tests

@@ -198,12 +198,64 @@ def _fetch_tag(tag: str) -> None:
     _git("fetch", "--no-tags", RELEASE_GIT_URL, f"+refs/tags/{tag}:refs/tags/{tag}", timeout=300)
 
 
+LOCK_FILE = "requirements.lock.txt"
+# Files whose change means packages must be installed with the update.
+REQUIREMENT_FILES = ("requirements.txt", LOCK_FILE)
+# Public keys allowed to sign release tags (git's allowed-signers format).
+RELEASE_SIGNERS_FILE = os.path.join("conf", "release_signers")
+
+
+def install_command() -> list[str]:
+    """pip arguments for the release's packages.
+
+    The lock pins every package and carries the SHA-256 of every file PyPI
+    publishes for it, so --require-hashes refuses anything that is not exactly
+    the file that was locked. Old releases without a lock fall back to
+    requirements.txt.
+    """
+    if os.path.isfile(os.path.join(_repo_dir(), LOCK_FILE)):
+        return [sys.executable, "-m", "pip", "install", "--no-cache-dir", "--require-hashes", "-r", LOCK_FILE]
+    return [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", "requirements.txt"]
+
+
+def release_signers_path() -> str:
+    return os.path.join(_repo_dir(), RELEASE_SIGNERS_FILE)
+
+
+def _has_signers() -> bool:
+    try:
+        with open(release_signers_path(), encoding="utf-8") as handle:
+            return any(line.strip() and not line.lstrip().startswith("#") for line in handle)
+    except OSError:
+        return False
+
+
+def verify_release_tag(tag: str) -> None:
+    """Refuse a release tag that is not signed by a key this install trusts.
+
+    The keys come from conf/release_signers of the version installed now,
+    never from the release being installed, so a compromised GitHub account
+    or download path cannot slip in its own key. An install whose version
+    ships no keys yet (before signing began) skips the check.
+    """
+    if not _has_signers():
+        return
+    try:
+        _git("-c", "gpg.format=ssh", "-c", f"gpg.ssh.allowedSignersFile={release_signers_path()}",
+             "verify-tag", tag)
+    except UpdateError as exc:
+        raise UpdateError(
+            f"{tag} is not signed by the Agent Zero for Windows release key, so it was not installed. "
+            "Nothing was changed."
+        ) from exc
+
+
 def _install_requirements() -> None:
     kwargs = {}
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-r", "requirements.txt"],
+        install_command(),
         cwd=_repo_dir(), capture_output=True, text=True, timeout=1800,
         encoding="utf-8", errors="replace", **kwargs,
     )
@@ -223,12 +275,13 @@ def apply(tag: str) -> dict:
         if local["blockers"]:
             raise UpdateError(" ".join(local["blockers"]))
         _fetch_tag(tag)
+        verify_release_tag(tag)
         if not _git_ok("merge-base", "--is-ancestor", "HEAD", tag):
             raise UpdateError(
                 f"This copy has commits that {tag} does not contain, so it cannot be fast-forwarded."
             )
         previous_head = local["head"]
-        requirements_changed = not _git_ok("diff", "--quiet", previous_head, tag, "--", "requirements.txt")
+        requirements_changed = not _git_ok("diff", "--quiet", previous_head, tag, "--", *REQUIREMENT_FILES)
         _git("merge", "--ff-only", tag)
         if requirements_changed:
             try:
@@ -263,7 +316,7 @@ def rollback() -> dict:
         local = local_info()
         if local.get("modified_files"):
             raise UpdateError("Tracked files are modified; commit or undo them before rolling back.")
-        requirements_changed = not _git_ok("diff", "--quiet", "HEAD", previous, "--", "requirements.txt")
+        requirements_changed = not _git_ok("diff", "--quiet", "HEAD", previous, "--", *REQUIREMENT_FILES)
         _git("reset", "--keep", previous)
         if requirements_changed:
             _install_requirements()

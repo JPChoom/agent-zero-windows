@@ -126,7 +126,8 @@ Step "Installing packages from $(Split-Path $reqs -Leaf) (this takes a while the
 # as administrator), which made pip fail with "Permission denied".
 $env:PIP_CACHE_DIR = Join-Path $app ".pip-cache"
 & $venvPython -m pip install --disable-pip-version-check --quiet --upgrade pip
-& $venvPython -m pip install --disable-pip-version-check --quiet -r $reqs
+$hashFlag = if ($reqs -eq $lock) { "--require-hashes" } else { $null }
+& $venvPython -m pip install --disable-pip-version-check --quiet $hashFlag -r $reqs
 if ($LASTEXITCODE -ne 0) {
     Fail "Package installation failed. See the messages above. Running setup again continues where it stopped."
 }

@@ -107,7 +107,7 @@ def test_lock_matches_every_pin_in_requirements():
     for line in (ROOT / "requirements.lock.txt").read_text(encoding="utf-8").splitlines():
         if "==" in line and not line.startswith("#"):
             name, version = line.split("==", 1)
-            lock[re.sub(r"[-_.]+", "-", name).lower()] = version.strip()
+            lock[re.sub(r"[-_.]+", "-", name).lower()] = version.strip().rstrip(chr(92)).strip()
     for line in (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
         spec = line.split("#", 1)[0].strip()
         match = re.match(r"^([A-Za-z0-9._-]+)(?:\[[^\]]+\])?==([^\s;]+)", spec)
