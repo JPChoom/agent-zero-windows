@@ -180,6 +180,8 @@ def test_setup_exe_offers_the_desktop_shortcut_option(built):
     assert "-desktop" in result.stdout + result.stderr
 
 
+@pytest.mark.skipif(bool(os.environ.get("GITHUB_ACTIONS")),
+                    reason="needs an interactive desktop for the tray icon; the CI runner's session has none and hangs")
 def test_launcher_has_its_icon_and_shows_in_the_tray_then_closes(built, tmp_path):
     folder = tmp_path / "install"
     folder.mkdir()
