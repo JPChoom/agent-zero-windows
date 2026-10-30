@@ -5,6 +5,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 ## Unreleased
 
 ### Fixed
+- **Telegram: "Conflict: terminated by other getUpdates request" over and over.** When a plugin's files changed while Agent Zero ran, plugin code was reloaded and the Telegram plugin forgot the bot it had running; the next minute it started a second one for the same token, and the two kept knocking each other off Telegram. The list of running bots now survives the reload, as it already did for Discord and Slack.
 - **"Message misformat" and "I stopped myself here" while coding on a local Qwen model.** Two causes, found in the logs (41 rejected replies). Three quarters were tool calls the model wrapped in its own `<tool_call>` tags and left one closing brace short; they were rejected, the model sent the same reply again ("You have sent the same message again") and the turn ended after six tries. Such a call is now repaired and run when it ends in a closing tag (only missing closing braces are added, nothing else). The rest were replies with no answer at all: the model thought until the context window was full. Over 4,500 logged steps, replies after up to 6k tokens of thinking were almost never empty; past 8k, 29% were, and past 16k all of them. The local model server now ends thinking after 6,144 tokens and has the model answer (*Settings > Agent > Models > Local model server > Thinking limit*, 0 = no limit). The misformat warning now tells the model what to fix.
 
 ### Improved

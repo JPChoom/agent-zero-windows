@@ -7,7 +7,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode, ChatType, ContentType
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, Message
-from helpers import integration_commands
+from helpers import chat_channels, integration_commands
 
 from helpers.errors import format_error
 from helpers.print_style import PrintStyle
@@ -26,9 +26,12 @@ class BotInstance:
     group_mode: str = "mention"  # current group_mode setting
     bot_info: object | None = None  # cached result of bot.get_me()
 
-# Bot registry (singleton, persists across module reloads)
-
-_bots: dict[str, BotInstance] = {}
+# Bot registry. Kept in a core module (helpers.chat_channels): plugin modules
+# are re-imported when any bundled plugin's Python files change, and a
+# module-level dict here was then empty while the old polling task kept
+# running - the next job-loop tick started a second poller for the same
+# token, and the two knocked each other off forever (TelegramConflictError).
+_bots: dict[str, BotInstance] = chat_channels.registry("telegram")
 
 
 def get_bot(name: str) -> BotInstance | None:

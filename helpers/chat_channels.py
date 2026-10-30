@@ -39,6 +39,16 @@ DOWNLOAD_FOLDER = "usr/uploads"
 # and the next sync would start duplicate bots.
 RUNNING: dict[str, Any] = {}
 
+# Other per-integration state that must outlive a plugin re-import for the
+# same reason (e.g. Telegram's running bots), by name.
+_REGISTRIES: dict[str, dict] = {}
+
+
+def registry(name: str) -> dict:
+    """A dict owned by integration `name` that survives plugin re-imports."""
+    return _REGISTRIES.setdefault(name, {})
+
+
 # Restart backoff per client key: a bad token or a network outage must not
 # reconnect on every job-loop tick. Grows 30 s -> 30 min, reset by a
 # successful connection or a config change.

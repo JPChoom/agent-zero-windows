@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- `helpers/bot_manager.py` owns bot lifecycle.
+- `helpers/bot_manager.py` owns bot lifecycle. Its running-bot dict is `helpers.chat_channels.registry("telegram")`, never a plain module-level dict: plugin modules are re-imported when bundled plugin files change, and a lost registry starts a second poller for the same token (TelegramConflictError).
 - `helpers/handler.py` and `helpers/telegram_client.py` own message routing, replies, and Telegram API interaction.
 - `helpers/dependencies.py` and `requirements.txt` own framework-runtime dependency bootstrap.
 - `api/`, `prompts/`, `extensions/`, `default_config.yaml`, `plugin.yaml`, `README.md`, and `webui/` own tests/webhook endpoints, prompt fragments, hooks, settings, metadata, docs, and UI.

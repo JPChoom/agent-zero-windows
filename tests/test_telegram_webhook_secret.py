@@ -148,3 +148,26 @@ def test_bot_without_active_secret_accepts_nothing(tg, monkeypatch):
     result = _post(tg, instance, monkeypatch, header="")
     assert getattr(result, "status_code", None) == 403
     assert instance.dispatcher.fed == []
+
+
+def test_running_bots_survive_a_plugin_reimport(tg):
+    """A plugin file change purges plugin modules; the running bot must stay known.
+
+    Otherwise the next job-loop tick starts a second poller for the same
+    token and Telegram answers both with "Conflict: terminated by other
+    getUpdates request" (seen live after a plugin watchdog reload).
+    """
+    import importlib
+
+    from helpers import chat_channels
+
+    running = object()
+    tg.bot_manager.get_all_bots()["Alt"] = running
+    try:
+        sys.modules.pop(_PLUGIN_MODULES[0], None)  # what modules.purge_namespace("plugins") does
+        reloaded = importlib.import_module(_PLUGIN_MODULES[0])
+        assert reloaded is not tg.bot_manager
+        assert reloaded.get_all_bots()["Alt"] is running
+        assert chat_channels.registry("telegram") is reloaded.get_all_bots()
+    finally:
+        chat_channels.registry("telegram").pop("Alt", None)
