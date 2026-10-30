@@ -13,26 +13,26 @@ from plugins._whatsapp_integration.helpers import bridge_manager
 
 @pytest.fixture(autouse=True)
 def reset_bridge_manager_state():
-    bridge_manager._bridge_lock = None
-    bridge_manager._bridge_lock_loop = None
-    bridge_manager._bridge_process = None
-    bridge_manager._bridge_config.clear()
+    bridge_manager._bridge.lock = None
+    bridge_manager._bridge.lock_loop = None
+    bridge_manager._bridge.process = None
+    bridge_manager._bridge.config.clear()
     yield
-    bridge_manager._bridge_lock = None
-    bridge_manager._bridge_lock_loop = None
-    bridge_manager._bridge_process = None
-    bridge_manager._bridge_config.clear()
+    bridge_manager._bridge.lock = None
+    bridge_manager._bridge.lock_loop = None
+    bridge_manager._bridge.process = None
+    bridge_manager._bridge.config.clear()
 
 
 def test_get_bridge_lock_recreates_lock_when_loop_marker_changes():
     async def _run():
         original_lock = asyncio.Lock()
-        bridge_manager._bridge_lock = original_lock
-        bridge_manager._bridge_lock_loop = object()
+        bridge_manager._bridge.lock = original_lock
+        bridge_manager._bridge.lock_loop = object()
 
         refreshed_lock = bridge_manager._get_bridge_lock()
 
-        assert refreshed_lock is bridge_manager._bridge_lock
+        assert refreshed_lock is bridge_manager._bridge.lock
         assert refreshed_lock is not original_lock
 
     asyncio.run(_run())

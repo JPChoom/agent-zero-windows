@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- `helpers/handler.py` owns mailbox polling, state, dispatch, routing, and reply flow.
+- `helpers/handler.py` owns mailbox polling, state, dispatch, routing, and reply flow. Its poll tasks and state-file lock live in `helpers.chat_channels.registry("email")`, never in plugin module globals: plugin modules are re-imported when bundled plugin files change, and lost state starts a second poll loop per mailbox.
 - `helpers/imap_client.py` and `helpers/smtp_client.py` own inbound and outbound mail transports.
 - `helpers/dispatcher.py`, `prompts/`, and attachment helpers own routing decisions and message formatting.
 - `api/`, `default_config.yaml`, `plugin.yaml`, `extensions/`, and `webui/` own tests, settings, metadata, hooks, and config UI.

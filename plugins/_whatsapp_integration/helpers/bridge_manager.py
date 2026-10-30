@@ -18,12 +18,20 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Sequence
 
+from types import SimpleNamespace
+
+from helpers import chat_channels
 from helpers.print_style import PrintStyle
 
 
-_bridge_lock: asyncio.Lock | None = None
-_bridge_lock_loop: asyncio.AbstractEventLoop | None = None
-_bridge_config: dict = {}  # config the running bridge was started with
+# The running bridge (process, the config it was started with, the lock that
+# serializes start/stop). Kept in a core module (helpers.chat_channels):
+# plugin modules are re-imported when bundled plugin files change, and module
+# globals here then said "no bridge" while the old Node process kept its port,
+# so the next poll started a second bridge.
+_bridge = chat_channels.registry("whatsapp").setdefault(
+    "bridge", SimpleNamespace(process=None, config={}, lock=None, lock_loop=None)
+)
 
 MAX_STARTUP_LOG_LINES = 80
 STARTUP_WAIT_ATTEMPTS = 20
@@ -84,7 +92,6 @@ class _BridgeProcess:
             PrintStyle.error(f"WhatsApp: bridge destructor error: {e}")
 
 
-_bridge_process: _BridgeProcess | None = None
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BRIDGE_DIR = str(Path(__file__).parent.parent / "whatsapp-bridge")
@@ -124,7 +131,7 @@ async def stop_bridge() -> None:
 
 
 async def is_bridge_running(port: int) -> bool:
-    if not _bridge_process or _bridge_process.poll() is not None:
+    if not _bridge.process or _bridge.process.poll() is not None:
         return False
     return await _check_health(port)
 
@@ -152,11 +159,11 @@ async def ensure_bridge_http_up(
 
 
 def is_process_alive() -> bool:
-    return _bridge_process is not None and _bridge_process.poll() is None
+    return _bridge.process is not None and _bridge.process.poll() is None
 
 
 def get_running_config() -> dict:
-    return dict(_bridge_config)
+    return dict(_bridge.config)
 
 
 # ------------------------------------------------------------------
@@ -164,12 +171,11 @@ def get_running_config() -> dict:
 # ------------------------------------------------------------------
 
 def _get_bridge_lock() -> asyncio.Lock:
-    global _bridge_lock, _bridge_lock_loop
     loop = asyncio.get_running_loop()
-    if _bridge_lock is None or _bridge_lock_loop is not loop:
-        _bridge_lock = asyncio.Lock()
-        _bridge_lock_loop = loop
-    return _bridge_lock
+    if _bridge.lock is None or _bridge.lock_loop is not loop:
+        _bridge.lock = asyncio.Lock()
+        _bridge.lock_loop = loop
+    return _bridge.lock
 
 
 async def _ensure_bridge_started(
@@ -181,9 +187,8 @@ async def _ensure_bridge_started(
     require_connection: bool,
     start_label: str,
 ) -> bool:
-    global _bridge_process
 
-    if _bridge_process and _bridge_process.poll() is None:
+    if _bridge.process and _bridge.process.poll() is None:
         if require_connection:
             return True
         if await _check_http_up(port):
@@ -230,7 +235,6 @@ async def _start_bridge_once(
     require_connection: bool,
     start_label: str,
 ) -> tuple[bool, str]:
-    global _bridge_process
 
     cmd = [
         "node", BRIDGE_SCRIPT,
@@ -242,15 +246,15 @@ async def _start_bridge_once(
 
     _kill_port_process(port)
     PrintStyle.info(start_label)
-    _bridge_process = _BridgeProcess(subprocess.Popen(
+    _bridge.process = _BridgeProcess(subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         cwd=BRIDGE_DIR,
     ), port)
-    _start_log_reader(_bridge_process)
-    _bridge_config.clear()
-    _bridge_config.update({"port": port, "mode": mode})
+    _start_log_reader(_bridge.process)
+    _bridge.config.clear()
+    _bridge.config.update({"port": port, "mode": mode})
 
     healthy, output = await _wait_for_bridge_startup(
         port=port,
@@ -268,7 +272,7 @@ async def _wait_for_bridge_startup(*, port: int, require_connection: bool) -> tu
     for _ in range(STARTUP_WAIT_ATTEMPTS):
         await asyncio.sleep(STARTUP_WAIT_SECONDS)
 
-        process = _bridge_process
+        process = _bridge.process
         if process is None:
             return False, ""
 
@@ -287,10 +291,10 @@ async def _wait_for_bridge_startup(*, port: int, require_connection: bool) -> tu
 
     if require_connection:
         PrintStyle.warning("WhatsApp: bridge started but not yet connected")
-        process = _bridge_process
+        process = _bridge.process
         return True, process.recent_output() if process else ""
 
-    process = _bridge_process
+    process = _bridge.process
     return False, _summarize_output(process.recent_output()) if process else ""
 
 
@@ -462,15 +466,14 @@ async def _run_subprocess(
 
 
 def _stop_bridge_process() -> None:
-    global _bridge_process
-    if not _bridge_process:
+    if not _bridge.process:
         return
     try:
-        _bridge_process.terminate()
+        _bridge.process.terminate()
         try:
-            _bridge_process.wait(timeout=5)
+            _bridge.process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            _bridge_process.kill()
+            _bridge.process.kill()
     except Exception:
         pass
     _clear_bridge_process()
@@ -478,9 +481,8 @@ def _stop_bridge_process() -> None:
 
 
 def _clear_bridge_process() -> None:
-    global _bridge_process
-    _bridge_process = None
-    _bridge_config.clear()
+    _bridge.process = None
+    _bridge.config.clear()
 
 
 def _kill_port_process(port: int) -> None:

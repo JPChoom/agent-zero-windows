@@ -24,7 +24,7 @@ MIN_INTERVAL: int = 5
 class EmailAutoPoll(Extension):
 
     async def execute(self, **kwargs: Any) -> None:
-        # _poll_tasks lives in handler.py (persists across module reloads)
+        # _poll_tasks: helpers.chat_channels.registry("email") via handler.py (survives reloads)
         from plugins._email_integration.helpers.handler import _poll_tasks
 
         config = plugins.get_plugin_config(PLUGIN_NAME) or {}

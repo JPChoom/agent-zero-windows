@@ -11,6 +11,7 @@ import re
 import uuid
 
 from agent import Agent, AgentContext, UserMessage
+from helpers import chat_channels
 from helpers import plugins, files, runtime
 from helpers import message_queue as mq
 from helpers import integration_commands
@@ -42,10 +43,12 @@ CTX_WA_ATTACHMENTS = "_wa_response_attachments"
 CTX_WA_REPLY_TO = "_wa_reply_to"
 CTX_WA_TYPING_ACTIVE = "_wa_typing_active"
 
-# Poll task — lives here (not in extension module) because
-# extension modules are re-executed on each job_loop tick,
-# which would reset module-level state and orphan running tasks.
-_poll_task: asyncio.Task | None = None  # type: ignore[type-arg]
+# Poll task ("task"). Kept in a core module (helpers.chat_channels), not in
+# this plugin: extension modules are re-executed on each job_loop tick, and
+# the whole plugin is re-imported when bundled plugin files change - either
+# would reset module-level state and orphan the running task, and the next
+# tick would start a second poll loop.
+POLL = chat_channels.registry("whatsapp")
 
 
 # ------------------------------------------------------------------

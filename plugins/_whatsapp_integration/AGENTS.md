@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- `helpers/bridge_manager.py` owns bridge lifecycle.
+- `helpers/bridge_manager.py` owns bridge lifecycle. The bridge process, its config and lock (`_bridge`), and the poll task (`handler.POLL["task"]`) live in `helpers.chat_channels.registry("whatsapp")`, never in plugin module globals: plugin modules are re-imported when bundled plugin files change, and lost state starts a second bridge and poll loop.
 - `helpers/handler.py` and `helpers/wa_client.py` own message routing and bridge API interaction.
 - `helpers/storage_paths.py`, attachment helpers, and number utilities own storage, attachment, and phone-number handling.
 - `whatsapp-bridge/` owns the Node.js bridge package.

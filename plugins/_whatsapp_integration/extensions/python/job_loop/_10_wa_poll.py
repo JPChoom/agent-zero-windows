@@ -27,14 +27,15 @@ class WhatsAppAutoPoll(Extension):
         config = plugins.get_plugin_config(PLUGIN_NAME) or {}
         enabled = config.get("enabled", False)
 
+        task = handler_mod.POLL.get("task")
         if not enabled:
-            if handler_mod._poll_task and not handler_mod._poll_task.done():
-                handler_mod._poll_task.cancel()
-                handler_mod._poll_task = None
+            if task and not task.done():
+                task.cancel()
+            handler_mod.POLL["task"] = None
             return
 
-        if not handler_mod._poll_task or handler_mod._poll_task.done():
-            handler_mod._poll_task = asyncio.create_task(_poll_loop())
+        if not task or task.done():
+            handler_mod.POLL["task"] = asyncio.create_task(_poll_loop())
 
 
 # ------------------------------------------------------------------

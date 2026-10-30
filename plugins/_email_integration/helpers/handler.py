@@ -11,6 +11,7 @@ import os
 import uuid
 
 from agent import Agent, AgentContext, AgentContextType, UserMessage
+from helpers import chat_channels
 from helpers import guids, plugins, files, runtime
 from helpers import message_queue as mq
 from helpers import integration_commands
@@ -43,12 +44,15 @@ STATE_FILE = "usr/email/state.json"
 # UID state persistence
 # ------------------------------------------------------------------
 
-_state_lock = asyncio.Lock()
-
-# Poll task registry — lives here (not in extension module) because
-# extension modules are re-executed on each job_loop tick (cache disabled),
-# which would reset module-level state and orphan running tasks.
-_poll_tasks: dict[str, asyncio.Task] = {}  # type: ignore[type-arg]
+# Poll tasks per handler and the lock around the state file. Kept in a core
+# module (helpers.chat_channels), not in this plugin: extension modules are
+# re-executed on each job_loop tick, and the whole plugin is re-imported when
+# bundled plugin files change - either would reset module-level state, orphan
+# the running poll loops, and the next tick would start a second loop per
+# handler (each mailbox read twice, the state file written without the lock).
+_shared = chat_channels.registry("email")
+_state_lock: asyncio.Lock = _shared.setdefault("state_lock", asyncio.Lock())
+_poll_tasks: dict[str, asyncio.Task] = _shared.setdefault("poll_tasks", {})  # type: ignore[type-arg]
 
 def _load_state() -> dict:
     path = files.get_abs_path(STATE_FILE)

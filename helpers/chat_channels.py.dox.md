@@ -16,7 +16,7 @@
 - `get_or_create_context` stamps the integration's context data on new chats (including the `_permissions` channel marker key) and refreshes non-underscore keys on reuse; stale ids are dropped.
 - `deliver` queues through `helpers/message_queue` while a run is active and returns the notice to send back; otherwise logs and starts the run.
 - `BotThread` runs a client's coroutine in its own daemon thread and loop; `run()` awaits work on that loop from any other loop. `ended_at` is set when the thread finishes.
-- `RUNNING` lives here (not in a plugin) because plugin modules are re-imported on plugin file changes; keys are `<integration>:<bot name>`. `registry(name)` gives other integrations a dict with the same lifetime (Telegram keeps its running bots in `registry("telegram")`).
+- `RUNNING` lives here (not in a plugin) because plugin modules are re-imported on plugin file changes; keys are `<integration>:<bot name>`. `registry(name)` gives other integrations a dict with the same lifetime (Telegram's running bots, email's poll tasks and state lock, WhatsApp's bridge and poll task).
 - `sync_clients` restarts a client immediately when its connection fingerprint changes, and after a backoff (30 s doubling to 30 min) when it died with unchanged settings; `mark_healthy` resets the backoff after a successful connection.
 - Attachments go to `usr/uploads/<prefix>_<random>_<sanitized name>`.
 
