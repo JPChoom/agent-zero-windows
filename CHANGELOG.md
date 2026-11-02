@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.5.2
+
+Agent Zero learns skills on its own, with a window to review, edit and delete them; installing from the README now uses the signed release and hash-checked packages; and smaller fixes from an external code review.
 
 ### New
 - **Agent Zero learns skills on its own.** After a long task that succeeded (8+ steps, or 3+ minutes), it saves the steps as a skill in the background, so the next similar request goes faster; saying "learn that skill" saves the last task right away. A skill from a task that only used your own files and commands is active at once; one from a task that read web pages, messages or downloads waits under **Needs a look** until you approve it, since such content can carry hidden instructions. The new **Learned skills** window (sidebar quick actions) shows each skill with how long the task that taught it took against later uses, and lets you approve, edit, restore older versions, turn off or delete. Settings: *Skills > Learn skills on its own*.
