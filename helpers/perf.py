@@ -82,6 +82,9 @@ class ModelCall:
     attempts: int = 0
     ok: bool = True
     error: str = ""
+    # A call that does not stream gets its whole answer at once: its "first
+    # token" is the whole call, so it is not reported as one.
+    streamed: bool = True
 
     def slot_acquired(self) -> None:
         self.attempts += 1
@@ -117,7 +120,8 @@ class ModelCall:
             "caller": self.caller,
             "background": self.background or not self.context_id,
             "queue_wait_s": round(slot - self.started, 3),
-            "first_token_s": round(first - slot, 3) if first is not None else None,
+            "first_token_s": round(first - slot, 3) if first is not None and self.streamed else None,
+            "streamed": self.streamed,
             "total_s": round(end - self.started, 3),
             "prompt_tokens_est": estimate_tokens(self.prompt_chars),
             "reasoning_tokens_est": estimate_tokens(self.reasoning_chars),
@@ -236,8 +240,11 @@ def summarize_turn(turn: Turn, now: float) -> dict[str, Any]:
         role = by_role.setdefault(call["role"], {
             "calls": 0, "total_s": 0.0, "queue_wait_s": 0.0, "first_token_s": 0.0,
             "reasoning_tokens_est": 0, "response_tokens_est": 0, "prompt_tokens_est": 0,
+            "not_streamed": 0,
         })
         role["calls"] += 1
+        if call.get("streamed") is False:
+            role["not_streamed"] += 1
         role["total_s"] += call["total_s"]
         role["queue_wait_s"] += call["queue_wait_s"]
         role["first_token_s"] += call["first_token_s"] or 0.0
@@ -274,6 +281,10 @@ def format_turn(record: dict[str, Any]) -> str:
             details.append(f"waited {stats['queue_wait_s']:.1f}s")
         if stats["first_token_s"]:
             details.append(f"first token {stats['first_token_s']:.1f}s")
+        if stats.get("not_streamed"):
+            # their time is all in the total; no first token to report
+            details.append("not streamed" if stats["not_streamed"] == stats["calls"]
+                           else f"{stats['not_streamed']} not streamed")
         if stats["reasoning_tokens_est"]:
             details.append(f"thinking ~{stats['reasoning_tokens_est']} tok")
         details.append(f"answer ~{stats['response_tokens_est']} tok")

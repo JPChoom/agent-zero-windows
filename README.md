@@ -103,13 +103,22 @@ Other projects in this space put the weight elsewhere: some focus on being reach
 
 ## Install
 
+Install the latest **signed release**, not the development branch, and install the packages by hash:
+
 ```powershell
 git clone https://github.com/JPChoom/agent-zero-windows.git
 cd agent-zero-windows
+$tag = git tag --sort=-v:refname | Select-Object -First 1
+git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=conf/release_signers verify-tag $tag
+git reset --hard $tag
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements.lock.txt
 ```
+
+- `verify-tag` must print `Good "git" signature ... ED25519 key SHA256:js8FL0tVNA2e1d+Re19SjmW7IeNG8lpE4PCY2bRXMAI`; stop if it does not. The key file comes with the download, so on a first install this proves the release was signed by the project's key as published on GitHub; from then on, *Settings > Check for updates* only installs releases signed with the key you already have.
+- `git reset --hard $tag` keeps the checkout on `main` (the in-app updater needs that), at the release.
+- `--require-hashes` makes pip refuse any package file whose checksum differs from `requirements.lock.txt`.
 
 Run it:
 

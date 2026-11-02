@@ -182,6 +182,42 @@ def _preempt_holders(key: str) -> None:
             pass  # that loop has closed; its call is gone anyway
 
 
+# Local servers being restarted (normalized api_base): new model calls to
+# them wait until the restart is over instead of failing against a server
+# that is stopping or still loading. Set from the job loop's thread, read on
+# agents' loops, so a plain set under a lock and polling.
+_MAINTENANCE: set[str] = set()
+_MAINTENANCE_LOCK = threading.Lock()
+MAINTENANCE_MAX_WAIT_SECONDS = 600.0
+
+
+def _normal_base(api_base) -> str:
+    return str(api_base or "").strip().rstrip("/").lower().replace("//localhost:", "//127.0.0.1:")
+
+
+@contextlib.contextmanager
+def maintenance(api_base: str):
+    """`with maintenance(base):` new calls to `base` wait while inside."""
+    base = _normal_base(api_base)
+    with _MAINTENANCE_LOCK:
+        _MAINTENANCE.add(base)
+    try:
+        yield
+    finally:
+        with _MAINTENANCE_LOCK:
+            _MAINTENANCE.discard(base)
+
+
+async def wait_for_maintenance(api_base) -> None:
+    """Return once `api_base` is not being restarted (at most ~10 min)."""
+    base = _normal_base(api_base)
+    if not base or base not in _MAINTENANCE:
+        return
+    deadline = time.monotonic() + MAINTENANCE_MAX_WAIT_SECONDS
+    while base in _MAINTENANCE and time.monotonic() < deadline:
+        await asyncio.sleep(0.25)
+
+
 def backend_key(model_name: str, kwargs: dict | None = None) -> str:
     """The identity of the inference backend a call is actually contending
     for.

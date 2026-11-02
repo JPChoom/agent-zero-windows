@@ -563,6 +563,8 @@ class LiteLLMChatWrapper(SimpleChatModel):
         # interface (helpers/call_llm.py's chain.astream() reaches it),
         # a separate code path from this fork's own unified_call().
         concurrency_key = model_concurrency.backend_key(self.model_name, call_kwargs)
+        # a local server being restarted with new settings: wait, don't fail
+        await model_concurrency.wait_for_maintenance(call_kwargs.get("api_base"))
         async with model_concurrency.model_call_slot(concurrency_key):
             stream_iter = transport.astream()
             while True:
@@ -662,12 +664,15 @@ class LiteLLMChatWrapper(SimpleChatModel):
         # still serializes them against each other as before; it only
         # stops serializing calls that share no backend at all.
         concurrency_key = model_concurrency.backend_key(self.model_name, call_kwargs)
+        # a local server being restarted with new settings: wait, don't fail
+        await model_concurrency.wait_for_maintenance(call_kwargs.get("api_base"))
         timing = perf.start_model_call(
             self.model_name, getattr(self, "a0_perf_role", "other"), _prompt_chars(msgs_conv)
         )
         # Background work (perf.tagged(..., background=True)) waits behind
         # calls for the user's turn; extraction calls that can simply be
         # redone later also give up a running slot (helpers/model_concurrency).
+        timing.streamed = stream
         background = timing.background
         preemptible = background and not stream and timing.caller in PREEMPTIBLE_CALLERS
 
@@ -972,14 +977,14 @@ class LocalSentenceTransformerWrapper(Embeddings):
         # Apply rate limiting if configured
         apply_rate_limiter_sync(self.a0_model_conf, " ".join(texts))
 
-        embeddings = self.model.encode(texts, convert_to_tensor=False)  # type: ignore
+        embeddings = self.model.encode(texts, convert_to_tensor=False, show_progress_bar=False)  # type: ignore
         return embeddings.tolist() if hasattr(embeddings, "tolist") else embeddings  # type: ignore
 
     def embed_query(self, text: str) -> List[float]:
         # Apply rate limiting if configured
         apply_rate_limiter_sync(self.a0_model_conf, text)
 
-        embedding = self.model.encode([text], convert_to_tensor=False)  # type: ignore
+        embedding = self.model.encode([text], convert_to_tensor=False, show_progress_bar=False)  # type: ignore
         result = (
             embedding[0].tolist() if hasattr(embedding[0], "tolist") else embedding[0]
         )

@@ -7,13 +7,14 @@
 ## Ownership
 
 - `model_concurrency.py` owns the runtime implementation; this file owns its contracts.
-- Functions: `backend_key`, `get_configured_limit`, `model_call_slot`.
+- Functions: `backend_key`, `get_configured_limit`, `model_call_slot`, `maintenance`, `wait_for_maintenance`.
 
 ## Runtime Contracts
 
 - Keyed by backend (provider, `api_base` and model), not globally: Main and Utility models on the same local server share one slot, different backends do not block each other.
 - The limit comes from `_model_config`'s `max_concurrent_model_calls` setting.
 - `async with model_call_slot(key=...)` is held only around the network call.
+- `with maintenance(api_base):` (the local-server restart job) makes new model calls to that server wait in `wait_for_maintenance` (called by `models` before taking a slot) until it ends, at most `MAINTENANCE_MAX_WAIT_SECONDS`; addresses compare without a trailing slash and with `localhost` = `127.0.0.1`.
 
 - Priority: `model_call_slot(key, background=..., preemptible=...)`. Calls for the user's turn (default) count as waiting/active per key; a background call takes a free slot only when no turn call is waiting for that key. When a turn call finds the slot taken, preemptible background holders are cancelled on their own loop (`call_soon_threadsafe`); `models._run_unified` turns that cancel into `Preempted` (uncancelling the task) for the caller. `models.PREEMPTIBLE_CALLERS` (`memorize_fragments`, `memorize_solutions`, `rename_chat`, `history_compression` when run as the early background pass, `skill_learn_auto`; non-streaming only) decides which background calls may be interrupted; consolidation is background-priority but never interrupted.
 - `wait_for_foreground_idle(settle_seconds, max_wait_seconds)` waits until no turn call has waited or run for `settle_seconds`; `run_when_idle(make_call, attempts=5)` waits, calls, and retries after `Preempted`, then raises it. Waiting happens before the call, so the 180 s utility-call limit only covers the call itself.

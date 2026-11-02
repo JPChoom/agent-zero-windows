@@ -7,6 +7,13 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 ### New
 - **Agent Zero learns skills on its own.** After a long task that succeeded (8+ steps, or 3+ minutes), it saves the steps as a skill in the background, so the next similar request goes faster; saying "learn that skill" saves the last task right away. A skill from a task that only used your own files and commands is active at once; one from a task that read web pages, messages or downloads waits under **Needs a look** until you approve it, since such content can carry hidden instructions. The new **Learned skills** window (sidebar quick actions) shows each skill with how long the task that taught it took against later uses, and lets you approve, edit, restore older versions, turn off or delete. Settings: *Skills > Learn skills on its own*.
 
+### Fixed
+- **Installing from the README now uses the signed release and checked packages.** The steps cloned the development branch and installed `requirements.txt`, so a new install skipped both the release signature and the package hashes that the in-app updater checks. They now check out the latest signed release (`git verify-tag` against `conf/release_signers`) and install with `pip install --require-hashes -r requirements.lock.txt`.
+- **Model calls no longer fail when the local server restarts with new settings.** The restart waited until no chat was busy, but a message sent in that same moment could reach a server that was stopping. Calls to it now wait for the restart, and a turn that starts at the last moment cancels it.
+- **Background history compression can't replace messages that changed meanwhile.** It summarizes while the turn goes on; it now checks the messages are still the same before replacing them, and otherwise tries again next time.
+- **The turn timing line no longer reports a "first token" for calls that don't stream** (most background calls): it showed their whole duration as time to the first token. They now say "not streamed".
+- **No more "Batches: 100%" lines** in the terminal from the local embedding model on every memory lookup.
+
 ## v1.5.1
 
 A patch release for local models: tool calls that a local Qwen model wrapped in its own tags are run instead of rejected, thinking can no longer fill the context window, the model leaves GPU memory when Agent Zero closes, a warning when Vision does not fit, and no duplicate Telegram, email or WhatsApp pollers. New: a thinking setting for the Main model and history compression ahead of time.

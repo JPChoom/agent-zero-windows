@@ -8,7 +8,8 @@ The job loop runs about once a minute:
 - A running server whose saved settings changed (another model, preset,
   context size...) is restarted with the new ones, but only while no
   agent turn is running at all (a turn spends most of its time between model
-  calls, in tools), so a turn is never cut off.
+  calls, in tools), so a turn is never cut off; during the restart, new
+  model calls to the server wait for it (model_concurrency.maintenance).
 """
 
 import asyncio
@@ -64,10 +65,17 @@ class LlamaServerAutostart(Extension):
         running = sup.running_identity()
         if not running or running == config.identity() or _turn_active():
             return
-        PrintStyle.standard("llama.cpp server settings changed - restarting it with the new ones.")
-        try:
-            await asyncio.to_thread(sup.stop)
-            await asyncio.to_thread(sup.start, config)
-        except llama_server.SupervisorError as exc:
-            PrintStyle.error(f"llama.cpp server did not restart: {exc}")
-            llama_server._notify(f"llama.cpp server did not restart with the new settings: {exc}")
+        # Close the gate first, then look again: a turn that started between
+        # the check above and now is seen here, and any call starting after
+        # this waits for the restart (model_concurrency.maintenance) instead
+        # of failing against a server that is stopping.
+        with model_concurrency.maintenance(local_server.api_base(config.port)):
+            if _turn_active():
+                return
+            PrintStyle.standard("llama.cpp server settings changed - restarting it with the new ones.")
+            try:
+                await asyncio.to_thread(sup.stop)
+                await asyncio.to_thread(sup.start, config)
+            except llama_server.SupervisorError as exc:
+                PrintStyle.error(f"llama.cpp server did not restart: {exc}")
+                llama_server._notify(f"llama.cpp server did not restart with the new settings: {exc}")

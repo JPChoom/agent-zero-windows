@@ -280,6 +280,12 @@ class Topic(Record):
             "fw.msg_summary.md", summary=summary
         )
         sum_msg = Message(False, sum_msg_content)
+        # The summary took a model call, and compression runs in the
+        # background while the turn goes on: replace the messages only if
+        # they are still the ones that were summarized (by identity), else
+        # skip this pass - the next one starts from the current state.
+        if [id(m) for m in self.messages[1 : cnt_to_sum + 1]] != [id(m) for m in msg_to_sum]:
+            return False
         self.messages[1 : cnt_to_sum + 1] = [sum_msg]
         return True
 
