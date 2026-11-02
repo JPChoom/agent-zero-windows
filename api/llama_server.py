@@ -30,10 +30,14 @@ class LlamaServer(ApiHandler):
                 await asyncio.to_thread(sup.stop)
             elif action == "model_info":
                 path = str(input.get("path") or "")
+                mmproj = local_server.mmproj_for(path)
                 return {**self._reply(True), "model_info": {
                     "path": path,
                     "has_mtp": await asyncio.to_thread(local_server.has_mtp, path),
-                    "mmproj": local_server.mmproj_for(path),
+                    "mmproj": mmproj,
+                    # what turning Vision on adds to GPU memory (file + working memory)
+                    "mmproj_need_mib": int(os.path.getsize(mmproj) / (1024 * 1024)) + llama_server.MMPROJ_EXTRA_MIB
+                    if mmproj and os.path.isfile(mmproj) else None,
                 }}
             elif action in ("download_plan", "download"):
                 # Installing a program is local-only: a remote session cannot
@@ -68,6 +72,7 @@ class LlamaServer(ApiHandler):
             "own_models_dir": local_server.own_models_dir(),
             "suggested_variant": llama_download.suggested_variant(),
             "gpu_total_mib": _gpu_total_mib(),
+            "gpu_free_mib": llama_server.free_vram_mib(),
         }
 
 

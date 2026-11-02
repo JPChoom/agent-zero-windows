@@ -17,15 +17,25 @@ What "running" means here is stricter than "the port answers":
 
 Lifecycle:
 - start: refuse if the binary or model is missing, the port is taken by
-  something else, or (NVIDIA only) free VRAM is clearly too small; then
-  launch hidden, log to usr/logs/llama-server.log and wait for readiness.
+  something else, or (NVIDIA only) free VRAM is clearly too small for the
+  model plus its image projector (`--mmproj`); then launch hidden, log to
+  usr/logs/llama-server.log and wait for readiness.
+- memory check: once ready, ask Windows how much of the server's GPU memory
+  is *shared* (system RAM). A model that does not fit is not refused by the
+  driver, it is moved partly into system RAM and runs about 10x slower
+  (seen: Q5 27B at 65k context plus Vision, 120 -> 9 tokens/s, model calls
+  stalling). Over SPILL_WARN_MIB the status carries `memory_warning` and the
+  user is notified.
 - monitor: a background thread notices an unexpected exit and restarts with
   backoff (RESTART_BACKOFF), giving up after MAX_RESTARTS within
   RESTART_WINDOW and notifying the user.
-- stop: on request and at A0W exit. A server left behind by a forced kill is
-  found through the state file on the next start: adopted when it is
-  identical (same binary, model, arguments) and healthy, otherwise stopped.
-  Either way nothing is orphaned.
+- stop: on request and at A0W exit. On Windows the server is also put in a
+  Job Object that ends it when A0W's process ends however it ends - closing
+  the console window, a crash, Task Manager - none of which run Python's exit
+  handlers, so the model stayed in GPU memory. If that fails, a server left
+  behind is found through the state file on the next start: adopted when it
+  is identical (same binary, model, arguments) and healthy, otherwise
+  stopped.
 """
 
 from __future__ import annotations
@@ -53,6 +63,12 @@ RESTART_WINDOW = 600.0
 MONITOR_INTERVAL = 2.0
 LOG_MAX_BYTES = 5 * 1024 * 1024
 VRAM_HEADROOM = 1.10
+# The image projector also needs working memory while it encodes an image.
+MMPROJ_EXTRA_MIB = 512
+# Shared (system RAM) GPU memory of the server above this means the model
+# did not fit; a server that fits shows next to none.
+SPILL_WARN_MIB = 300
+SPILL_SETTLE_SECONDS = 5.0
 # A leftover process is only treated as our server if its name contains this.
 PROCESS_NAME_HINT = "llama-server"
 
@@ -219,6 +235,47 @@ def free_vram_mib() -> int | None:
         return None
 
 
+def mmproj_of(config: ServerConfig) -> str:
+    """The image projector the server is started with ("" for none)."""
+    args = list(config.extra_args)
+    for flag in ("--mmproj", "-mm"):
+        if flag in args and args.index(flag) + 1 < len(args):
+            return args[args.index(flag) + 1]
+    return ""
+
+
+def gpu_shared_mib(pid: int) -> int | None:
+    """Shared (system RAM) GPU memory of a process, from Windows' GPU counters.
+
+    None when it cannot be told (not Windows, no counters, a non-English
+    Windows whose counter names differ).
+    """
+    if os.name != "nt":
+        return None
+    query = (
+        f"(Get-Counter '\\GPU Process Memory(pid_{int(pid)}_*)\\Shared Usage' -ErrorAction Stop)"
+        ".CounterSamples | Measure-Object -Property CookedValue -Sum | ForEach-Object { [int64]$_.Sum }"
+    )
+    try:
+        out = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", query],
+            capture_output=True, text=True, timeout=20, creationflags=CREATE_NO_WINDOW,
+        ).stdout.strip()
+        return int(out) // (1024 * 1024) if out else None
+    except Exception:
+        return None
+
+
+def spill_message(shared_mib: int, vision: bool) -> str:
+    return (
+        f"The model does not fit in GPU memory: {shared_mib} MiB of it is in system RAM, "
+        "so it runs many times slower and model calls may stall. "
+        + ("Turn Vision off, or " if vision else "")
+        + "lower the context size or use a smaller model file (for example Q4_K_M), "
+        "and close other GPU apps."
+    )
+
+
 def _process_identity(pid: int) -> tuple[float, str] | None:
     try:
         import psutil
@@ -244,6 +301,7 @@ class Supervisor:
         self._monitor: threading.Thread | None = None
         self._log = None
         self.last_error = ""
+        self.memory_warning = ""
         self.state = "stopped"  # stopped | starting | running | failed
 
     # -- public ------------------------------------------------------------
@@ -282,6 +340,8 @@ class Supervisor:
             "api_base": f"http://{HOST}:{port}/v1" if port else "",
             "model": cfg.model if cfg else "",
             "alias": cfg.alias if cfg else "",
+            "vision": bool(cfg and mmproj_of(cfg)),
+            "memory_warning": self.memory_warning,
             "adopted": self._adopted,
             "restarts": len(self._restarts),
             "last_error": self.last_error,
@@ -309,10 +369,15 @@ class Supervisor:
         if config.vram_check and config.gpu_layers != 0:
             free = free_vram_mib()
             need = os.path.getsize(config.model) / (1024 * 1024) * VRAM_HEADROOM
+            projector = mmproj_of(config)
+            if projector and os.path.isfile(projector):
+                need += os.path.getsize(projector) / (1024 * 1024) + MMPROJ_EXTRA_MIB
             if free is not None and free < need:
                 raise SupervisorError(
-                    f"Not enough free GPU memory: {free} MiB free, the model needs about {int(need)} MiB. "
-                    "Lower GPU layers, close other GPU apps (for example LM Studio), or turn off the VRAM check."
+                    f"Not enough free GPU memory: {free} MiB free, the model needs about {int(need)} MiB"
+                    + (" with Vision" if projector else "") + ". "
+                    "Lower GPU layers, close other GPU apps (for example LM Studio), turn Vision off, "
+                    "or turn off the VRAM check."
                 )
 
     def _launch(self, config: ServerConfig) -> None:
@@ -334,6 +399,7 @@ class Supervisor:
             creationflags=CREATE_NO_WINDOW, cwd=os.path.dirname(config.binary) or None,
         )
         self._pid = self._proc.pid
+        _end_with_this_process(self._pid)
         ident = _process_identity(self._pid)
         self._started_at = ident[0] if ident else None
         self._adopted = False
@@ -341,6 +407,7 @@ class Supervisor:
         self._wait_ready(config)
         self.state = "running"
         self._start_monitor()
+        self._start_memory_check(config)
 
     def _wait_ready(self, config: ServerConfig) -> None:
         deadline = time.time() + config.startup_timeout
@@ -376,11 +443,29 @@ class Supervisor:
                 and config.alias in served_models(config.port)):
             self._proc, self._pid, self._started_at, self._adopted = None, int(pid), float(started), True
             self.state, self.last_error = "running", ""
+            _end_with_this_process(self._pid)
             self._start_monitor()
+            self._start_memory_check(config)
             return True
         _terminate_pid(int(pid))  # ours but different settings, or unhealthy: replace it
         self._clear_state()
         return False
+
+    # -- GPU memory spill check -------------------------------------------------
+
+    def _start_memory_check(self, config: ServerConfig) -> None:
+        self.memory_warning = ""
+        pid = self._pid
+        threading.Thread(target=self._check_memory, args=(pid, config), name="llama-server-memory",
+                         daemon=True).start()
+
+    def _check_memory(self, pid: int | None, config: ServerConfig) -> None:
+        time.sleep(SPILL_SETTLE_SECONDS)
+        shared = gpu_shared_mib(pid) if pid else None
+        if shared is None or shared <= SPILL_WARN_MIB or pid != self._pid:
+            return
+        self.memory_warning = spill_message(shared, bool(mmproj_of(config)))
+        _notify(self.memory_warning, warning=True)
 
     # -- monitor and crash recovery -------------------------------------------
 
@@ -442,6 +527,7 @@ class Supervisor:
             # handled (adopted or replaced) by _try_adopt.
             self._clear_state()
         self._proc, self._pid, self._started_at, self._adopted = None, None, None, False
+        self.memory_warning = ""
         if self._log:
             try:
                 self._log.close()
@@ -505,17 +591,85 @@ def _terminate_pid(pid: int) -> None:
         pass
 
 
-def _notify(message: str) -> None:
+def _notify(message: str, warning: bool = False) -> None:
     try:
         from helpers.notification import NotificationManager, NotificationPriority, NotificationType
 
         NotificationManager.send_notification(
-            type=NotificationType.ERROR, priority=NotificationPriority.HIGH,
-            title="llama.cpp server", message=message, display_time=15,
-            group="llama_server", id="llama_server_failed",
+            type=NotificationType.WARNING if warning else NotificationType.ERROR,
+            priority=NotificationPriority.HIGH,
+            title="llama.cpp server", message=message, display_time=30 if warning else 15,
+            group="llama_server", id="llama_server_memory" if warning else "llama_server_failed",
         )
     except Exception:
         pass
+
+
+# -- end the server with A0W (Windows Job Object) ------------------------------
+
+_JOB = None  # handle of this process' kill-on-close job, created on first use
+
+
+def _kill_on_close_job():
+    global _JOB
+    if _JOB is not None or os.name != "nt":
+        return _JOB
+    import ctypes
+    from ctypes import wintypes
+
+    class BASIC(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                    ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD)]
+
+    class EXTENDED(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", BASIC), ("IoInfo", ctypes.c_uint64 * 6),
+                    ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    info = EXTENDED()
+    info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):  # extended limits
+        kernel32.CloseHandle(job)
+        return None
+    # The handle is deliberately never closed and not inheritable: it closes
+    # when this process ends, and Windows then ends every process in the job.
+    _JOB = job
+    return _JOB
+
+
+def _end_with_this_process(pid: int) -> bool:
+    """Make Windows end `pid` when A0W's process ends. False if it could not."""
+    try:
+        job = _kill_on_close_job()
+        if not job:
+            return False
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel32.OpenProcess(0x0100 | 0x0001, False, int(pid))  # PROCESS_SET_QUOTA | PROCESS_TERMINATE
+        if not handle:
+            return False
+        try:
+            return bool(kernel32.AssignProcessToJobObject(job, handle))
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return False
 
 
 _supervisor = Supervisor()

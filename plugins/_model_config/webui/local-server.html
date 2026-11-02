@@ -50,7 +50,15 @@
          this.note = (this.alsoUtility ? 'Main and Utility now use ' : 'Main now uses ') + m.alias + ' on this server. Save to apply; a running server restarts with it on its own.';
          this.call('model_info', { path: m.path });
        },
-       setVision(on) {
+       gb(mib) { return (mib / 1024).toFixed(1) + ' GB'; },
+      visionFit() {
+        // Only measurable while this model runs without Vision: then the free
+        // GPU memory is what Vision would have to fit into.
+        const s = this.info?.status, need = this.modelInfo?.mmproj_need_mib, free = this.info?.gpu_free_mib;
+        if (!need || free == null || s?.state !== 'running' || s.vision || s.model !== this.ls.model_path) return null;
+        return { need, free, fits: free >= need };
+      },
+      setVision(on) {
          this.ls.vision = on;
          if (this.chatOnServer()) config.chat_model.vision = on;
        },
@@ -80,6 +88,7 @@
           <span> - <code x-text="info.status.alias"></code> at <code x-text="info.status.api_base"></code><span x-show="info.status.adopted"> (kept from before a restart)</span></span>
         </template>
         <div x-show="info?.status?.last_error" class="ls-error" x-text="info?.status?.last_error"></div>
+        <div x-show="info?.status?.memory_warning" class="ls-error" x-text="info?.status?.memory_warning"></div>
         <div x-show="error" class="ls-error" x-text="error"></div>
         <div x-show="info" class="field-description">Log: <code x-text="info?.status?.log"></code></div>
       </div>
@@ -152,7 +161,14 @@
   <div class="field">
     <div class="field-label">
       <div class="field-title">Vision</div>
-      <div class="field-description">Load the model's own image projector (<code>mmproj-*.gguf</code> in the same folder, about 1 GB of GPU memory), so the Main model can see images itself.</div>
+      <div class="field-description">
+        Load the model's own image projector (<code>mmproj-*.gguf</code> in the same folder), so the Main model can see images itself.
+        <template x-if="visionFit()">
+          <div :class="visionFit().fits ? '' : 'ls-error'"
+               x-text="'Needs about ' + gb(visionFit().need) + ' more GPU memory; ' + gb(visionFit().free) + ' is free with this model running.'
+                       + (visionFit().fits ? '' : ' It does not fit: the model would spill into system RAM and run about 10x slower. Lower the context size or use a smaller model file first, or use a separate Vision model.')"></div>
+        </template>
+      </div>
     </div>
     <div class="field-control">
       <template x-if="modelInfo && modelInfo.path === ls.model_path && !modelInfo.mmproj"><span class="field-description">No mmproj file next to this model.</span></template>
