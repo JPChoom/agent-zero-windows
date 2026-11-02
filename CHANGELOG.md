@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.5.1
+
+A patch release for local models: tool calls that a local Qwen model wrapped in its own tags are run instead of rejected, thinking can no longer fill the context window, the model leaves GPU memory when Agent Zero closes, a warning when Vision does not fit, and no duplicate Telegram, email or WhatsApp pollers. New: a thinking setting for the Main model and history compression ahead of time.
 
 ### Fixed
 - **The local model stays in GPU memory after Agent Zero is closed.** The server was only stopped on a clean exit; closing the console window, a crash or Task Manager left `llama-server` running with the model loaded. Windows now ends it together with Agent Zero, however Agent Zero ends.

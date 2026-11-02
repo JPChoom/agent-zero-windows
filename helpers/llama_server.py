@@ -66,8 +66,11 @@ VRAM_HEADROOM = 1.10
 # The image projector also needs working memory while it encodes an image.
 MMPROJ_EXTRA_MIB = 512
 # Shared (system RAM) GPU memory of the server above this means the model
-# did not fit; a server that fits shows next to none.
-SPILL_WARN_MIB = 300
+# did not fit. Measured on an RTX 4090, Qwen3.8-27B Q5_K_M at 65k context: a
+# server that fits shows 274 MiB idle and ~320 MiB after generating (the
+# driver's own host buffers) at full speed; with Vision on it spilled to
+# 832 MiB and ran ~10x slower.
+SPILL_WARN_MIB = 600
 SPILL_SETTLE_SECONDS = 5.0
 # A leftover process is only treated as our server if its name contains this.
 PROCESS_NAME_HINT = "llama-server"

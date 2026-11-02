@@ -188,7 +188,7 @@ def test_a_model_spilling_into_system_ram_is_reported(env, monkeypatch):
     notes = []
     monkeypatch.setattr(sup, "SPILL_SETTLE_SECONDS", 0.0)
     monkeypatch.setattr(sup, "_notify", lambda message, warning=False: notes.append((message, warning)))
-    monkeypatch.setattr(sup, "gpu_shared_mib", lambda pid: sup.SPILL_WARN_MIB + 532)
+    monkeypatch.setattr(sup, "gpu_shared_mib", lambda pid: 832)  # measured with Vision on
     s = new()
     s.start(config(extra_args=["--mmproj", "x.gguf"]))
     deadline = time.time() + 5
@@ -204,7 +204,7 @@ def test_a_model_spilling_into_system_ram_is_reported(env, monkeypatch):
 def test_no_warning_when_the_model_fits(env, monkeypatch):
     config, new, _ = env
     monkeypatch.setattr(sup, "SPILL_SETTLE_SECONDS", 0.0)
-    monkeypatch.setattr(sup, "gpu_shared_mib", lambda pid: 40)
+    monkeypatch.setattr(sup, "gpu_shared_mib", lambda pid: 320)  # measured: a model that fits
     s = new()
     s.start(config())
     time.sleep(0.3)
