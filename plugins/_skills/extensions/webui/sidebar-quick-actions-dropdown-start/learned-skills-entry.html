@@ -1,0 +1,12 @@
+<!-- Learned skills -->
+<div x-data>
+  <button
+    x-move-after=".quick-actions-dropdown .dropdown-header + .dropdown-item"
+    class="dropdown-item"
+    id="learned-skills-dropdown"
+    title="Learned skills"
+    @click="openModal('/plugins/_skills/webui/learned-skills.html'); dropdownOpen = false">
+    <span class="material-symbols-outlined">school</span>
+    <span>Learned skills</span>
+  </button>
+</div>

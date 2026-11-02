@@ -1,0 +1,159 @@
+<html>
+
+<head>
+  <title>Learned skills</title>
+  <script type="module">
+    import { store } from "/plugins/_skills/webui/learned-skills-store.js";
+  </script>
+</head>
+
+<body>
+  <div x-data>
+    <template x-if="$store.learnedSkillsStore">
+      <div class="learned-skills" x-create="$store.learnedSkillsStore.onOpen()"
+        x-destroy="$store.learnedSkillsStore.cleanup()">
+
+        <div class="ls-intro">
+          Skills Agent Zero learned from your tasks, so the next similar request goes faster.
+          <template x-if="$store.learnedSkillsStore.settings">
+            <span x-text="$store.learnedSkillsStore.settings.enabled
+              ? 'It learns on its own after tasks of ' + $store.learnedSkillsStore.settings.min_steps + '+ steps (or '
+                + Math.round($store.learnedSkillsStore.settings.min_seconds / 60) + '+ minutes); you can also say “learn that skill”.'
+              : 'Learning on its own is off (Skills settings); “learn that skill” still works.'"></span>
+          </template>
+          Skills from tasks that read web pages, messages or downloads wait under <b>Needs a look</b> until you approve them.
+        </div>
+
+        <div class="ls-filters">
+          <template x-for="f in [['all','All'],['review','Needs a look'],['active','Active'],['disabled','Turned off']]" :key="f[0]">
+            <button type="button" class="button" :class="{ 'ls-filter-on': $store.learnedSkillsStore.filter === f[0] }"
+              @click="$store.learnedSkillsStore.filter = f[0]"
+              x-text="f[1] + ' (' + $store.learnedSkillsStore.count(f[0]) + ')'"></button>
+          </template>
+          <button type="button" class="button ls-refresh" @click="$store.learnedSkillsStore.load()"
+            :disabled="$store.learnedSkillsStore.loading">
+            <span class="icon material-symbols-outlined">refresh</span> Refresh
+          </button>
+        </div>
+
+        <template x-if="!$store.learnedSkillsStore.loading && $store.learnedSkillsStore.visible.length === 0">
+          <div class="ls-empty">No learned skills here yet.</div>
+        </template>
+
+        <div class="ls-list">
+          <template x-for="skill in $store.learnedSkillsStore.visible" :key="skill.state + ':' + skill.name">
+            <div class="ls-row" :class="'ls-' + skill.state">
+              <div class="ls-head">
+                <div class="ls-title">
+                  <span class="ls-name" x-text="skill.name"></span>
+                  <span class="ls-badge" :class="'ls-badge-' + skill.state" x-text="$store.learnedSkillsStore.badge(skill)"></span>
+                  <span class="ls-version" x-show="skill.version" x-text="'v' + skill.version"></span>
+                  <span class="ls-speed" x-show="$store.learnedSkillsStore.speedup(skill)"
+                    x-text="$store.learnedSkillsStore.speedup(skill)"></span>
+                </div>
+                <div class="ls-actions">
+                  <template x-if="skill.state === 'review'">
+                    <span>
+                      <button type="button" class="button confirm" :disabled="$store.learnedSkillsStore.busy === skill.name"
+                        @click="$store.learnedSkillsStore.approve(skill)">Approve</button>
+                      <button type="button" class="button cancel" :disabled="$store.learnedSkillsStore.busy === skill.name"
+                        @click="$confirmClick($event, () => $store.learnedSkillsStore.discard(skill))">Discard</button>
+                    </span>
+                  </template>
+                  <button type="button" class="button icon-button" title="View or edit" aria-label="View or edit"
+                    @click="$store.learnedSkillsStore.edit(skill)">
+                    <span class="icon material-symbols-outlined">edit_note</span>
+                  </button>
+                  <template x-if="skill.state === 'active'">
+                    <button type="button" class="button icon-button" title="Turn off" aria-label="Turn off"
+                      :disabled="$store.learnedSkillsStore.busy === skill.name"
+                      @click="$store.learnedSkillsStore.disable(skill)">
+                      <span class="icon material-symbols-outlined">pause_circle</span>
+                    </button>
+                  </template>
+                  <template x-if="skill.state === 'disabled'">
+                    <button type="button" class="button icon-button" title="Turn on again" aria-label="Turn on again"
+                      :disabled="$store.learnedSkillsStore.busy === skill.name"
+                      @click="$store.learnedSkillsStore.enable(skill)">
+                      <span class="icon material-symbols-outlined">play_circle</span>
+                    </button>
+                  </template>
+                  <template x-if="skill.state !== 'review'">
+                    <button type="button" class="button cancel icon-button" title="Delete" aria-label="Delete"
+                      :disabled="$store.learnedSkillsStore.busy === skill.name"
+                      @click="$confirmClick($event, () => $store.learnedSkillsStore.remove(skill))">
+                      <span class="icon material-symbols-outlined">delete</span>
+                    </button>
+                  </template>
+                </div>
+              </div>
+
+              <div class="ls-desc" x-text="skill.description"></div>
+              <div class="ls-meta">
+                <span x-text="$store.learnedSkillsStore.origin(skill) + (skill.created ? ' on ' + skill.created : '')"></span>
+                <template x-if="skill.source_chat">
+                  <a href="#" class="ls-link" @click.prevent="$store.learnedSkillsStore.openChat(skill)">open the chat</a>
+                </template>
+              </div>
+              <div class="ls-meta" x-show="$store.learnedSkillsStore.statsLine(skill)"
+                x-text="$store.learnedSkillsStore.statsLine(skill)"></div>
+              <div class="ls-review" x-show="skill.state === 'review'" x-text="$store.learnedSkillsStore.reviewLine(skill)"></div>
+
+              <template x-if="$store.learnedSkillsStore.editing === skill.name">
+                <div class="ls-editor">
+                  <textarea x-model="$store.learnedSkillsStore.editText" spellcheck="false" rows="16"></textarea>
+                  <div class="ls-editor-actions">
+                    <template x-if="skill.versions && skill.versions.length">
+                      <label class="ls-versions">Older versions:
+                        <select @change="if ($event.target.value) { $store.learnedSkillsStore.restore(skill, parseInt($event.target.value)); $event.target.value = '' }">
+                          <option value="">restore...</option>
+                          <template x-for="v in skill.versions.slice().reverse()" :key="v">
+                            <option :value="v" x-text="'v' + v"></option>
+                          </template>
+                        </select>
+                      </label>
+                    </template>
+                    <button type="button" class="button cancel" @click="$store.learnedSkillsStore.editing = ''">Close</button>
+                    <button type="button" class="button confirm" :disabled="$store.learnedSkillsStore.busy === skill.name"
+                      @click="$store.learnedSkillsStore.saveEdit(skill)">Save</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <style>
+    .learned-skills { display: flex; flex-direction: column; gap: 0.9rem; min-width: min(46rem, 90vw); }
+    .ls-intro { color: var(--color-text-secondary, inherit); font-size: 0.92rem; line-height: 1.45; }
+    .ls-filters { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .ls-filters .ls-filter-on { outline: 2px solid var(--color-primary, #4a90e2); }
+    .ls-refresh { margin-left: auto; }
+    .ls-empty { opacity: 0.7; padding: 1rem 0; }
+    .ls-list { display: flex; flex-direction: column; gap: 0.6rem; }
+    .ls-row { border: 1px solid var(--color-border); border-radius: 0.5rem; padding: 0.7rem 0.85rem; display: flex; flex-direction: column; gap: 0.3rem; }
+    .ls-row.ls-review { border-color: var(--color-warning, #d9a400); }
+    .ls-row.ls-disabled { opacity: 0.7; }
+    .ls-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .ls-title { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .ls-name { font-weight: 600; }
+    .ls-badge { font-size: 0.75rem; padding: 0.05rem 0.45rem; border-radius: 1rem; border: 1px solid var(--color-border); }
+    .ls-badge-review { border-color: var(--color-warning, #d9a400); }
+    .ls-version, .ls-speed { font-size: 0.8rem; opacity: 0.75; }
+    .ls-speed { font-weight: 600; opacity: 0.9; }
+    .ls-actions { display: flex; align-items: center; gap: 0.3rem; }
+    .ls-desc { font-size: 0.92rem; }
+    .ls-meta { font-size: 0.8rem; opacity: 0.75; display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .ls-link { text-decoration: underline; cursor: pointer; }
+    .ls-review { font-size: 0.85rem; color: var(--color-warning, #b07f00); }
+    .ls-editor { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.3rem; }
+    .ls-editor textarea { width: 100%; font-family: var(--font-family-code, monospace); font-size: 0.85rem; box-sizing: border-box; }
+    .ls-editor-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .ls-versions { margin-right: auto; font-size: 0.85rem; display: flex; gap: 0.4rem; align-items: center; }
+  </style>
+</body>
+
+</html>

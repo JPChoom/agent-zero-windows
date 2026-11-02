@@ -1,5 +1,7 @@
-"""Agent-learned skills: refused drafts, approval gate, inert drafts and
-versions, and the permission gate's self-confirming rule."""
+"""Agent-learned skills: refused drafts, the approval gate for skills from
+tasks that read outside content (direct install for tasks on the user's own
+PC), inert drafts and versions, and the permission gate's self-confirming
+rule. Self-learning and the Learned skills window: test_skill_auto_learn.py."""
 
 from __future__ import annotations
 
@@ -10,7 +12,7 @@ import pytest
 from helpers import skills as skills_mod
 from helpers.errors import RepairableException
 from plugins._permissions.helpers import rules
-from plugins._skills.helpers import learned
+from plugins._skills.helpers import learned, task_watch
 
 GOOD_BODY = (
     "1. Open the report template.\n2. Select the date range.\n"
@@ -73,11 +75,22 @@ def test_drafts_and_old_versions_are_never_discovered_as_skills(skills_root):
 
 class _Ctx:
     id = "chat-1"
-    data = {}
+
+    def __init__(self):
+        self.data = {}
+
+    def get_data(self, key):
+        return self.data.get(key)
+
+    def set_data(self, key, value):
+        self.data[key] = value
 
 
 class _Agent:
-    context = _Ctx()
+    number = 0
+
+    def __init__(self):
+        self.context = _Ctx()
 
 
 @pytest.fixture
@@ -96,8 +109,10 @@ def tool_env(skills_root, monkeypatch):
 
     monkeypatch.setattr(ask_mod, "request_approval", fake_approval)
     monkeypatch.setattr(perm_config, "get_config", lambda agent=None: {"mode": "bypass", "approval_timeout_seconds": 5})
-    monkeypatch.setattr(mod.untrusted_content, "is_tainted", lambda agent: True)
-    tool = mod.SkillLearn(agent=_Agent(), name="skill_learn", method=None, args={}, message="", loop_data=None)
+    agent = _Agent()
+    # the task "learn that skill" refers to read a web page
+    agent.context.set_data(task_watch.LAST, {"sources": ["a web page"], "seconds": 300.0, "steps": 12})
+    tool = mod.SkillLearn(agent=agent, name="skill_learn", method=None, args={}, message="", loop_data=None)
     return tool, asked, answer, skills_root
 
 
@@ -105,8 +120,29 @@ def tool_env(skills_root, monkeypatch):
 async def test_approval_is_asked_even_in_bypass_and_installs_the_skill(tool_env):
     tool, asked, _, root = tool_env
     resp = await tool.execute(action="draft", name="export-report", description="Export monthly report to PDF for printing", procedure=GOOD_BODY)
-    assert asked and "read outside content" in asked[0]
+    assert asked and "read outside content (a web page)" in asked[0]
     assert (root / "export-report" / "SKILL.md").is_file() and "v1" in resp.message
+
+
+@pytest.mark.asyncio
+async def test_a_skill_from_a_task_on_the_users_own_pc_is_saved_without_asking(tool_env):
+    tool, asked, _, root = tool_env
+    tool.agent.context.set_data(task_watch.LAST, {"sources": [], "seconds": 300.0, "steps": 12})
+    await tool.execute(action="draft", name="export-report", description="Export monthly report to PDF for printing", procedure=GOOD_BODY)
+    assert asked == []
+    skill = root / "export-report" / "SKILL.md"
+    assert skill.is_file() and learned.read_frontmatter(skill)["learned_by"] == "asked"
+    before = learned.load_stats()["export-report"]["learned"]
+    assert (before["seconds"], before["steps"]) == (300.0, 12)
+
+
+@pytest.mark.asyncio
+async def test_outside_content_read_in_the_current_turn_also_needs_approval(tool_env):
+    tool, asked, _, _root = tool_env
+    tool.agent.context.set_data(task_watch.LAST, {"sources": [], "seconds": 300.0, "steps": 12})
+    tool.agent.context.set_data(task_watch.CURRENT, {"sources": ["web search"], "steps": 1, "used_skills": []})
+    await tool.execute(action="draft", name="export-report", description="Export monthly report to PDF for printing", procedure=GOOD_BODY)
+    assert asked and "web search" in asked[0]
 
 
 @pytest.mark.asyncio

@@ -1,18 +1,20 @@
 """Agent-facing tool: save a procedure the agent just worked out as a skill.
 
-Only after the user said yes in chat. The draft is checked (injection
-phrasing, encoded/downloaded code, security switches, credentials), written
-to the hidden pending folder, and shown to the user on an Approve/Deny card;
-nothing is loaded as a skill until they approve. Updating a learned skill
-creates the next version and keeps the old one. See helpers/learned.py.
+When the user asks for it ("learn that skill"). The draft is checked
+(injection phrasing, encoded/downloaded code, security switches,
+credentials). If the task only used the user's own PC it is installed
+directly; if it read outside content (web, messages, downloads, network
+command output - learned.outside_source) the user approves it on an
+Approve/Deny card first. Updating a learned skill creates the next version
+and keeps the old one. Skills are also learned without asking
+(helpers/auto_learn.py). See helpers/learned.py.
 """
 
 from __future__ import annotations
 
-from helpers import untrusted_content
 from helpers.errors import RepairableException
 from helpers.tool import Response, Tool
-from plugins._skills.helpers import learned
+from plugins._skills.helpers import learned, task_watch
 
 
 class SkillLearn(Tool):
@@ -50,34 +52,45 @@ class SkillLearn(Tool):
 
         version = learned.current_version(name) + 1
         chat = str(getattr(self.agent.context, "id", "") or "")
-        path = learned.write_draft(name, learned.render(name, description, body, version, chat, triggers))
+        path = learned.write_draft(name, learned.render(name, description, body, version, chat, triggers,
+                                                        learned_by="asked"))
 
-        notes = [f"save '{name}' v{version} as an agent-learned skill ({path})"]
-        if version > 1:
-            notes.append(f"replaces v{version - 1}, which is kept in .versions/")
-        if untrusted_content.is_tainted(self.agent):
-            notes.append("this chat read outside content (web pages, files or command output) - check the procedure carefully")
-        preview = body if len(body) <= 600 else body[:600] + "..."
-        notes.append(f"procedure: {preview}")
+        # The task the user means ("learn that skill") is the chat's last
+        # finished task; the current turn may have read things too.
+        last, now = task_watch.last(self.agent) or {}, task_watch.current(self.agent) or {}
+        sources = list(dict.fromkeys(list(last.get("sources") or []) + list(now.get("sources") or [])))
 
-        from plugins._permissions.helpers.ask import request_approval
-        from plugins._permissions.helpers.config import get_config as perm_config
+        if sources:
+            notes = [f"save '{name}' v{version} as an agent-learned skill ({path})"]
+            if version > 1:
+                notes.append(f"replaces v{version - 1}, which is kept in .versions/")
+            notes.append(f"the task read outside content ({', '.join(sources)}) - check the procedure carefully")
+            preview = body if len(body) <= 600 else body[:600] + "..."
+            notes.append(f"procedure: {preview}")
 
-        pcfg = perm_config(self.agent)
-        try:
-            # Asked in every mode, Bypass included: a skill is a standing
-            # instruction the agent will follow in future chats.
-            await request_approval(
-                self.agent, "skill_learn", {"action": "draft", "name": name},
-                "; ".join(notes), pcfg["mode"], pcfg["approval_timeout_seconds"], offer_rules=False,
-            )
-        except RepairableException:
-            learned.discard(name)
-            raise
+            from plugins._permissions.helpers.ask import request_approval
+            from plugins._permissions.helpers.config import get_config as perm_config
+
+            pcfg = perm_config(self.agent)
+            try:
+                # Asked in every mode, Bypass included: a skill learned from
+                # outside content is a standing instruction the agent would
+                # follow in future chats.
+                await request_approval(
+                    self.agent, "skill_learn", {"action": "draft", "name": name},
+                    "; ".join(notes), pcfg["mode"], pcfg["approval_timeout_seconds"], offer_rules=False,
+                )
+            except RepairableException:
+                learned.discard(name)
+                raise
+        # else: the task only used the user's own PC; the user asked for it
+        # and the draft passed check_draft, so it is installed directly.
 
         target, old = learned.install(name)
+        if last.get("seconds"):
+            learned.record_learned(name, last.get("seconds", 0), last.get("steps", 0))
         return Response(
             message=f"Saved skill '{name}' v{version} at {target}" + (f" (v{old} kept in .versions/)." if old else ".")
-            + " It is available from the next message on.",
+            + " It is available from the next message on; the user can view, edit or delete it under Learned skills.",
             break_loop=False,
         )

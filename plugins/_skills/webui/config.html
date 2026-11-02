@@ -35,6 +35,46 @@
         </div>
       </template>
 
+      <template x-if="!isChatMode">
+        <div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Learn skills on its own</div>
+              <div class="field-description">
+                After a long task that succeeded, Agent Zero saves the steps as a skill, so the next similar request goes faster.
+                Skills from tasks that read web pages, messages or downloads wait for your approval.
+                You can also say “learn that skill” after any task.
+              </div>
+            </div>
+            <div class="field-control">
+              <label class="toggle"><input type="checkbox" x-model="config.auto_learn"><span class="toggler"></span></label>
+            </div>
+          </div>
+          <div class="field" x-show="config.auto_learn">
+            <div class="field-label">
+              <div class="field-title">A task is long enough at</div>
+              <div class="field-description">Tool steps, or minutes (with at least 4 steps).</div>
+            </div>
+            <div class="field-control skills-learn-limits">
+              <input type="number" min="3" step="1" x-model.number="config.auto_learn_min_steps"> steps
+              <input type="number" min="1" step="1" :value="Math.round((config.auto_learn_min_seconds ?? 180) / 60)"
+                @change="config.auto_learn_min_seconds = Math.max(1, parseInt($event.target.value) || 3) * 60"> min
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Learned skills</div>
+              <div class="field-description">See, edit, approve, turn off or delete the skills Agent Zero learned.</div>
+            </div>
+            <div class="field-control">
+              <button type="button" class="button" @click="openModal('/plugins/_skills/webui/learned-skills.html')">
+                <span class="icon material-symbols-outlined">school</span> Open
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <div class="skills-toolbar">
         <label class="skills-search">
           <span class="material-symbols-outlined">search</span>
@@ -166,6 +206,16 @@
   </div>
 
   <style>
+    .skills-learn-limits {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .skills-learn-limits input {
+      width: 4.5rem;
+    }
+
     .skills-layout {
       display: flex;
       flex-direction: column;

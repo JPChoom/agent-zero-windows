@@ -1,3 +1,7 @@
 max_active_skills: 20
 active_skills: []
 hidden_skills: []
+# Learning skills on its own after a long, successful task (helpers/auto_learn.py)
+auto_learn: true
+auto_learn_min_steps: 8
+auto_learn_min_seconds: 180

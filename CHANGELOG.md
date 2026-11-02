@@ -2,6 +2,11 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### New
+- **Agent Zero learns skills on its own.** After a long task that succeeded (8+ steps, or 3+ minutes), it saves the steps as a skill in the background, so the next similar request goes faster; saying "learn that skill" saves the last task right away. A skill from a task that only used your own files and commands is active at once; one from a task that read web pages, messages or downloads waits under **Needs a look** until you approve it, since such content can carry hidden instructions. The new **Learned skills** window (sidebar quick actions) shows each skill with how long the task that taught it took against later uses, and lets you approve, edit, restore older versions, turn off or delete. Settings: *Skills > Learn skills on its own*.
+
 ## v1.5.1
 
 A patch release for local models: tool calls that a local Qwen model wrapped in its own tags are run instead of rejected, thinking can no longer fill the context window, the model leaves GPU memory when Agent Zero closes, a warning when Vision does not fit, and no duplicate Telegram, email or WhatsApp pollers. New: a thinking setting for the Main model and history compression ahead of time.

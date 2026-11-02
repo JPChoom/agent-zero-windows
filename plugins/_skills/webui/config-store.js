@@ -68,6 +68,10 @@ function ensureConfig(config) {
 
   config.active_skills = compactEntries(activeSkills, config.max_active_skills);
   config.hidden_skills = compactEntries(hiddenSkills);
+  // self-learning (helpers/auto_learn.py); a config saved before it existed
+  if (typeof config.auto_learn !== "boolean") config.auto_learn = true;
+  if (!(config.auto_learn_min_steps >= 3)) config.auto_learn_min_steps = 8;
+  if (!(config.auto_learn_min_seconds >= 60)) config.auto_learn_min_seconds = 180;
 }
 
 function compactEntries(entries, limit = null) {
