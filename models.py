@@ -673,6 +673,10 @@ class LiteLLMChatWrapper(SimpleChatModel):
         # calls for the user's turn; extraction calls that can simply be
         # redone later also give up a running slot (helpers/model_concurrency).
         timing.streamed = stream
+        if timing.role == "main":
+            timing.reuse = perf.prompt_reuse(
+                timing.context_id, f"main:{getattr(self, 'a0_perf_agent', '')}", msgs_conv
+            )
         background = timing.background
         preemptible = background and not stream and timing.caller in PREEMPTIBLE_CALLERS
 

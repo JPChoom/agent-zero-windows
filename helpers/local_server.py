@@ -18,6 +18,12 @@ next to the model slots that use the server. This module turns them into a
   thinking were almost never empty (about 1%), past 8k they were empty 29%
   of the time and past 16k always - the thinking ran until the context
   window was full and no answer came. 0 = no limit. Not for `custom`.
+- **prompt_cache_mib** is the RAM llama-server may use to keep earlier
+  prompts (`--cache-ram`). Main and utility calls share the server's one
+  slot, so a safety check or memory call pushes the chat's conversation out
+  of the GPU; the server restores it from this cache instead of re-reading
+  it, but only while it fits. 0 = automatic (PROMPT_CACHE_SHARE of system
+  RAM, between llama.cpp's own default and PROMPT_CACHE_MAX_MIB).
 
 It also lists GGUF files from the usual places (Agent Zero's own models
 folder, LM Studio's, and any folders the user adds), reads a GGUF header to
@@ -60,6 +66,7 @@ DEFAULTS: dict = {
     "vram_check": True,
     "startup_timeout_seconds": 300,
     "thinking_budget": 6144,
+    "prompt_cache_mib": 0,
 }
 
 # Files that are never a chat model.
@@ -105,6 +112,39 @@ def preset_args(preset: str, model_path: str, extra_args: str = "") -> list[str]
     return args
 
 
+PROMPT_CACHE_DEFAULT_MIB = 8192  # llama.cpp's own default
+PROMPT_CACHE_SHARE = 0.35
+PROMPT_CACHE_MAX_MIB = 32768
+
+
+def system_ram_mib() -> int | None:
+    try:
+        import psutil
+
+        return int(psutil.virtual_memory().total // (1024 * 1024))
+    except Exception:
+        return None
+
+
+def prompt_cache_mib(setting) -> int:
+    """The --cache-ram size: the setting, or automatic when it is 0/unset."""
+    value = _as_int(setting, 0)
+    if value > 0:
+        return value
+    ram = system_ram_mib()
+    if not ram:
+        return PROMPT_CACHE_DEFAULT_MIB
+    auto = int(ram * PROMPT_CACHE_SHARE) // 1024 * 1024
+    return max(PROMPT_CACHE_DEFAULT_MIB, min(PROMPT_CACHE_MAX_MIB, auto))
+
+
+def cache_args(preset: str, setting) -> list[str]:
+    """--cache-ram for every preset except custom (see the module docstring)."""
+    if preset == "custom":
+        return []
+    return ["--cache-ram", str(prompt_cache_mib(setting))]
+
+
 def thinking_args(preset: str, budget) -> list[str]:
     """Flags that cap thinking (see the module docstring); none for custom."""
     budget = _as_int(budget, 0)
@@ -128,6 +168,7 @@ def server_config(cfg: dict | None = None):
     preset = str(s.get("preset") or "coding")
     extra = preset_args(preset, model, str(s.get("extra_args") or ""))
     extra += thinking_args(preset, s.get("thinking_budget"))
+    extra += cache_args(preset, s.get("prompt_cache_mib"))
     if s.get("vision"):
         override = str(s.get("mmproj_path") or "").strip()
         projector = override if override and os.path.isfile(override) else mmproj_for(model)

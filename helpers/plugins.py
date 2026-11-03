@@ -211,6 +211,9 @@ def clear_plugin_cache(plugin_names: list[str] | None = None):
     areas = ["*(plugins)*", "*(extensions)*", "*(api)*"]
     for area in areas:
         cache.clear(area)
+    from helpers import subagents
+
+    subagents.clear_recent_paths()
 
     from helpers.ws_manager import send_data
 

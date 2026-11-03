@@ -141,6 +141,10 @@ def _read_with_lock_retry(read_fn, attempts: int = 3, delay_seconds: float = 0.0
     for attempt in range(attempts):
         try:
             return read_fn()
+        except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
+            # not a lock: retrying only adds the delay (seen: 100 ms on every
+            # turn for an agent folder without agent.json)
+            raise
         except (PermissionError, OSError) as e:
             last_error = e
             if attempt < attempts - 1:

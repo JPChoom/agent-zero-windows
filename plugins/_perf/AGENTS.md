@@ -7,6 +7,7 @@
 ## Ownership
 
 - `helpers/perf.py` (core) owns the records, the turn aggregation, the event-loop stall probe and the JSONL files; this plugin only opens/closes turns and times tools.
+- `extensions/python/chat_model_call_before/_10_perf_agent.py` names the agent on each main-model call (`model.a0_perf_agent`) so `perf.prompt_reuse` compares each agent's prompt with its own previous one.
 - `extensions/python/monologue_start/_01_perf_turn_start.py` / `monologue_end/_99_perf_turn_end.py` open and close a turn for agent 0 and print the summary line.
 - `extensions/python/tool_execute_before/_99_perf_tool_start.py` / `tool_execute_after/_00_perf_tool_end.py` bracket the tool call itself (last before-hook, first after-hook).
 - `default_config.yaml` owns `print_summary`.

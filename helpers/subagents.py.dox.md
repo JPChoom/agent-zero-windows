@@ -34,6 +34,7 @@
 
 ## Runtime Contracts
 
+- `get_paths` results are reused for `PATHS_TTL_SECONDS` (2 s) from `_recent_paths` (every `read_prompt` calls it; ~7 ms each). The long-lived `PATHS_CACHE_AREA` stays off as upstream left it; `clear_recent_paths()` runs on every plugin change (`plugins.clear_plugin_cache`).
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, plugin state, settings/state persistence.

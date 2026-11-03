@@ -5,6 +5,8 @@ from typing import TypedDict, TYPE_CHECKING, Literal
 from pydantic import BaseModel, model_validator
 import json
 import os
+import threading
+import time
 
 GLOBAL_DIR = "."
 USER_DIR = "usr"
@@ -13,6 +15,21 @@ USER_AGENTS_DIR = "usr/agents"
 PATHS_CACHE_AREA = "subagent_paths(plugins)"
 
 cache.toggle_area(PATHS_CACHE_AREA, False)
+
+# A short-lived copy of get_paths results. The long-lived cache area above
+# stays off (upstream: the folders it checks can appear while A0W runs, and
+# only plugin changes clear that area), but a turn calls get_paths dozens of
+# times within milliseconds - every read_prompt does, ~7 ms each with plugin
+# discovery and thousands of path checks. A result reused for at most
+# PATHS_TTL_SECONDS keeps a new folder invisible for that long at most.
+PATHS_TTL_SECONDS = 2.0
+_recent_paths: dict = {}
+_recent_paths_lock = threading.Lock()
+
+
+def clear_recent_paths() -> None:
+    with _recent_paths_lock:
+        _recent_paths.clear()
 
 type Origin = Literal["default", "user", "project", "plugin"]
 
@@ -361,6 +378,12 @@ def get_paths(
     cached = cache.get(PATHS_CACHE_AREA, cache_key)
     if cached is not None:
         return cached
+    now = time.monotonic()
+    recent_key = (files.get_base_dir(), cache_key)
+    with _recent_paths_lock:
+        recent = _recent_paths.get(recent_key)
+    if recent is not None and now - recent[0] < PATHS_TTL_SECONDS:
+        return list(recent[1])
 
     paths: list[str] = []
     check_subpaths = subpaths if must_exist_completely else []
@@ -429,6 +452,10 @@ def get_paths(
             paths.append(path)
 
     cache.add(PATHS_CACHE_AREA, cache_key, paths)
+    with _recent_paths_lock:
+        if len(_recent_paths) > 512:
+            _recent_paths.clear()
+        _recent_paths[recent_key] = (now, list(paths))
     return paths
 
 

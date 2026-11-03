@@ -48,6 +48,72 @@ _lock = threading.RLock()
 _enabled = True
 
 
+# -- prompt reuse (roadmap A2) --------------------------------------------------
+#
+# A local server re-reads only the part of a prompt after the first change
+# since its cached copy. For each chat's main-model calls this compares the
+# prompt with the previous one: how much of it is unchanged from the start,
+# and in which message the first change falls. A change early on (system
+# prompt, the area before the history) forces a re-read of everything after
+# it; growth at the end is the normal, cheap case.
+
+_LAST_PROMPTS: dict[tuple[str, str], list[str]] = {}
+_LAST_PROMPTS_MAX = 64
+
+
+def _message_text(message: Any) -> str:
+    if isinstance(message, dict):
+        role, content = message.get("role", ""), message.get("content", "")
+    else:
+        role, content = getattr(message, "type", ""), getattr(message, "content", "")
+    if isinstance(content, list):
+        content = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part) for part in content
+        )
+    return f"{role}\x00{content}"
+
+
+def prompt_reuse(context_id: str, role: str, messages: Any) -> dict[str, Any] | None:
+    """Compare this prompt with the chat's previous one of the same role.
+
+    Returns {"kept": fraction of the previous prompt's characters unchanged
+    from the start, "changed_msg": index of the first changed message (None
+    when only messages were added), "msgs": message count}, or None for the
+    first call of a chat.
+    """
+    if not context_id or not messages:
+        return None
+    texts = [_message_text(m) for m in messages]
+    key = (context_id, role)
+    with _lock:
+        previous = _LAST_PROMPTS.pop(key, None)
+        _LAST_PROMPTS[key] = texts
+        while len(_LAST_PROMPTS) > _LAST_PROMPTS_MAX:
+            _LAST_PROMPTS.pop(next(iter(_LAST_PROMPTS)))
+    if previous is None:
+        return None
+    kept = 0
+    changed = None
+    for index, old in enumerate(previous):
+        new = texts[index] if index < len(texts) else None
+        if new == old:
+            kept += len(old)
+            continue
+        if new is not None:
+            kept += len(os.path.commonprefix([old, new]))
+        changed = index
+        break
+    total = sum(len(t) for t in previous) or 1
+    return {
+        "kept": round(kept / total, 3),
+        "changed_msg": changed,
+        # 1 = only the last message changed (the per-turn extras after the
+        # history: the normal case); larger = something earlier changed
+        "changed_from_end": None if changed is None else len(previous) - changed,
+        "msgs": len(texts),
+    }
+
+
 def set_enabled(value: bool) -> None:
     global _enabled
     _enabled = bool(value)
@@ -85,6 +151,8 @@ class ModelCall:
     # A call that does not stream gets its whole answer at once: its "first
     # token" is the whole call, so it is not reported as one.
     streamed: bool = True
+    # prompt_reuse() against the chat's previous call of the same kind
+    reuse: dict[str, Any] | None = None
 
     def slot_acquired(self) -> None:
         self.attempts += 1
@@ -122,6 +190,8 @@ class ModelCall:
             "queue_wait_s": round(slot - self.started, 3),
             "first_token_s": round(first - slot, 3) if first is not None and self.streamed else None,
             "streamed": self.streamed,
+            "prompt_kept": (self.reuse or {}).get("kept"),
+            "prompt_changed_from_end": (self.reuse or {}).get("changed_from_end"),
             "total_s": round(end - self.started, 3),
             "prompt_tokens_est": estimate_tokens(self.prompt_chars),
             "reasoning_tokens_est": estimate_tokens(self.reasoning_chars),
@@ -240,11 +310,14 @@ def summarize_turn(turn: Turn, now: float) -> dict[str, Any]:
         role = by_role.setdefault(call["role"], {
             "calls": 0, "total_s": 0.0, "queue_wait_s": 0.0, "first_token_s": 0.0,
             "reasoning_tokens_est": 0, "response_tokens_est": 0, "prompt_tokens_est": 0,
-            "not_streamed": 0,
+            "not_streamed": 0, "kept_sum": 0.0, "kept_n": 0,
         })
         role["calls"] += 1
         if call.get("streamed") is False:
             role["not_streamed"] += 1
+        if call.get("prompt_kept") is not None:
+            role["kept_sum"] += call["prompt_kept"]
+            role["kept_n"] += 1
         role["total_s"] += call["total_s"]
         role["queue_wait_s"] += call["queue_wait_s"]
         role["first_token_s"] += call["first_token_s"] or 0.0
@@ -254,6 +327,9 @@ def summarize_turn(turn: Turn, now: float) -> dict[str, Any]:
     for role in by_role.values():
         for key in ("total_s", "queue_wait_s", "first_token_s"):
             role[key] = round(role[key], 3)
+        kept_n = role.pop("kept_n")
+        kept_sum = role.pop("kept_sum")
+        role["prompt_kept"] = round(kept_sum / kept_n, 3) if kept_n else None
     slowest = sorted(turn.extensions.items(), key=lambda item: item[1], reverse=True)[:5]
     return {
         "ts": time.time(),
@@ -285,6 +361,10 @@ def format_turn(record: dict[str, Any]) -> str:
             # their time is all in the total; no first token to report
             details.append("not streamed" if stats["not_streamed"] == stats["calls"]
                            else f"{stats['not_streamed']} not streamed")
+        if stats.get("prompt_kept") is not None:
+            # how much of the prompt was unchanged since the chat's previous
+            # call: what a local server can reuse instead of re-reading
+            details.append(f"prompt unchanged {stats['prompt_kept'] * 100:.0f}%")
         if stats["reasoning_tokens_est"]:
             details.append(f"thinking ~{stats['reasoning_tokens_est']} tok")
         details.append(f"answer ~{stats['response_tokens_est']} tok")

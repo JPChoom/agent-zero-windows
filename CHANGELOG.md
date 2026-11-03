@@ -2,6 +2,13 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Improved
+- **Each step starts faster.** Building the system prompt took 1-2.4 s per step on a live install, most of it in the tool list: it looked up the prompt folders again for each of ~30 tool files, and the subordinate-agent tool slept 100 ms on every step retrying a file that doesn't exist. The folders are now looked up once per build and reused for two seconds, and a missing file fails at once (a briefly locked file is still retried). Measured on the development copy: the whole system prompt 440 -> 122 ms, the tool list 310 -> 54 ms, with identical text. It also ran on A0W's main loop, so the UI stalls less.
+- **The local model server keeps more earlier prompts in RAM.** Main and utility calls share the server's one slot; after a safety check or memory call, the conversation is restored from a RAM cache instead of re-read - but only if it fits. On the owner's logs 46% of requests re-read almost the whole prompt (197 of 238 minutes of prompt reading) with llama.cpp's 8 GB default; the cache is now about a third of system RAM (8-32 GB; *Settings > Models > Local model server > Advanced > Prompt cache*).
+- **The turn timing line shows how much of the prompt was unchanged** since the previous step ("prompt unchanged 97%"), so a change that forces the server to re-read everything is visible.
+
 ## v1.5.2
 
 Agent Zero learns skills on its own, with a window to review, edit and delete them; installing from the README now uses the signed release and hash-checked packages; and smaller fixes from an external code review.

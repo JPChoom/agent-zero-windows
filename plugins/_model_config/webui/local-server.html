@@ -211,6 +211,10 @@
       <div class="field-label"><div class="field-title">Port</div><div class="field-description">On 127.0.0.1. Models that use this server follow it.</div></div>
       <div class="field-control"><input type="number" min="1024" max="65535" :value="ls.port" @change="setPort(parseInt($event.target.value) || 8090)" /></div>
     </div>
+    <div class="field" x-show="ls.preset !== 'custom'">
+      <div class="field-label"><div class="field-title">Prompt cache (RAM)</div><div class="field-description">MiB of system RAM the server may use to keep earlier prompts, so a chat's conversation is restored instead of re-read after a safety check or memory call. 0 = automatic (about a third of this PC's RAM, 8-32 GB).</div></div>
+      <div class="field-control"><input type="number" min="0" step="1024" :value="ls.prompt_cache_mib ?? 0" @change="ls.prompt_cache_mib = Math.max(0, parseInt($event.target.value) || 0)" /></div>
+    </div>
     <div class="field">
       <div class="field-label"><div class="field-title">GPU layers</div><div class="field-description">99 = everything on the GPU; lower to move part of the model to the CPU (slower).</div></div>
       <div class="field-control"><input type="number" min="0" max="999" x-model.number="ls.gpu_layers" /></div>

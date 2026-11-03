@@ -24,6 +24,19 @@ class ToolsPrompt(Extension):
         system_prompt.append(prompt)
 
 
+def _read_tool_prompt(agent: Agent, prompt_dirs: list[str], basename: str, extra: dict) -> str:
+    """agent.read_prompt with the prompt folders computed once per build.
+
+    agent.read_prompt looks the folders up again for every file (plugin
+    discovery, thousands of path checks); for ~30 tool files that was most of
+    the build time on every turn.
+    """
+    prompt = files.read_prompt_file(basename, _directories=prompt_dirs, _agent=agent, **extra)
+    if files.is_full_json_template(prompt):
+        prompt = files.remove_code_fences(prompt)
+    return prompt
+
+
 @extensible
 async def build_prompt(agent: Agent) -> str:
     # collect tool files from all prompt directories
@@ -40,7 +53,7 @@ async def build_prompt(agent: Agent) -> str:
         try:
             basename = os.path.basename(tool_file)
             extra = all_tool_kwargs.get(basename, {})
-            tool = agent.read_prompt(basename, **extra)
+            tool = _read_tool_prompt(agent, prompt_dirs, basename, extra)
             tools.append(tool)
         except Exception as e:
             PrintStyle().error(f"Error loading tool '{tool_file}': {e}")

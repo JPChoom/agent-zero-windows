@@ -48,6 +48,7 @@
 
 ## Runtime Contracts
 
+- `_read_with_lock_retry` retries `PermissionError`/`OSError` briefly (Windows Defender/indexer locks) but never `FileNotFoundError`, `IsADirectoryError` or `NotADirectoryError`: those raise at once (a missing file used to cost 100 ms of retry sleeps on every read).
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, subprocess/runtime control, plugin state, settings/state persistence, secret handling.

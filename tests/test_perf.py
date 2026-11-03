@@ -172,3 +172,43 @@ def test_latency_for_sums_a_chat_and_background_calls(perf_dir):
     totals = perf.latency_for("chat-5", since)
     assert totals["model_calls"] == 3 and totals["background_calls"] == 1
     assert totals["thinking_tokens_est"] == 20
+
+
+# -- prompt reuse (A2) -------------------------------------------------------------
+
+def _msgs(*texts):
+    roles = ["system"] + ["user", "assistant"] * 20
+    return [{"role": roles[i], "content": t} for i, t in enumerate(texts)]
+
+
+def test_prompt_reuse_growth_at_the_end_keeps_everything():
+    perf._LAST_PROMPTS.clear()
+    assert perf.prompt_reuse("c1", "main:A0", _msgs("sys", "hello", "extras 1")) is None  # first call
+    reuse = perf.prompt_reuse("c1", "main:A0", _msgs("sys", "hello", "reply", "tool result", "extras 2"))
+    # only the per-turn extras (the last message) changed: the normal case
+    assert reuse["changed_from_end"] == 1 and reuse["kept"] > 0.6
+
+
+def test_prompt_reuse_finds_an_early_change():
+    perf._LAST_PROMPTS.clear()
+    perf.prompt_reuse("c1", "main:A0", _msgs("system prompt v1", "a" * 1000, "b" * 1000, "x"))
+    reuse = perf.prompt_reuse("c1", "main:A0", _msgs("system prompt v2", "a" * 1000, "b" * 1000, "y"))
+    assert reuse["changed_msg"] == 0 and reuse["changed_from_end"] == 4 and reuse["kept"] < 0.02
+
+
+def test_prompt_reuse_keeps_agents_apart():
+    perf._LAST_PROMPTS.clear()
+    perf.prompt_reuse("c1", "main:A0", _msgs("sys A0", "task"))
+    assert perf.prompt_reuse("c1", "main:A1", _msgs("sys A1", "subtask")) is None
+    assert perf.prompt_reuse("c1", "main:A0", _msgs("sys A0", "task", "more"))["changed_from_end"] is None
+
+
+def test_the_turn_line_shows_how_much_of_the_prompt_was_unchanged():
+    turn = perf.Turn(context_id="c", agent_name="A0")
+    call = perf.ModelCall(model="m", role="main", context_id="c", prompt_chars=40000)
+    call.slot_at = call.started
+    call.first_chunk_at = call.started + 2
+    call.ended = call.started + 5
+    call.reuse = {"kept": 0.97, "changed_from_end": 1}
+    turn.calls = [call.as_dict()]
+    assert "prompt unchanged 97%" in perf.format_turn(perf.summarize_turn(turn, turn.started + 6))

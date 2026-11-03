@@ -11,6 +11,7 @@
 
 ## Local Contracts
 
+- `_11_tools_prompt.py` looks up the prompt folders once per build and reads each tool file with `files.read_prompt_file` on that list (`_read_tool_prompt`), with the same result as `agent.read_prompt`; keep it that way rather than calling `agent.read_prompt` per file (the per-file folder lookup was most of the 1-2 s build on a live install).
 - Preserve ordering where sections depend on earlier context.
 - Keep secret-related prompt sections masked and scoped.
 - Prompt additions must be bounded and compatible with tool-call contracts.
