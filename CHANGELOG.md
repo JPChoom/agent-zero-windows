@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.5.3
+
+Installs outside `C:0` now use their own folders in the terminal, each step starts faster, and the local model server keeps more earlier prompts in RAM instead of re-reading them.
 
 ### Fixed
 - **Installs outside `C:\a0` used the wrong folder in the terminal.** Agent Zero gave the agent some paths in upstream's container form, `/a0/...` - the default working folder, uploaded files, project and skill paths - and Windows reads `/a0/...` as `C:\a0\...`. So on any install not at `C:\a0` (the README's `agent-zero-windows` folder included) the agent's terminal started in, and wrote to, `C:\a0\usr\workdir`. The terminal and the agent now get this install's real paths, a stored `/a0/usr/workdir` setting is read as the real folder, and `/a0/...` paths in commands (from old memories or skills) are rewritten to this install before they run. Found when the development copy's benchmark wrote into the live install's folder; two benchmark tasks that always failed there now pass.
