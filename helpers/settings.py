@@ -435,6 +435,11 @@ def normalize_settings(settings: Settings) -> Settings:
             except (ValueError, TypeError):
                 copy[key] = value  # make default instead
 
+    # an older default (upstream's container convention) stored the working
+    # folder as "/a0/usr/workdir"; on a native install that resolves on the
+    # current drive, not to this install (helpers/files.native_path)
+    copy["workdir_path"] = files.native_path(copy.get("workdir_path", ""))
+
     # mcp server token is set automatically
     copy["mcp_server_token"] = create_auth_token()
     copy["timezone"] = _normalize_timezone_setting(copy.get("timezone"), default["timezone"])

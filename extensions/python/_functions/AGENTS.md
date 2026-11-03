@@ -16,6 +16,7 @@
 - Extension functions must match the implicit hook's supplied arguments.
 - Preserve ordering prefixes where exception handling, watchdog registration, or cleanup depends on them.
 - `agent/AgentContext/remove/start/_50_workspace_release.py` hands a parallel worker's apps to the chat that started it (or marks them orphaned) before the context is removed (`helpers/workspace.py`); plugins add their own hooks beside it (browser and terminal cleanup).
+- `agent/Agent/hist_add_user_message/start/_10_native_attachment_paths.py` gives the agent attachments at their real path on a native install (helpers/files.native_path) by replacing the message argument with a copy; the stored message keeps "/a0/usr/uploads/..." because the chat UI previews files by that path.
 - Hooks that mirror persisted AI responses into UI logs must reuse existing stream log items and avoid duplicating live response-tool logs.
 
 ## Work Guidance

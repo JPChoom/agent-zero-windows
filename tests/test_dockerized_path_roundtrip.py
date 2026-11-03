@@ -29,10 +29,12 @@ WINDOWS_ONLY = pytest.mark.skipif(
 @WINDOWS_ONLY
 def test_the_shape_the_framework_emits_resolves_back():
     """The round trip that was broken: what get_abs_path_dockerized hands
-    out must be something get_abs_path takes back."""
+    out must be something get_abs_path takes back. On a native install it is
+    the real path (a terminal would read "/a0/..." on the current drive -
+    tests/test_native_a0_paths.py); "/a0/..." input still resolves (below)."""
     shown = files.get_abs_path_dockerized("skills")
-    assert shown.startswith("/a0/"), shown
-    assert files.get_abs_path(shown) == files.get_abs_path("skills")
+    assert not shown.startswith("/a0"), shown
+    assert os.path.normpath(files.get_abs_path(shown)) == os.path.normpath(files.get_abs_path("skills"))
 
 
 @WINDOWS_ONLY

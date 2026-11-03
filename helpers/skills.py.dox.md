@@ -53,6 +53,7 @@
 
 ## Runtime Contracts
 
+- Paths the agent reads (skill load "Path:", the skill file tree, active-skill prompts) use `files.agent_path` (real path on a native install); listings and stored identities keep `normalize_a0_path`.
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Loaded skill names are chat-wide context data under `CONTEXT_DATA_NAME_LOADED_SKILLS`; legacy agent-local `loaded_skills` lists are migrated into context data and cleared when read.

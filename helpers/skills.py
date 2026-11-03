@@ -461,7 +461,7 @@ def load_skill_for_agent(
     # Get runtime path
     runtime_path = str(skill.path)
     if runtime.is_development():
-        runtime_path = files.normalize_a0_path(str(skill.path))
+        runtime_path = files.agent_path(str(skill.path))
 
     lines = [f"Skill: {skill.name}", f"Path: {runtime_path}"]
 
@@ -528,7 +528,7 @@ def _get_skill_files(skill_dir: Path) -> str:
     )
 
     if tree and runtime.is_development():
-        runtime_path = files.normalize_a0_path(str(skill_dir))
+        runtime_path = files.agent_path(str(skill_dir))
         tree = tree.replace(str(skill_dir), runtime_path)
 
     return str(tree)
@@ -1190,7 +1190,7 @@ def build_active_skills_prompt(agent: Agent | None) -> str:
 def _format_skill_prompt(skill: Skill) -> str:
     lines = [
         f"Skill: {skill.name or skill.path.name}",
-        f"Path: {files.normalize_a0_path(str(skill.path))}",
+        f"Path: {files.agent_path(str(skill.path))}",
     ]
 
     if skill.description:

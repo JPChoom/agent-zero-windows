@@ -481,7 +481,7 @@ def build_system_prompt_vars(name: str):
         "project_name": project_data.get("title", ""),
         "project_description": project_data.get("description", ""),
         "project_instructions": complete_instructions or "",
-        "project_path": files.normalize_a0_path(get_project_folder(name)),
+        "project_path": files.agent_path(get_project_folder(name)),
         "project_git_url": project_data.get("git_url", ""),
     }
 
@@ -514,7 +514,7 @@ def get_project_instruction_files(
             filename,
         )
         result.append(
-            (files.normalize_a0_path(path), additional_instructions[filename])
+            (files.agent_path(path), additional_instructions[filename])
         )
 
     return result
@@ -526,7 +526,7 @@ def get_project_agents_md_instruction_file(name: str) -> tuple[str, str] | None:
         matches = files.read_text_files_in_dir(project_folder, pattern=filename)
         if filename in matches:
             path = files.get_abs_path(project_folder, filename)
-            return (files.normalize_a0_path(path), matches[filename])
+            return (files.agent_path(path), matches[filename])
     return None
 
 

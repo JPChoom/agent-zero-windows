@@ -54,6 +54,7 @@
 
 ## Runtime Contracts
 
+- `normalize_settings` stores `workdir_path` through `files.native_path`: an older default "/a0/usr/workdir" becomes this install's real working folder on a native install; the default itself is the real path there.
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, network calls, subprocess/runtime control, model calls, WebSocket state, plugin state, settings/state persistence, secret handling, scheduler state.

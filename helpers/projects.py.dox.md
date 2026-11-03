@@ -56,6 +56,7 @@
 
 ## Runtime Contracts
 
+- `build_system_prompt_vars` and the instruction-file paths in the project prompt use `files.agent_path` (real path on a native install), so the agent can use them in terminal commands.
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Per-project MCP server configuration is persisted as `.a0proj/mcp_servers.json`, exposed through `load_edit_project_data(...)`, and saved during project create/clone/update flows.

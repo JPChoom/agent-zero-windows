@@ -30,7 +30,9 @@ class LocalInteractiveSession:
     def __init__(self, cwd: str|None = None):
         self.session: tty_session.TTYSession|None = None
         self.full_output = ''
-        self.cwd = cwd
+        from helpers import files
+
+        self.cwd = files.native_path(cwd)  # never "/a0/...": see files.native_path
 
     def kill(self):
         """End the shell now (synchronous; used for deterministic cleanup)."""

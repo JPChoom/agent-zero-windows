@@ -101,9 +101,12 @@ def test_project_system_prompt_includes_root_agents_md_with_path(monkeypatch, tm
     assert "Main project rule." in instructions
     assert instructions.count("## project instruction files") == 1
     assert "## project instruction file\n" not in instructions
-    assert "### path: /a0/usr/projects/demo/AGENTS.md" in instructions
+    from helpers import files
+
+    # real paths on a native install (files.agent_path), "/a0/..." in the container
+    assert f"### path: {files.agent_path(str(project_root / 'AGENTS.md'))}" in instructions
     assert "Root AGENTS rule." in instructions
-    assert "### path: /a0/usr/projects/demo/.a0proj/instructions/extra.md" in instructions
+    assert f"### path: {files.agent_path(str(project_root / '.a0proj' / 'instructions' / 'extra.md'))}" in instructions
     assert "Folder instruction rule." in instructions
 
 

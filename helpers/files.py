@@ -664,13 +664,77 @@ def get_abs_path(*relative_paths):
 
 
 def get_abs_path_dockerized(*relative_paths):
-    "Ensures the abs path is dockerized (i.e. /a0/... path)"
+    r"""The path as the agent and its tools use it.
+
+    In the container that is the /a0/... form. On a native Windows install it
+    is the real path: a shell reads "/a0/x" as "<current drive>:\a0\x", which
+    is only right for an install at C:\a0 (see native_path).
+    """
     abs = get_abs_path(*relative_paths)
     from helpers import runtime
 
     if runtime.is_dockerized():
         return abs
+    if os.name == "nt":
+        return os.path.normpath(abs)
     return normalize_a0_path(abs)
+
+
+def native_path(path):
+    r"""A "/a0/..." path as the real path on a native Windows install.
+
+    Upstream's container convention calls the app folder "/a0". A0W's Python
+    file tools map it back (_resolve_path), but anything a shell or a process
+    resolves itself - terminal commands, a process's working folder - reads
+    "/a0/x" as "<current drive>:\a0\x": the wrong folder for every install
+    that is not at C:\a0 (the README clones into another folder). Other paths,
+    and every path in the container, are returned unchanged.
+    """
+    if not isinstance(path, str) or os.name != "nt":
+        return path
+    from helpers import runtime
+
+    if runtime.is_dockerized():
+        return path
+    head = path.replace("\\", "/")
+    if head == "/a0" or head.startswith("/a0/"):
+        return os.path.normpath(get_abs_path(path))
+    return path
+
+
+def agent_path(path: str) -> str:
+    """A path as it is shown to the agent: real on a native install.
+
+    normalize_a0_path gives the container form ("/a0/..."), which is right
+    for storing and comparing paths (portable between installs) and inside
+    the container, but a terminal on a native install would resolve it on
+    the current drive. Use this where the agent reads a path it may act on.
+    """
+    return native_path(normalize_a0_path(path))
+
+
+# "/a0" as a path in command text: not part of a longer path or URL, and
+# followed by a separator, the end, or a character that ends a word.
+_A0_IN_COMMAND = re.compile(r"(?<![\w.:/\\@-])/a0(?=$|[/\\\s\"'`;|),&>])")
+
+
+def rewrite_a0_paths(text: str) -> str:
+    """"/a0/..." in a terminal command -> this install's real folder.
+
+    Native Windows only (unchanged elsewhere). Old memories, learned skills
+    and upstream habits still produce "/a0/usr/..." in commands; a shell
+    would run them against <current drive>:/a0. Forward slashes, which
+    PowerShell, cmd tools and Python all accept (a backslash would start an
+    escape inside a Python string literal).
+    """
+    if not isinstance(text, str) or "/a0" not in text or os.name != "nt":
+        return text
+    from helpers import runtime
+
+    if runtime.is_dockerized():
+        return text
+    base = os.path.normpath(get_base_dir()).replace("\\", "/").rstrip("/")
+    return _A0_IN_COMMAND.sub(lambda m: base, text)
 
 
 def get_abs_path_development(*relative_paths):

@@ -225,13 +225,19 @@ class CodeExecution(Tool):
         self.agent.set_data("_cet_state", self.state)
         return self.state
 
+    def _local_paths(self, cfg: dict, text: str) -> str:
+        """Commands run on this PC: "/a0/..." -> this install's folder."""
+        return text if cfg.get("ssh_enabled") else files.rewrite_a0_paths(text)
+
     async def execute_python_code(self, cfg: dict, session: int, code: str, reset: bool = False):
+        code = self._local_paths(cfg, code)
         escaped_code = shlex.quote(code)
         command = f"ipython -c {escaped_code}"
         prefix = "python> " + self.format_command_for_output(code) + "\n\n"
         return await self.terminal_session(cfg, session, command, reset, prefix)
 
     async def execute_nodejs_code(self, cfg: dict, session: int, code: str, reset: bool = False):
+        code = self._local_paths(cfg, code)
         escaped_code = shlex.quote(code)
         command = f"node /exe/node_eval.js {escaped_code}"
         prefix = "node> " + self.format_command_for_output(code) + "\n\n"
@@ -240,6 +246,7 @@ class CodeExecution(Tool):
     async def execute_terminal_command(
         self, cfg: dict, session: int, command: str, reset: bool = False
     ):
+        command = self._local_paths(cfg, command)
         prefix = (
             ("bash>" if not runtime.is_windows() or cfg["ssh_enabled"] else "PS>")
             + self.format_command_for_output(command)
@@ -620,7 +627,9 @@ class CodeExecution(Tool):
         if not path:
             return None
 
-        normalized = files.normalize_a0_path(path)
+        # the real folder on a native install: a process's working folder
+        # "/a0/usr/workdir" would be <current drive>:/a0/usr/workdir
+        normalized = files.native_path(files.normalize_a0_path(path))
         await runtime.call_development_function(make_dir, normalized)
         return normalized
 
