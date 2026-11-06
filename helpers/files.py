@@ -513,12 +513,46 @@ def is_full_json_template(text):
     return bool(match)
 
 
+ATOMIC_REPLACE_ATTEMPTS = 10
+ATOMIC_REPLACE_DELAY_SECONDS = 0.05
+
+
 def write_file(relative_path: str, content: str, encoding: str = "utf-8"):
     abs_path = get_abs_path(relative_path)
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
     content = sanitize_string(content, encoding)
     with open(abs_path, "w", encoding=encoding) as f:
         f.write(content)
+
+def write_file_atomic(relative_path: str, content: str, encoding: str = "utf-8"):
+    """Replace a file in one step: a crash or a reader sees the old content or
+    the new, never part of it. write_file empties the file first, so a closed
+    window mid-write left it damaged.
+
+    Callers serialize writes to one path; the fixed temp name means nothing
+    piles up after a crash.
+    """
+    abs_path = get_abs_path(relative_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    content = sanitize_string(content, encoding)
+    temp_path = abs_path + ".tmp"
+    with open(temp_path, "w", encoding=encoding) as f:
+        f.write(content)
+        f.flush()
+        os.fsync(f.fileno())
+    for _ in range(ATOMIC_REPLACE_ATTEMPTS):
+        try:
+            os.replace(temp_path, abs_path)
+            return
+        except PermissionError:
+            # Windows: a reader, Defender or the indexer has the file open
+            time.sleep(ATOMIC_REPLACE_DELAY_SECONDS)
+    # Still held. A plain write works past such a handle, and is better than
+    # losing this save.
+    with open(abs_path, "w", encoding=encoding) as f:
+        f.write(content)
+    os.remove(temp_path)
+
 
 def delete_file(relative_path: str):
     abs_path = get_abs_path(relative_path)
@@ -715,10 +749,23 @@ def agent_path(path: str) -> str:
 
 # "/a0" as a path in command text: not part of a longer path or URL, and
 # followed by a separator, the end, or a character that ends a word.
-_A0_IN_COMMAND = re.compile(r"(?<![\w.:/\\@-])/a0(?=$|[/\\\s\"'`;|),&>])")
+_A0_IN_COMMAND = re.compile(
+    r"(?<![\w.:/\\@-])/a0(?P<tail>(?:[/\\][^\s\"'`;|),&>]*)?)(?=$|[\s\"'`;|),&>])"
+)
 
 
-def rewrite_a0_paths(text: str) -> str:
+def _inside_quotes(text: str, end: int) -> bool:
+    quote = ""
+    for char in text[:end]:
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+    return bool(quote)
+
+
+def rewrite_a0_paths(text: str, code: bool = False) -> str:
     """"/a0/..." in a terminal command -> this install's real folder.
 
     Native Windows only (unchanged elsewhere). Old memories, learned skills
@@ -726,6 +773,13 @@ def rewrite_a0_paths(text: str) -> str:
     would run them against <current drive>:/a0. Forward slashes, which
     PowerShell, cmd tools and Python all accept (a backslash would start an
     escape inside a Python string literal).
+
+    An install folder with a space (C:/Users/First Last/...) needs quotes the
+    command did not have, or the shell splits the path in two; PowerShell
+    then needs `&` to run a quoted path as a command.
+
+    `code` is Python or Node source: there a path is only ever in a string,
+    and "total /a0" outside one is a division.
     """
     if not isinstance(text, str) or "/a0" not in text or os.name != "nt":
         return text
@@ -734,7 +788,19 @@ def rewrite_a0_paths(text: str) -> str:
     if runtime.is_dockerized():
         return text
     base = os.path.normpath(get_base_dir()).replace("\\", "/").rstrip("/")
-    return _A0_IN_COMMAND.sub(lambda m: base, text)
+
+    def replace(match: "re.Match[str]") -> str:
+        quoted = _inside_quotes(text, match.start())
+        if code and not quoted:
+            return match.group(0)
+        path = base + match.group("tail").replace("\\", "/")
+        if " " not in base or quoted:
+            return path
+        before = text[: match.start()].rstrip(" \t")
+        runs_it = not before or before[-1] in "\n;|&{("
+        return f'& "{path}"' if runs_it else f'"{path}"'
+
+    return _A0_IN_COMMAND.sub(replace, text)
 
 
 def get_abs_path_development(*relative_paths):

@@ -291,7 +291,7 @@ async def test_save_tmp_chat_async_produces_same_output_as_sync(monkeypatch, tmp
     def fake_write_file(path, content):
         written[path] = content
 
-    monkeypatch.setattr(persist_chat.files, "write_file", fake_write_file)
+    monkeypatch.setattr(persist_chat.files, "write_file_atomic", fake_write_file)
     monkeypatch.setattr(persist_chat.files, "make_dirs", lambda path: None)
     monkeypatch.setattr(
         persist_chat, "_get_chat_file_path", lambda ctxid: f"chats/{ctxid}/chat.json"
@@ -327,7 +327,7 @@ async def test_save_tmp_chat_async_skips_background_contexts(monkeypatch):
 
     write_calls = []
     monkeypatch.setattr(
-        persist_chat.files, "write_file", lambda *a, **k: write_calls.append(1)
+        persist_chat.files, "write_file_atomic", lambda *a, **k: write_calls.append(1)
     )
 
     class _Context:
@@ -352,7 +352,7 @@ async def test_save_tmp_chat_async_write_does_not_block_the_loop(monkeypatch):
         calling_thread["id"] = threading.get_ident()
         time.sleep(0.2)
 
-    monkeypatch.setattr(persist_chat.files, "write_file", slow_write)
+    monkeypatch.setattr(persist_chat.files, "write_file_atomic", slow_write)
     monkeypatch.setattr(persist_chat.files, "make_dirs", lambda path: None)
     monkeypatch.setattr(
         persist_chat, "_get_chat_file_path", lambda ctxid: f"chats/{ctxid}/chat.json"

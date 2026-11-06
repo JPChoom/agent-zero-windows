@@ -225,19 +225,19 @@ class CodeExecution(Tool):
         self.agent.set_data("_cet_state", self.state)
         return self.state
 
-    def _local_paths(self, cfg: dict, text: str) -> str:
+    def _local_paths(self, cfg: dict, text: str, code: bool = False) -> str:
         """Commands run on this PC: "/a0/..." -> this install's folder."""
-        return text if cfg.get("ssh_enabled") else files.rewrite_a0_paths(text)
+        return text if cfg.get("ssh_enabled") else files.rewrite_a0_paths(text, code=code)
 
     async def execute_python_code(self, cfg: dict, session: int, code: str, reset: bool = False):
-        code = self._local_paths(cfg, code)
+        code = self._local_paths(cfg, code, code=True)
         escaped_code = shlex.quote(code)
         command = f"ipython -c {escaped_code}"
         prefix = "python> " + self.format_command_for_output(code) + "\n\n"
         return await self.terminal_session(cfg, session, command, reset, prefix)
 
     async def execute_nodejs_code(self, cfg: dict, session: int, code: str, reset: bool = False):
-        code = self._local_paths(cfg, code)
+        code = self._local_paths(cfg, code, code=True)
         escaped_code = shlex.quote(code)
         command = f"node /exe/node_eval.js {escaped_code}"
         prefix = "node> " + self.format_command_for_output(code) + "\n\n"

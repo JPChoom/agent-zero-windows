@@ -16,6 +16,7 @@
 - `get_chat_folder_path(ctxid: str)`: Get the folder path for any context (chat or task).
 - `get_chat_msg_files_folder(ctxid: str)`
 - `save_tmp_chat(context: AgentContext)`: Save context to the chats folder
+- `save_tmp_chat_async(context: AgentContext)`: Same, writing on a worker thread
 - `save_tmp_chats()`: Save all contexts to the chats folder
 - `load_tmp_chats()`: Load all contexts from the chats folder
 - `_get_chat_file_path(ctxid: str)`
@@ -42,15 +43,16 @@
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem reads, filesystem writes, filesystem deletion, settings/state persistence, scheduler state.
-- Imported dependency areas include: `agent`, `collections`, `datetime`, `helpers`, `helpers.localization`, `helpers.log`, `initialize`, `json`, `typing`, `uuid`.
+- Imported dependency areas include: `agent`, `collections`, `datetime`, `helpers`, `helpers.localization`, `helpers.log`, `initialize`, `json`, `threading`, `typing`, `uuid`.
 - Serialized chats store `agent_profile` both at the context level for the main chat and on each serialized agent so subordinate profiles survive server restart.
 - Deserialization must rebuild each agent with its serialized profile when present, falling back to the context profile for older chat files.
 - Chat loading skips directories that do not contain `chat.json`; malformed existing chat files still report load errors.
+- A chat's saves can come from different threads (a step's save, the background compression's). `_prepare_chat_save` numbers each save before reading the state, so a later number never holds older state; `_write_chat` writes under the chat's `_SaveOrder` lock, skips a snapshot older than the one on disk, and uses `files.write_file_atomic`, because a damaged `chat.json` is skipped at load and the chat is lost. Save through these two, never `files.write_file`.
 - Contexts are marked with private `SAVED_CHAT_CONTEXT_DATA_KEY` only after a successful save or load from disk so snapshot code can detect deleted chat files without hiding fresh unsaved chats.
 
 ## Key Concepts
 
-- Important called helpers/classes observed in the source: `datetime.fromtimestamp.isoformat`, `datetime.fromisoformat`, `files.get_abs_path`, `_get_chat_file_path`, `files.make_dirs`, `_serialize_context`, `_safe_json_serialize`, `files.write_file`, `_convert_v080_chats`, `files.list_files`, `get_chat_folder_path`, `files.delete_dir`, `get_chat_msg_files_folder`, `agent.history.serialize`, `initialize_agent`, `_deserialize_log`, `AgentContext`, `_deserialize_agent_config`, `_deserialize_agents`, `Log`, `log.set_initial_progress`.
+- Important called helpers/classes observed in the source: `datetime.fromtimestamp.isoformat`, `datetime.fromisoformat`, `files.get_abs_path`, `_get_chat_file_path`, `files.make_dirs`, `_serialize_context`, `_safe_json_serialize`, `files.write_file_atomic`, `_convert_v080_chats`, `files.list_files`, `get_chat_folder_path`, `files.delete_dir`, `get_chat_msg_files_folder`, `agent.history.serialize`, `initialize_agent`, `_deserialize_log`, `AgentContext`, `_deserialize_agent_config`, `_deserialize_agents`, `Log`, `log.set_initial_progress`.
 - Keep request/response, tool, or helper semantics documented here at the same time as source changes.
 
 ## Work Guidance
@@ -63,6 +65,7 @@
 
 - Run targeted tests for changed helper behavior; run security regressions for auth, filesystem, WebSocket, tunnel, upload, or secret-handling helpers.
 - Related tests observed by source search:
+  - `tests/test_chat_save_order.py`
   - `tests/test_api_chat_lifetime.py`
   - `tests/test_browser_agent_regressions.py`
   - `tests/test_persist_chat_log_ids.py`

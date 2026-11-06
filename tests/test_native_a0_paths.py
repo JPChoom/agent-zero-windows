@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import subprocess
 import sys
 
 import pytest
@@ -66,6 +67,75 @@ def test_the_container_keeps_the_a0_form(install, monkeypatch):
 ])
 def test_terminal_commands_with_a0_paths_run_against_this_install(install, command, expected):
     assert files.rewrite_a0_paths(command) == expected.format(b=_fwd(install))
+
+
+@pytest.fixture
+def spaced_install(tmp_path, monkeypatch):
+    """The usual per-user install: C:/Users/First Last/agent-zero-windows"""
+    base = tmp_path / "First Last" / "agent-zero-windows"
+    (base / "usr" / "workdir").mkdir(parents=True)
+    monkeypatch.setattr(files, "_base_dir", str(base))
+    monkeypatch.setattr(runtime, "is_dockerized", lambda: False)
+    return base
+
+
+@pytest.mark.parametrize("command,expected", [
+    # an argument: quoted, or the shell splits it at the space
+    ("Get-ChildItem /a0/usr/workdir", 'Get-ChildItem "{b}/usr/workdir"'),
+    ("cd /a0", 'cd "{b}"'),
+    ("Test-Path /a0/usr/x;echo hi", 'Test-Path "{b}/usr/x";echo hi'),
+    ("Get-Content /a0/a.txt | Select-String /a0/b", 'Get-Content "{b}/a.txt" | Select-String "{b}/b"'),
+    ("tool --path=/a0/usr/x", 'tool --path="{b}/usr/x"'),
+    ("dir /a0\\usr\\x", 'dir "{b}/usr/x"'),
+    # first word of a statement: a quoted path alone is a string in PowerShell
+    ("/a0/tool.exe --help", '& "{b}/tool.exe" --help'),
+    ("echo hi; /a0/run.ps1 x", 'echo hi; & "{b}/run.ps1" x'),
+    ("Get-Date | /a0/log.ps1", 'Get-Date | & "{b}/log.ps1"'),
+    ("(/a0/run.bat)", '(& "{b}/run.bat")'),
+    ("echo one\n/a0/run.ps1", 'echo one\n& "{b}/run.ps1"'),
+    # already quoted: the quotes hold, more would break them
+    ('python "/a0/usr/x.py"', 'python "{b}/usr/x.py"'),
+    ("python '/a0/usr/my file.py'", "python '{b}/usr/my file.py'"),
+    ('Write-Output "see /a0/usr/x"', 'Write-Output "see {b}/usr/x"'),
+    # not a path of this install: left alone
+    ("curl https://example.com/a0/usr", "curl https://example.com/a0/usr"),
+    ("dir /a0b/x", "dir /a0b/x"),
+])
+def test_an_install_folder_with_a_space_survives_the_shell(spaced_install, command, expected):
+    assert files.rewrite_a0_paths(command) == expected.format(b=_fwd(spaced_install))
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("open('/a0/usr/x.txt')", "open('{b}/usr/x.txt')"),
+    ('fs.readFileSync("/a0/usr/x.txt")', 'fs.readFileSync("{b}/usr/x.txt")'),
+    ("ratio = total /a0", "ratio = total /a0"),  # a division, not a path
+])
+@pytest.mark.parametrize("folder", ["install", "spaced_install"])
+def test_code_only_ever_has_a_path_in_a_string(folder, source, expected, request):
+    base = request.getfixturevalue(folder)
+    assert files.rewrite_a0_paths(source, code=True) == expected.format(b=_fwd(base))
+
+
+@pytest.mark.parametrize("template", ["Write-Output {path}", "& {{ param($p) Write-Output $p }} {path}"])
+def test_a_real_powershell_receives_the_path_as_one_argument(spaced_install, template):
+    command = files.rewrite_a0_paths(template.format(path="/a0/usr/workdir"))
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines() == [_fwd(spaced_install / "usr" / "workdir")]
+
+
+def test_a_real_powershell_runs_a_script_at_a_path_with_a_space(spaced_install):
+    (spaced_install / "hello.ps1").write_text("Write-Output 'ran from here'", encoding="utf-8")
+    command = files.rewrite_a0_paths("/a0/hello.ps1")
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ran from here"
 
 
 def test_a_stored_a0_workdir_setting_is_read_as_the_real_folder(monkeypatch):

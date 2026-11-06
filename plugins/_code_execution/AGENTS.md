@@ -13,7 +13,7 @@
 
 ## Local Contracts
 
-- On a native install, local commands and Python/Node code pass through `files.rewrite_a0_paths` before they are shown and run, and the terminal's working folder (`ensure_cwd`, `LocalInteractiveSession.cwd`) is always a real path (`files.native_path`): "/a0/..." would resolve on the current drive, i.e. another install's folder. SSH sessions are left as they are.
+- On a native install, local commands and Python/Node code pass through `files.rewrite_a0_paths` (`code=True` for Python and Node) before they are shown and run, and the terminal's working folder (`ensure_cwd`, `LocalInteractiveSession.cwd`) is always a real path (`files.native_path`): "/a0/..." would resolve on the current drive, i.e. another install's folder. SSH sessions are left as they are.
 - Keep session concurrency, timeout, streaming, and reset behavior predictable.
 - Explicitly target local versus SSH execution runtimes.
 - Do not hardcode secrets, SSH credentials, or local user paths.

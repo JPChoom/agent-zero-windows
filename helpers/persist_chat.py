@@ -1,6 +1,7 @@
 import asyncio
 from collections import OrderedDict
 from datetime import datetime
+import threading
 from typing import Any
 import uuid
 from agent import Agent, AgentConfig, AgentContext, AgentContextType
@@ -45,9 +46,38 @@ def get_chat_folder_path(ctxid: str):
 def get_chat_msg_files_folder(ctxid: str):
     return files.get_abs_path(get_chat_folder_path(ctxid), "messages")
 
-def _prepare_chat_save(context: AgentContext) -> tuple[str, str] | None:
-    """Serialize context to (path, json) ready to write, or None if this
-    context type should not be persisted.
+class _SaveOrder:
+    """Keeps a chat's saves in order. A step's save and the background
+    compression's save run on different threads: an older snapshot written
+    last would replace newer state."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.prepared = 0
+        self.written = 0
+
+
+_save_orders: dict[str, _SaveOrder] = {}
+_save_orders_lock = threading.Lock()
+
+
+def _save_order(ctxid: str) -> _SaveOrder:
+    with _save_orders_lock:
+        return _save_orders.setdefault(ctxid, _SaveOrder())
+
+
+def _write_chat(ctxid: str, path: str, js: str, sequence: int) -> None:
+    order = _save_order(ctxid)
+    with order.lock:
+        if sequence < order.written:
+            return  # a newer snapshot is already on disk
+        files.write_file_atomic(path, js)
+        order.written = sequence
+
+
+def _prepare_chat_save(context: AgentContext) -> tuple[str, str, int] | None:
+    """Serialize context to (path, json, sequence) ready to write, or None if
+    this context type should not be persisted.
 
     Kept synchronous and separate from the write: this walks live, mutable
     context state (history, log, agent.data) that background DeferredTask
@@ -60,9 +90,14 @@ def _prepare_chat_save(context: AgentContext) -> tuple[str, str] | None:
         return None
     path = _get_chat_file_path(context.id)
     files.make_dirs(path)
+    # numbered before the state is read: a later number never holds older state
+    order = _save_order(context.id)
+    with order.lock:
+        order.prepared += 1
+        sequence = order.prepared
     data = _serialize_context(context)
     js = _safe_json_serialize(data, ensure_ascii=False)
-    return path, js
+    return path, js, sequence
 
 
 def save_tmp_chat(context: AgentContext):
@@ -70,8 +105,8 @@ def save_tmp_chat(context: AgentContext):
     prepared = _prepare_chat_save(context)
     if prepared is None:
         return
-    path, js = prepared
-    files.write_file(path, js)
+    path, js, sequence = prepared
+    _write_chat(context.id, path, js, sequence)
     mark_chat_saved(context)
 
 
@@ -90,8 +125,8 @@ async def save_tmp_chat_async(context: AgentContext):
     prepared = _prepare_chat_save(context)
     if prepared is None:
         return
-    path, js = prepared
-    await asyncio.to_thread(files.write_file, path, js)
+    path, js, sequence = prepared
+    await asyncio.to_thread(_write_chat, context.id, path, js, sequence)
     mark_chat_saved(context)
 
 

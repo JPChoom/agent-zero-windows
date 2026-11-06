@@ -36,6 +36,7 @@
 - `remove_code_fences(text)`
 - `is_full_json_template(text)`
 - `write_file(relative_path: str, content: str, encoding: str=...)`
+- `write_file_atomic(relative_path: str, content: str, encoding: str=...)`: replaces a file in one step
 - `delete_file(relative_path: str)`
 - `write_file_bin(relative_path: str, content: bytes)`
 - `write_file_base64(relative_path: str, content: str)`
@@ -48,7 +49,8 @@
 
 ## Runtime Contracts
 
-- Paths and "/a0/" on a native Windows install: `normalize_a0_path` keeps upstream's container form ("/a0/...") for storing and comparing paths; `_resolve_path` maps it back for Python file tools. Anything a shell or process resolves itself reads "/a0/x" on the current drive (right only for an install at C:/a0), so: `native_path(p)` turns "/a0/..." into the real path; `agent_path(p)` is what the agent is shown (real path natively, container form in Docker); `get_abs_path_dockerized` returns the real path natively; `rewrite_a0_paths(text)` rewrites "/a0/..." tokens in terminal/Python/Node code to this install's folder (forward slashes; URLs, longer paths and other drives untouched). In the container all of these return paths unchanged.
+- Paths and "/a0/" on a native Windows install: `normalize_a0_path` keeps upstream's container form ("/a0/...") for storing and comparing paths; `_resolve_path` maps it back for Python file tools. Anything a shell or process resolves itself reads "/a0/x" on the current drive (right only for an install at C:/a0), so: `native_path(p)` turns "/a0/..." into the real path; `agent_path(p)` is what the agent is shown (real path natively, container form in Docker); `get_abs_path_dockerized` returns the real path natively; `rewrite_a0_paths(text, code=False)` rewrites "/a0/..." tokens in terminal/Python/Node code to this install's folder (forward slashes; URLs, longer paths and other drives untouched). When the install folder has a space, a token outside quotes gets quotes, and `& ` where it is the first word of a statement, since PowerShell treats a quoted path alone as a string. `code=True` (Python, Node) rewrites only inside strings: "total /a0" outside one is a division. In the container all of these return paths unchanged.
+- `write_file_atomic` writes `<path>.tmp`, flushes it to disk and replaces the file, so a crash or a reader sees the old content or the new. A file held by Defender or the indexer is retried (`ATOMIC_REPLACE_ATTEMPTS`), then written in place rather than losing the save. Callers keep writes to one path in order: the temp name is fixed. `write_file` empties the file first; use the atomic one for state that a damaged copy would lose.
 - `_read_with_lock_retry` retries `PermissionError`/`OSError` briefly (Windows Defender/indexer locks) but never `FileNotFoundError`, `IsADirectoryError` or `NotADirectoryError`: those raise at once (a missing file used to cost 100 ms of retry sleeps on every read).
 - Helper modules own reusable framework APIs and must preserve public callers unless all callers, tests, and docs are updated together.
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
