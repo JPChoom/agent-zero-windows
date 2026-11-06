@@ -42,6 +42,9 @@ def make_history(monkeypatch):
     monkeypatch.setattr(history_mod, "get_chat_model_config", lambda agent=None: {"ctx_length": 100000, "ctx_history": 0.1})
     monkeypatch.setattr(history_mod, "get_utility_model_config", lambda agent=None: {"ctx_length": 100000})
     monkeypatch.setattr(History, "_get_ctx_size_for_history", lambda self: BUDGET)
+    from extensions.python.message_loop_end import _10_organize_history as ext
+
+    monkeypatch.setattr(ext, "SOFT_IDLE_SETTLE_SECONDS", 0.0)  # no waiting for a gap unless a test wants it
 
     def build(target_tokens):
         """One topic of equal messages, up to just past `target_tokens`."""
@@ -193,3 +196,123 @@ def test_the_wait_hook_compresses_itself_when_the_soft_pass_stepped_aside():
     asyncio.run(OrganizeHistoryWait(agent).execute())
     assert agent.history.compress_calls == 1  # compressed in the turn
     assert agent.context.log.entries == []  # and no false "stalled" warning
+
+
+# -- when the early pass runs, and keeping its work --------------------------------------
+
+def _ext():
+    from extensions.python.message_loop_end import _10_organize_history as ext
+
+    return ext
+
+
+def test_nothing_to_do_returns_at_once_without_waiting(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 0.7))
+
+    async def must_not_wait(*a, **k):
+        raise AssertionError("waited for a gap with nothing to do")
+
+    monkeypatch.setattr(model_concurrency, "wait_for_foreground_idle", must_not_wait)
+    assert asyncio.run(_ext().soft_compress(history)) is False
+
+
+def test_the_early_pass_waits_for_a_gap_between_steps(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 0.95))
+    idle_after = [False, False, True]
+
+    async def idle(settle, max_wait):
+        assert history.agent.summaries == 0  # nothing summarized while the turn is busy
+        return idle_after.pop(0)
+
+    monkeypatch.setattr(model_concurrency, "wait_for_foreground_idle", idle)
+    assert asyncio.run(_ext().soft_compress(history)) is True
+    assert idle_after == [] and history.agent.summaries >= 1
+
+
+def test_it_goes_at_once_when_a_turn_is_waiting_for_it(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 1.2))  # over the limit: the turn blocks on this pass
+    assert history.is_over_limit()
+
+    async def never_idle(settle, max_wait):
+        raise AssertionError("must not wait for a gap when over the limit")
+
+    monkeypatch.setattr(model_concurrency, "wait_for_foreground_idle", never_idle)
+    assert asyncio.run(_ext().soft_compress(history)) is True
+
+
+def test_it_gives_up_when_no_gap_ever_comes(make_history, monkeypatch):
+    ext = _ext()
+    history = make_history(int(BUDGET * 0.95))
+
+    async def busy(settle, max_wait):
+        return False
+
+    monkeypatch.setattr(model_concurrency, "wait_for_foreground_idle", busy)
+    monkeypatch.setattr(ext, "SOFT_MAX_WAIT_SECONDS", 0.0)
+    assert asyncio.run(ext.soft_compress(history)) is None
+    assert history.agent.summaries == 0
+
+
+class _Ctx:
+    id = "chat-1"
+
+    def __init__(self, running=False):
+        self.running = running
+
+    def is_running(self):
+        return self.running
+
+
+def _with_context(history, monkeypatch, *, registered=True, running=False):
+    ext = _ext()
+    context = _Ctx(running)
+    history.agent.context = context
+    monkeypatch.setattr(ext.AgentContext, "get", staticmethod(lambda id: context if registered else None))
+    saved = []
+
+    async def save(ctx):
+        saved.append(ctx)
+
+    monkeypatch.setattr(ext.persist_chat, "save_tmp_chat_async", save)
+    return ext, saved
+
+
+def test_the_passes_work_is_saved_so_a_restart_does_not_redo_it(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 0.95))
+    ext, saved = _with_context(history, monkeypatch)
+    assert asyncio.run(ext.soft_compress(history)) is True
+    assert saved == [history.agent.context]
+
+
+def test_nothing_is_saved_when_nothing_changed(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 0.7))
+    ext, saved = _with_context(history, monkeypatch)
+    assert asyncio.run(ext.soft_compress(history)) is False
+    assert saved == []
+
+
+def test_a_running_turn_saves_for_itself(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 0.95))
+    ext, saved = _with_context(history, monkeypatch, running=True)
+    asyncio.run(ext.soft_compress(history))
+    assert saved == []
+
+
+def test_a_deleted_chat_is_not_summarized_or_written_back(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 0.95))
+    ext, saved = _with_context(history, monkeypatch, registered=False)
+    assert asyncio.run(ext.soft_compress(history)) is None
+    assert saved == [] and history.agent.summaries == 0
+
+
+def test_work_done_before_an_interruption_is_kept_too(make_history, monkeypatch):
+    history = make_history(int(BUDGET * 0.95))
+    ext, saved = _with_context(history, monkeypatch)
+
+    async def partial(soft=False):
+        history.current.messages[1:3] = []  # one summary landed, then the turn took the model
+        raise model_concurrency.Preempted("a turn needs the model")
+
+    monkeypatch.setattr(history, "compress", partial)
+    assert asyncio.run(ext.soft_compress(history)) is None
+    assert saved == [history.agent.context]

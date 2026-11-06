@@ -446,6 +446,11 @@ class History(Record):
         total = self.get_tokens()
         return total > limit
 
+    def wants_soft_compress(self) -> bool:
+        """Past SOFT_TRIGGER_RATIO of the budget: an early pass has work to do."""
+        used = self.get_current_topic_tokens() + self.get_topics_tokens() + self.get_bulks_tokens()
+        return used > self._get_ctx_size_for_history() * SOFT_TRIGGER_RATIO
+
     def get_bulks_tokens(self) -> int:
         return sum(record.get_tokens() for record in self.bulks)
 

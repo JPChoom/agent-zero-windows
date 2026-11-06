@@ -5,6 +5,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 ## Unreleased
 
 ### Improved
+- **Background history compression waits for a real gap, and its work is kept.** It used to start right after a step, just as the next step needed the model, so about 12% of its calls were cancelled within a second (233 of 1,983). It now waits until the model has been free for 15 seconds, or starts at once if the history is over its limit. Its results also weren't saved when it finished after the turn's last save, so closing the window lost them and the next start redid the same summaries; the chat is now saved after each pass that changed something.
 - **The safety check no longer re-reads the conversation on every step.** On models that can't trim their memory partially, such as Qwen3.8, the server can only rewind to checkpoints at message boundaries. The check sent the history and the agent's latest output as one message, so replacing the output left nothing to rewind to and the whole history was read again: about 33,000 tokens and 16 s per check in a test with the real model and settings. History entries now go as separate messages: about 5,500 tokens and 4.8 s. Verdicts were identical on the benign and hostile test cases. The bigger prompt cache in v1.5.3 did not reduce these re-reads; this does.
 
 ## v1.5.3
