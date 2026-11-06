@@ -114,6 +114,28 @@ def _retire_stale_requests(agent: "Agent", keep: str) -> None:
         pass
 
 
+def build_check_messages(system_prompt: str, entries: list, log_text: str) -> list:
+    """The check's prompt: one message per history entry, then the output.
+
+    A model that cannot trim its memory partially (hybrid models such as
+    Qwen3.8) can only rewind to llama-server's checkpoints, which sit at
+    message boundaries and just before the end of a prompt. With history and
+    the output in one message, the output replaced at the end of the prompt
+    left nothing to rewind to but the end of the system prompt, so all the
+    history was re-read on every check (measured with the owner's model and
+    flags: 33k tokens, 16 s per check; separate messages: 5.5k tokens, 4.8 s).
+    Entries already sent keep their boundaries as new ones are added.
+    """
+    lines = [history_helpers.output_text([entry], ai_label="assistant", human_label="user") for entry in entries]
+    head = "## Recent Conversation History\n" + (lines[0] if lines else "")
+    return [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=head),
+        *[HumanMessage(content=line) for line in lines[1:]],
+        HumanMessage(content=f"## Current Agent Output to Analyze\n{log_text}"),
+    ]
+
+
 def history_window_start(count: int, size: int) -> int:
     """First history message the check shows: at least `size` messages.
 
@@ -376,15 +398,7 @@ class InfectionChecker:
                 continue
             filtered.append(entry)
 
-        hist_text = history_helpers.output_text(filtered, ai_label="assistant", human_label="user")
-        user_msg = (
-            f"## Recent Conversation History\n{hist_text}\n\n"
-            f"## Current Agent Output to Analyze\n{log_text}"
-        )
-        self._check_msgs = [
-            SystemMessage(content=self.prompt),
-            HumanMessage(content=user_msg),
-        ]
+        self._check_msgs = build_check_messages(self.prompt, filtered, log_text)
 
         model = self._get_model(agent)
         response, _ = await model.unified_call(

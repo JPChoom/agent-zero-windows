@@ -2,6 +2,11 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Improved
+- **The safety check no longer re-reads the conversation on every step.** On models that can't trim their memory partially, such as Qwen3.8, the server can only rewind to checkpoints at message boundaries. The check sent the history and the agent's latest output as one message, so replacing the output left nothing to rewind to and the whole history was read again: about 33,000 tokens and 16 s per check in a test with the real model and settings. History entries now go as separate messages: about 5,500 tokens and 4.8 s. Verdicts were identical on the benign and hostile test cases. The bigger prompt cache in v1.5.3 did not reduce these re-reads; this does.
+
 ## v1.5.3
 
 Installs outside `C:\a0` now use their own folders in the terminal, each step starts faster, and the local model server keeps more earlier prompts in RAM instead of re-reading them.

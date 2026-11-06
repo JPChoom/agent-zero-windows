@@ -677,6 +677,8 @@ class LiteLLMChatWrapper(SimpleChatModel):
             timing.reuse = perf.prompt_reuse(
                 timing.context_id, f"main:{getattr(self, 'a0_perf_agent', '')}", msgs_conv
             )
+        elif timing.caller == "infection_check":
+            timing.reuse = perf.prompt_reuse(timing.context_id, "infection_check", msgs_conv)
         background = timing.background
         preemptible = background and not stream and timing.caller in PREEMPTIBLE_CALLERS
 

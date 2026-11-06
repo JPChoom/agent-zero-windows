@@ -259,3 +259,41 @@ def test_history_window_start_is_anchored_so_the_prompt_prefix_stays_the_same():
     changes = sum(1 for a, b in zip(starts, starts[1:]) if a != b)
     assert changes <= 5
     assert C.history_window_start(10, 25) == 0 and C.history_window_start(10, 0) == 0
+
+
+# -- prompt shape: history in separate messages ------------------------------------------
+
+def _entries(n):
+    return [{"ai": bool(i % 2), "content": f"message {i}"} for i in range(n)]
+
+
+def test_each_history_entry_is_its_own_message():
+    msgs = C.build_check_messages("rules", _entries(3), "tool about to run")
+    assert [m.type for m in msgs] == ["system", "human", "human", "human", "human"]
+    assert msgs[0].content == "rules"
+    assert msgs[1].content.startswith("## Recent Conversation History\n") and "message 0" in msgs[1].content
+    assert "message 2" in msgs[3].content
+    assert msgs[-1].content == "## Current Agent Output to Analyze\ntool about to run"
+
+
+def test_new_history_leaves_the_messages_already_sent_untouched():
+    """What the server's checkpoints rely on: only the tail is replaced, so a
+    model that can only rewind to message boundaries reuses all the history."""
+    before = C.build_check_messages("rules", _entries(6), "first output")
+    after = C.build_check_messages("rules", _entries(8), "a different output")
+    shared = len(before) - 1  # all but the output section
+    assert [m.content for m in before[:shared]] == [m.content for m in after[:shared]]
+    assert before[-1].content != after[shared].content
+
+
+def test_the_two_sections_the_prompt_names_are_still_there_with_no_history():
+    msgs = C.build_check_messages("rules", [], "output")
+    assert msgs[1].content.strip() == "## Recent Conversation History"
+    assert msgs[-1].content.startswith("## Current Agent Output to Analyze")
+
+
+def test_the_check_prompt_is_measured_like_the_main_prompt():
+    from pathlib import Path
+
+    models_source = (Path(__file__).resolve().parents[1] / "models.py").read_text(encoding="utf-8")
+    assert 'timing.caller == "infection_check"' in models_source
