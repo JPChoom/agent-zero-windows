@@ -12,6 +12,7 @@
 
 ## Local Contracts
 
+- Fails closed. An action nobody checked does not run: no verdict tag is `NO_VERDICT`, never "ok" (`parse_result`); a failed or verdict-less utility call retries once on the Main model with thinking off (`_run_check`, `_main_model`); if no model answers, `_decide_unchecked` puts it to the user as a clarification (no answer means blocked; `clarify_mode: agent` blocks outright, because the agent is what is being checked); any other error in `gate()` blocks; a stop during the check propagates (`asyncio.CancelledError` is never swallowed while `_stopping()`). `model: main` also judges without thinking. Add a test in `tests/test_infection_fails_closed.py` for any new way out of `_gate_inner`.
 - Preserve configured `thoughts` and `complete` analysis modes.
 - Tool execution must wait for required safety verdicts.
 - The gate skips side-effect-free local reads (`helpers/untrusted_content.is_read_only_call`) always, and skips chats that have not yet seen untrusted content while `only_after_untrusted_content` is true (default). Set it false to check every call from the start.

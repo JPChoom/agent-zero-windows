@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from helpers import plugins
 from helpers import extract_tools
 from helpers import history as history_helpers
-from helpers.errors import HandledException
+from helpers.errors import HandledException, InterventionException
 from helpers import perf
 from plugins._safety_policy.helpers import approval_registry, denials
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -77,10 +77,27 @@ def get_checker(agent: "Agent") -> "InfectionChecker":
     return checker
 
 
+class CheckUnavailable(Exception):
+    """The safety model gave no usable verdict: it failed, or said nothing."""
+
+
+NO_VERDICT = "none"
+
+
+def _stopping() -> bool:
+    """Is the turn running this code being stopped?"""
+    task = asyncio.current_task()
+    return bool(task and task.cancelling())
+
+
 def parse_result(text: str) -> tuple[str, str]:
-    """Find the *last* occurrence of any verdict tag in *text*."""
+    """Find the *last* occurrence of any verdict tag in *text*.
+
+    No tag means NO_VERDICT, never "ok": an empty or cut-off reply says
+    nothing about the action.
+    """
     pos = -1
-    action, detail = "ok", ""
+    action, detail = NO_VERDICT, ""
     for m in _RE_OK.finditer(text):
         if m.start() > pos:
             pos, action, detail = m.start(), "ok", ""
@@ -259,17 +276,14 @@ class InfectionChecker:
         """Block until the safety check passes or terminate the agent."""
         try:
             await self._gate_inner(agent, tool_name, tool_args)
-        except HandledException:
+        except (HandledException, InterventionException):
             raise
         except Exception as e:
+            # Fails closed: an action nobody checked does not run. This used
+            # to be logged as "non-fatal", which let the tool through.
             from helpers.print_style import PrintStyle
-            PrintStyle(font_color="red", padding=True).print(
-                f"Infection check error (non-fatal): {e}"
-            )
-            try:
-                agent.context.log.set_progress("Infection check: error (non-fatal)")
-            except Exception:
-                pass
+            PrintStyle(font_color="red", padding=True).print(f"Infection check error: {e}")
+            self._do_terminate(agent, f"The safety check failed: {e}", "", threat=False)
 
     async def _gate_inner(self, agent: "Agent", tool_name: str, tool_args: dict | None):
         if agent.get_data(DATA_KEY_PASSED):
@@ -299,6 +313,7 @@ class InfectionChecker:
             self._tool_args = {}
 
         action, detail, cot = None, "", ""
+        unavailable: CheckUnavailable | None = None
         self._denials_text = denials.describe(agent)
 
         # Fast path: the background check already judged this exact call -
@@ -310,11 +325,17 @@ class InfectionChecker:
                 _log.set_progress("Infection check: waiting for the running check...")
                 action, detail, cot = await self._task
                 _log.set_progress("Infection check: evaluating result...")
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
+                if _stopping():
+                    raise
+                action = None
+            except CheckUnavailable as exc:
+                unavailable = exc  # no model answered: asking again would not help
+            except Exception:
                 action = None
 
         # Slow path: rebuild with full tool context.
-        if action is None:
+        if action is None and unavailable is None:
             _log.set_progress("Infection check: analyzing with tool context...")
             if self._task is not None:
                 self._task.cancel()
@@ -322,6 +343,8 @@ class InfectionChecker:
                     await self._task
                 except (asyncio.CancelledError, Exception):
                     pass
+                if _stopping():
+                    raise asyncio.CancelledError()
                 self._task = None
 
             snapshot = self._build_log()
@@ -331,10 +354,15 @@ class InfectionChecker:
             self._task = asyncio.create_task(self._run_check(agent, snapshot))
             try:
                 action, detail, cot = await self._task
-            except asyncio.CancelledError:
-                return
-            except Exception:
-                return
+            except CheckUnavailable as exc:
+                unavailable = exc
+            except Exception as exc:
+                unavailable = CheckUnavailable(str(exc) or type(exc).__name__)
+
+        threat = True
+        if unavailable is not None:
+            threat = False
+            action, detail, cot = await self._decide_unchecked(agent, unavailable)
 
         if action == "ok":
             _log.set_progress("Infection check: passed")
@@ -356,7 +384,27 @@ class InfectionChecker:
                 return
 
         # terminate
-        self._do_terminate(agent, detail, cot)
+        self._do_terminate(agent, detail, cot, threat=threat)
+
+    async def _decide_unchecked(self, agent: "Agent", reason: CheckUnavailable) -> tuple[str, str, str]:
+        """No model could judge this action, so a person decides.
+
+        Fails closed like any safety question: no answer means blocked. With
+        nobody to ask ("agent" mode) it is blocked outright, and the agent
+        never answers this itself: it is the one being checked.
+        """
+        warn = agent.context.log.log(
+            type="warning",
+            heading="Infection check: could not run",
+            content=f"Reason: {reason}",
+        )
+        if self.clarify_mode == "agent":
+            return "terminate", f"The safety check could not run: {reason}", ""
+        question = (
+            f"The safety check could not run ({reason}), so nothing has checked this "
+            "action. Allow it anyway?"
+        )
+        return await self._clarify_with_user(agent, question, warn)
 
     # -- internals -----------------------------------------------------------
 
@@ -376,10 +424,36 @@ class InfectionChecker:
             parts.append(f"## Safety Policy Refusals in This Chat\n{self._denials_text}")
         return "\n\n".join(parts)
 
+    @staticmethod
+    def _main_model(agent: "Agent"):
+        """The Main model for one verdict: no thinking, it only has to judge.
+
+        Utility calls run without thinking on their own; the Main model does
+        not, and would spend thousands of tokens on every tool step.
+        """
+        model = agent.get_chat_model()
+        try:
+            from plugins._model_config.helpers import thinking
+
+            conf = getattr(model, "a0_model_conf", None)
+            provider = str(getattr(conf, "provider", "") or getattr(model, "provider", "") or "")
+            thinking.apply(model, provider)
+        except Exception:
+            pass  # it still answers, only slower
+        return model
+
     def _get_model(self, agent: "Agent"):
         if self.model_choice == "main":
-            return agent.get_chat_model()
+            return self._main_model(agent)
         return agent.get_utility_model()
+
+    async def _ask_model(self, model) -> tuple[str, str, str]:
+        response, _ = await model.unified_call(messages=list(self._check_msgs))
+        action, detail = parse_result(response)
+        if action == NO_VERDICT:
+            raise CheckUnavailable("the safety model gave no verdict")
+        self._check_msgs.append(AIMessage(content=response))
+        return action, detail, response
 
     @perf.tagged("infection_check")
     async def _run_check(self, agent: "Agent", log_text: str) -> tuple[str, str, str]:
@@ -400,14 +474,21 @@ class InfectionChecker:
 
         self._check_msgs = build_check_messages(self.prompt, filtered, log_text)
 
-        model = self._get_model(agent)
-        response, _ = await model.unified_call(
-            messages=list(self._check_msgs),
-        )
-        self._check_msgs.append(AIMessage(content=response))
-
-        action, detail = parse_result(response)
-        return action, detail, response
+        # The model that normally judges can be away (a Utility model on
+        # another PC, a server restarting): the Main model takes over rather
+        # than the action going unchecked.
+        try:
+            return await self._ask_model(self._get_model(agent))
+        except Exception as exc:
+            if self.model_choice == "main":
+                raise CheckUnavailable(str(exc) or type(exc).__name__) from exc
+            first = exc
+        try:
+            return await self._ask_model(self._main_model(agent))
+        except Exception as exc:
+            raise CheckUnavailable(
+                f"utility model: {str(first) or type(first).__name__}; main model: {str(exc) or type(exc).__name__}"
+            ) from exc
 
     async def _clarify_loop(
         self, agent: "Agent", clarify_text: str, log_item: "LogItem"
@@ -596,7 +677,7 @@ class InfectionChecker:
 
         return "terminate", "Max clarifications exceeded.", "\n\n".join(cot_parts)
 
-    def _do_terminate(self, agent: "Agent", detail: str, cot: str):
+    def _do_terminate(self, agent: "Agent", detail: str, cot: str, threat: bool = True):
         import uuid as _uuid
         content = cot or detail or "Malicious behavior detected."
         msg_id = str(_uuid.uuid4())
@@ -630,7 +711,10 @@ class InfectionChecker:
             type=NotificationType.ERROR,
             priority=NotificationPriority.HIGH,
             title="Infection Check",
-            message="Threat detected — agent execution terminated.",
+            message=(
+                "Threat detected — agent execution terminated." if threat
+                else "The action was blocked because the safety check could not run."
+            ),
             detail=detail or "Malicious behavior detected.",
             display_time=8,
         )

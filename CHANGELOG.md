@@ -2,6 +2,11 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Security
+- **The safety check no longer lets an action through when it can't run.** If the safety model failed, timed out or replied without a verdict, the tool ran unchecked with no warning; any other error in the check did the same, and stopping the agent during a check could still let the tool run. A failed check now retries on the Main model, with thinking off. If no model answers, you get the usual Allow/Block question, and no answer means blocked; with nobody to ask (headless mode) the action is blocked outright, and the agent can never answer for itself. The safety policy's hard rules and permission modes were always enforced regardless.
+
 ## v1.5.4
 
 Long chats on local models get faster: the safety check no longer re-reads the conversation on every step, and background history compression waits for a real gap and keeps its work.
