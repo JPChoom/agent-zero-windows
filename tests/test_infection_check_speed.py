@@ -273,7 +273,20 @@ def test_each_history_entry_is_its_own_message():
     assert msgs[0].content == "rules"
     assert msgs[1].content.startswith("## Recent Conversation History\n") and "message 0" in msgs[1].content
     assert "message 2" in msgs[3].content
-    assert msgs[-1].content == "## Current Agent Output to Analyze\ntool about to run"
+    assert msgs[-1].content.startswith("## Current Agent Output to Analyze\ntool about to run\n\n")
+
+
+def test_the_rules_come_back_after_the_output():
+    """Split into messages, the rules sit far back: on the real model hostile
+    cases came back <clarify> instead of <terminate/> until they were repeated
+    last (tests/manual/infection_check_corpus.py)."""
+    msgs = C.build_check_messages("rules", _entries(3), "tool about to run")
+    closing = msgs[-1].content.split("tool about to run", 1)[1]
+    assert msgs[-1].content.endswith(C.CHECK_REMINDER)
+    for rule in ("H1", "H2", "H3", "H4", "H5", "S1-S7", "<terminate/>", "never <clarify>", "<ok/>"):
+        assert rule in closing
+    # says what to do, gives no verdict of its own to be misread as the model's
+    assert closing.rstrip().endswith("End with your verdict tag.")
 
 
 def test_new_history_leaves_the_messages_already_sent_untouched():
