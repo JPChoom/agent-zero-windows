@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.5.4
+
+Long chats on local models get faster: the safety check no longer re-reads the conversation on every step, and background history compression waits for a real gap and keeps its work.
 
 ### Improved
 - **Background history compression waits for a real gap, and its work is kept.** It used to start right after a step, just as the next step needed the model, so about 12% of its calls were cancelled within a second (233 of 1,983). It now waits until the model has been free for 15 seconds, or starts at once if the history is over its limit. Its results also weren't saved when it finished after the turn's last save, so closing the window lost them and the next start redid the same summaries; the chat is now saved after each pass that changed something.
