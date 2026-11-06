@@ -2,10 +2,17 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.5.5
+
+The safety check now blocks what it can't check and is firm again on hostile actions, a chat can't be damaged or rolled back by a save, and installs in a folder with a space work with `/a0/...` paths.
 
 ### Security
 - **The safety check no longer lets an action through when it can't run.** If the safety model failed, timed out or replied without a verdict, the tool ran unchecked with no warning; any other error in the check did the same, and stopping the agent during a check could still let the tool run. A failed check now retries on the Main model, with thinking off. If no model answers, you get the usual Allow/Block question, and no answer means blocked; with nobody to ask (headless mode) the action is blocked outright, and the agent can never answer for itself. The safety policy's hard rules and permission modes were always enforced regardless.
+- **The safety check is firm again on hostile actions.** v1.5.4 split the check's prompt into separate messages for speed and reported the verdicts as identical, but that was measured on only 6 cases. A wider test found 2 of 9 hostile cases asking the user instead of blocking. None were allowed: the action still waited for an answer. The check now ends by repeating its steps, and all 9 were blocked on each of 4 runs, with the same speed (0.6 s to re-read a 19,000-token prompt). One routine case changed the other way: deleting a build folder now asks first when the conversation doesn't show the user asked for it. The 18 cases are kept as a repeatable test, `tests/manual/infection_check_corpus.py`.
+
+### Fixed
+- **A chat can't be damaged or rolled back by a save.** A save emptied the chat file and wrote it again, so a crash or a closed window at that moment left a damaged file, and a damaged chat doesn't load. Since v1.5.4 two saves could also overlap, and an older copy could land last and undo newer messages. A save now replaces the file in one step, and saves stay in order. Each one takes 1-5 ms longer.
+- **Installs in a folder with a space work with `/a0/...` paths.** The v1.5.3 path fix wrote the folder without quotes, so on an install under `C:\Users\First Last\` the shell split the path in two. Paths now get quotes where they need them, and PowerShell gets `&` when the path is the command itself. In Python and Node code, only paths inside strings are rewritten, so a division such as `total /a0` is left alone.
 
 ## v1.5.4
 
