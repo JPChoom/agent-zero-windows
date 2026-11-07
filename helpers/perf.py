@@ -518,12 +518,79 @@ def _ensure_loop_monitor() -> None:
         return
     _loop_stats[loop] = [0.0, 0.0]
     _loop_monitors[loop] = loop.create_task(_probe_loop(loop), name="a0-perf-loop-probe")
+    _start_stall_sampler()
+
+
+# --------------------------------------------------------------------------
+# what a stall was doing
+# --------------------------------------------------------------------------
+# The probe can say a loop was blocked, not by what. A thread watches each
+# loop's heartbeat and, once a loop has been silent STALL_SAMPLE_SECONDS,
+# records the blocked thread's call stack: file, line and function names only,
+# never variables. tests/manual/stall_report.py groups them.
+
+STALL_SAMPLE_SECONDS = 0.5
+STALL_STACK_FRAMES = 14
+_heartbeats: dict[int, list] = {}  # loop id -> [thread id, last beat, stack or None]
+_sampler_started = False
+
+
+def _start_stall_sampler() -> None:
+    global _sampler_started
+    with _lock:
+        if _sampler_started:
+            return
+        _sampler_started = True
+    threading.Thread(target=_watch_stalls, name="a0-perf-stall-sampler", daemon=True).start()
+
+
+def _stack_of(thread_id: int) -> list[str]:
+    import sys
+    import traceback
+
+    frame = sys._current_frames().get(thread_id)
+    if frame is None:
+        return []
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    lines = []
+    for item in traceback.extract_stack(frame)[-STALL_STACK_FRAMES:]:
+        path = os.path.abspath(item.filename)
+        shown = os.path.relpath(path, root).replace(os.sep, "/") if path.startswith(root) else os.path.basename(path)
+        lines.append(f"{shown}:{item.lineno} {item.name}")
+    return lines
+
+
+def _watch_stalls() -> None:
+    while True:
+        time.sleep(LOOP_PROBE_SECONDS)
+        now = time.monotonic()
+        for beat in list(_heartbeats.values()):
+            try:
+                if beat[2] is None and now - beat[1] > STALL_SAMPLE_SECONDS:
+                    beat[2] = _stack_of(beat[0])
+            except Exception:
+                pass
+
+
+def _note_beat(loop: asyncio.AbstractEventLoop) -> None:
+    """Called by the probe each time its loop lets it run."""
+    now = time.monotonic()
+    beat = _heartbeats.get(id(loop))
+    if beat is None:
+        _heartbeats[id(loop)] = [threading.get_ident(), now, None]
+        return
+    stack, seconds = beat[2], now - beat[1]
+    beat[1], beat[2] = now, None
+    if stack:
+        _append_jsonl("stalls.jsonl", {"ts": time.time(), "seconds": round(seconds, 3), "stack": stack})
 
 
 async def _probe_loop(loop: asyncio.AbstractEventLoop) -> None:
     while True:
         before = time.monotonic()
+        _note_beat(loop)
         await asyncio.sleep(LOOP_PROBE_SECONDS)
+        _note_beat(loop)
         lag = time.monotonic() - before - LOOP_PROBE_SECONDS
         stats = _loop_stats.get(loop)
         if stats is None:
