@@ -41,6 +41,19 @@
 
       <div class="field">
         <div class="field-label">
+          <div class="field-title">Shadow check on the Utility model</div>
+          <div class="field-description">Compare only: when the Main model judges, Utility also judges in the background and both verdicts are logged. It never changes what runs.</div>
+        </div>
+        <div class="field-control">
+          <label class="toggle">
+            <input type="checkbox" x-model="config.shadow_utility" />
+            <span class="toggler"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
           <div class="field-title">Max Clarifications</div>
           <div class="field-description">Maximum clarification rounds before auto-terminate.</div>
         </div>

@@ -42,4 +42,4 @@ def get_plugin_config(default=None, **kwargs):
 
 
 # Top-level keys added after configs were first saved (see the docstring above).
-BACKFILLED_KEYS = ("vision_model", "single_model_mode", "sampling", "local_server", "thinking")
+BACKFILLED_KEYS = ("vision_model", "single_model_mode", "sampling", "local_server", "thinking", "job_routing")

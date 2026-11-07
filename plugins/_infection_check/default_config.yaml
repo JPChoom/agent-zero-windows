@@ -6,6 +6,9 @@ model: utility
 # skipped. Set false to check every tool call from the start, which also
 # polices credential exfiltration a user requests directly.
 only_after_untrusted_content: true
+# Compare only: the Utility model also judges in the background and the two
+# verdicts are logged (helpers/shadow.py). It never affects what runs.
+shadow_utility: false
 max_clarifications: 3
 # Who answers a <clarify> verdict.
 #   user  - the question goes to a human, who allows or blocks it.

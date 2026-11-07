@@ -113,6 +113,73 @@
         </div>
         </template>
 
+        <!-- Background jobs: which model runs what -->
+        <template x-if="config.job_routing">
+        <div class="model-section"
+             x-data="{ jobs: [
+               ['rename_chat', 'Naming chats'],
+               ['memory_recall', 'Finding memories for a step'],
+               ['memorize', 'Saving memories'],
+               ['memory_consolidation', 'Merging memories'],
+               ['history_compression', 'Compressing history'],
+               ['skill_learn', 'Learning skills'],
+             ] }">
+          <div class="section-title">Background jobs</div>
+          <div class="section-description">Useful when the Utility model runs on another PC. The safety check is set separately, in its own plugin settings.</div>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Use the Main model when Utility doesn't answer</div>
+              <div class="field-description">Keeps memory and compression working while the other PC is off or asleep. Replies are slower until it's back.</div>
+            </div>
+            <div class="field-control">
+              <label class="toggle">
+                <input type="checkbox" x-model="config.job_routing.fallback_to_main" />
+                <span class="toggler"></span>
+              </label>
+            </div>
+          </div>
+          <template x-for="[job, label] in jobs" :key="job">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title" x-text="label"></div>
+              </div>
+              <div class="field-control">
+                <select :value="(config.job_routing.jobs || {})[job] || 'utility'"
+                        @change="config.job_routing.jobs = { ...(config.job_routing.jobs || {}), [job]: $event.target.value }">
+                  <option value="utility">Utility model</option>
+                  <option value="main">Main model</option>
+                </select>
+              </div>
+            </div>
+          </template>
+          <div class="field">
+            <div class="field-label">
+              <div class="field-title">Subordinates on the Utility model</div>
+              <div class="field-description">Agent profiles, separated by commas, for example researcher. Best for simple delegated work: a small model is weak at coding. Their safety checks stay on the model set for the check.</div>
+            </div>
+            <div class="field-control">
+              <input type="text" placeholder="none"
+                     :value="(config.job_routing.subordinate_profiles || []).join(', ')"
+                     @change="config.job_routing.subordinate_profiles = $event.target.value.split(',').map(p => p.trim()).filter(Boolean)" />
+            </div>
+          </div>
+          <template x-if="config.job_routing.tool_digest">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Shorten very long tool results (experimental)</div>
+                <div class="field-description">The Utility model summarizes the middle of long outputs, so later steps read less. The start and end stay word for word and the full text is saved, but a detail in the middle can be lost from what the agent sees.</div>
+              </div>
+              <div class="field-control">
+                <label class="toggle">
+                  <input type="checkbox" x-model="config.job_routing.tool_digest.enabled" />
+                  <span class="toggler"></span>
+                </label>
+              </div>
+            </div>
+          </template>
+        </div>
+        </template>
+
         <!-- Per-Chat Override -->
         <div class="model-section">
           <div class="section-title">Per-Chat Override</div>

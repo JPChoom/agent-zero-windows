@@ -2,7 +2,7 @@ import os
 from copy import deepcopy
 
 import models
-from helpers import plugins, files
+from helpers import plugins, files, perf
 from helpers import yaml as yaml_helper
 from helpers.providers import get_provider_config, get_providers
 
@@ -487,8 +487,40 @@ def _resolve_override(agent) -> dict | None:
     return override
 
 
-def get_chat_model_config(agent=None) -> dict:
-    """Get chat model config, with per-chat override if active."""
+def subordinate_on_utility(agent) -> bool:
+    """Does this subordinate work on the Utility model (`job_routing.
+    subordinate_profiles`)? The safety check never follows it there: on a
+    Dell-sized model it allowed a hostile command the Main model blocks."""
+    if agent is None or not getattr(agent, "number", 0):
+        return False
+    routing = get_config(agent).get("job_routing")
+    profiles = routing.get("subordinate_profiles") if isinstance(routing, dict) else None
+    if not profiles or is_single_model_mode(agent):
+        return False
+    if perf.CALLER.get().startswith("infection_check"):
+        return False
+    return getattr(getattr(agent, "config", None), "profile", "") in profiles
+
+
+def _subordinate_slot(agent) -> dict:
+    """The Main slot's settings around the Utility slot's model, so history
+    limits follow the smaller context."""
+    slot = dict(get_chat_model_config(agent, routed=False))
+    utility = _get_utility_model_config(agent)
+    for key in _MODEL_IDENTITY_FIELDS:
+        if key in utility:
+            slot[key] = deepcopy(utility[key])
+    slot["vision"] = False
+    if slot.get("provider") in ("lm_studio", "llama_cpp"):
+        slot["kwargs"] = {"a0_api_mode": "chat_completions", **(slot.get("kwargs") or {})}
+    return slot
+
+
+def get_chat_model_config(agent=None, routed=True) -> dict:
+    """Get chat model config, with per-chat override if active. `routed=False`
+    ignores `subordinate_on_utility`: the real Main model."""
+    if routed and subordinate_on_utility(agent):
+        return _subordinate_slot(agent)
     cfg = get_config(agent)
     override = _resolve_override(agent)
     if override:
@@ -696,14 +728,28 @@ def apply_sampling(cfg: dict, sampling: dict) -> dict:
     return merged
 
 
-def build_chat_model(agent=None):
-    """Build and return a LiteLLMChatWrapper from config."""
-    cfg = apply_sampling(get_chat_model_config(agent), get_sampling(agent))
+def build_chat_model(agent=None, routed=True):
+    """Build and return a LiteLLMChatWrapper from config. `routed=False` is
+    the real Main model even for a subordinate on the Utility model."""
+    slot = get_chat_model_config(agent) if routed else get_chat_model_config(agent, routed=False)
+    cfg = apply_sampling(slot, get_sampling(agent))
     mc = build_model_config(cfg, models.ModelType.CHAT)
     model = models.get_chat_model(
         mc.provider, mc.name, model_config=mc, **mc.build_kwargs()
     )
-    model.a0_perf_role = "main"  # helpers/perf.py: which slot a call came from
+    # helpers/perf.py: which slot a call came from
+    model.a0_perf_role = "subordinate" if routed and subordinate_on_utility(agent) else "main"
+    return model
+
+
+def build_main_for_utility(agent=None):
+    """The real Main model doing a Utility job: an answer, not thinking."""
+    cfg = apply_sampling(get_chat_model_config(agent, routed=False), get_sampling(agent))
+    mc = build_model_config(cfg, models.ModelType.CHAT)
+    model = models.get_chat_model(
+        mc.provider, mc.name, model_config=mc, **utility_kwargs(mc.provider, mc.build_kwargs())
+    )
+    model.a0_perf_role = "main"
     return model
 
 

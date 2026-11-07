@@ -11,6 +11,7 @@
 ## Local Contracts
 
 - Mask secrets before tool results reach history, UI, or model-visible context.
+- Hooks numbered below `_90` see the full result: `plugins/_model_config`'s `_90_tool_digest.py` may shorten `response.message` after them.
 - Do not alter tool `break_loop` or response semantics unless the hook contract owns that behavior.
 
 ## Work Guidance

@@ -134,3 +134,21 @@ local_server:
   download_variant: ""
   vram_check: true
   startup_timeout_seconds: 300
+
+# Which model runs which job, for a Utility model on another PC.
+job_routing:
+  # Utility calls go to the Main model while the Utility server does not answer.
+  fallback_to_main: true
+  # Job -> utility (default) or main: rename_chat, memory_recall, memorize,
+  # memory_consolidation, history_compression, skill_learn.
+  jobs: {}
+  # Agent profiles whose subordinates work on the Utility model.
+  subordinate_profiles: []
+  # EXPERIMENTAL, off by default: the Utility model shortens the middle of very
+  # long tool results. The start and end stay, the full text is saved.
+  tool_digest:
+    enabled: false
+    min_chars: 20000
+    keep_head_chars: 2000
+    keep_tail_chars: 3000
+    tools: [code_execution_tool, search_engine, browser, document_query]

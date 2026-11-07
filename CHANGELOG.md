@@ -4,6 +4,13 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## Unreleased
 
+### New
+- **Background jobs keep working when the Utility model's PC is off.** If a Utility model on another PC doesn't answer, its jobs move to the Main model and a banner says so, instead of memory saves and compression failing. They move back by themselves. You can turn this off in *Settings > Models > Background jobs*.
+- **Choose which model runs each background job.** The same section sets chat naming, memory, compression and skill learning to Utility or Main, one by one.
+- **Subordinate agents can run on the Utility model.** List agent profiles to send their subordinates there, such as simple research work. Nothing moves until you list one. Their safety checks stay on the model set for the check.
+- **Long tool results can be shortened (experimental, off by default).** The Utility model summarizes the middle of very long outputs, so later steps read less. The start and end stay word for word and the full text is saved. A detail in the middle can still be lost from what the agent sees.
+- **Shadow safety check (off by default).** When the Main model judges, the Utility model can judge the same step in the background and both verdicts are logged. It never changes what runs. A small model isn't safe for this job yet: on the 18-case test, a 9B model allowed one hostile command.
+
 ### Security
 - **A skill learned from a downloaded file now waits for your review.** Reading a file on this PC counted as your own content, so a skill learned from a file downloaded earlier went live at once. A file in a downloads folder, or one Windows marks as coming from the internet even after it was moved, now counts as outside content, like a web page.
 

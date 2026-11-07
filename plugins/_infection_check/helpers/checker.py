@@ -222,6 +222,7 @@ class InfectionChecker:
     def __init__(self, config: dict, iteration: int):
         self.mode: str = config.get("mode", "thoughts")
         self.model_choice: str = config.get("model", "utility")
+        self.shadow_utility: bool = bool(config.get("shadow_utility", False))
         self.prompt: str = config.get("prompt", "")
         self.history_size: int = int(config.get("history_size", 10))
         self.max_clarifications: int = int(config.get("max_clarifications", 3))
@@ -491,12 +492,21 @@ class InfectionChecker:
             filtered.append(entry)
 
         self._check_msgs = build_check_messages(self.prompt, filtered, log_text)
+        judged = list(self._check_msgs)
 
         # The model that normally judges can be away (a Utility model on
         # another PC, a server restarting): the Main model takes over rather
         # than the action going unchecked.
         try:
-            return await self._ask_model(self._get_model(agent))
+            result = await self._ask_model(self._get_model(agent))
+            if self.shadow_utility and self.model_choice == "main":
+                try:
+                    from plugins._infection_check.helpers import shadow
+
+                    shadow.start(agent, judged, result[0], parse_result)
+                except Exception:
+                    pass  # a comparison must never reach the verdict
+            return result
         except Exception as exc:
             if self.model_choice == "main":
                 raise CheckUnavailable(str(exc) or type(exc).__name__) from exc

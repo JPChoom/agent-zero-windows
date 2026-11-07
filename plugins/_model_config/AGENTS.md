@@ -7,6 +7,7 @@
 ## Ownership
 
 - `helpers/model_config.py` owns config resolution, presets, overrides, and runtime model object construction.
+- `helpers/job_routing.py` owns which model runs which job and the Utility fallback; `helpers/tool_digest.py` owns shortening long tool results.
 - `api/` owns model config, override, preset, search, and API-key endpoints.
 - `webui/` owns model settings, summaries, switcher, and API-key UI.
 - `default_config.yaml`, `default_presets.yaml`, `provider_metadata.yaml`, `hooks.py`, and `plugin.yaml` own defaults, metadata, hooks, and manifest.
@@ -18,7 +19,10 @@
 - The `build_*_model` helpers tag each wrapper with `a0_perf_role` (`main`, `utility`, `vision`) so `helpers/perf.py` can tell which slot a model call came from.
 - `sampling` (temperature, top_p, top_k, repeat_penalty; empty = provider default) is merged into Main/Utility kwargs by `apply_sampling`; a model's own kwargs win. top_k and repeat_penalty go in `extra_body` and only to `LOCAL_SAMPLING_PROVIDERS`.
 - Dynamic sampling is EXPERIMENTAL and off by default (`sampling.dynamic`): `extensions/python/chat_model_call_before/_20_dynamic_sampling.py` adjusts only unlocked values on the per-call model object, using the visible `sampling.dynamic_rules`; `helpers/dynamic_sampling.py` holds the pure classify/adjust logic. The UI asks for confirmation before enabling it.
-- `hooks.py get_plugin_config` backfills `BACKFILLED_KEYS` (vision_model, single_model_mode, sampling) into configs saved before they existed.
+- `hooks.py get_plugin_config` backfills `BACKFILLED_KEYS` into configs saved before they existed.
+- `job_routing` (Settings > Models > Background jobs): `get_utility_model` goes through `job_routing.utility_model_for_call`. The job comes from `perf.CALLER`, so a new job needs a `perf.tagged` name in `JOBS` and a row in `webui/config.html`. `fallback_to_main` wraps the model in `RoutedUtilityModel`: a TCP check first, then one retry on Main for any failure except a stop, `Preempted`, or an answer already streaming; only outages (`_is_outage`) mark the server down. A refused request (over context) moves that job alone. Nothing wraps when Utility is the Main model. `banners/_40_utility_fallback.py` shows while a server is marked down.
+- `subordinate_profiles`: `get_chat_model_config` gives a listed subordinate the Utility model with Main's limits (`subordinate_on_utility`, `_subordinate_slot`); `routed=False` is always the real Main model. Never the main agent, and never a call tagged `infection_check*`: the safety check stays on its own model. `chat_model_call_before/_10_subordinate_route.py` returns it to Main when the server is away.
+- `tool_digest` is EXPERIMENTAL and off by default: `tool_execute_after/_90_tool_digest.py` replaces the middle of a long result, after the secret mask and completion gate. Head and tail stay word for word, the full text goes in the chat's folder, and any problem keeps the original. It never runs on Main (`UTILITY_ONLY_CALLERS`). The result stays untrusted by tool name in `hist_add_tool_result`; do not exempt it.
 
 - Preserve global, project, agent, and chat override resolution order.
 - Project Settings `llm` payloads are owned here through the generic `helpers.projects` project extension-data hooks; keep project helper code agnostic to `_model_config` paths, presets, and inheritance rules.
