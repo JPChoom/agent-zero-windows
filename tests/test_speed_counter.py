@@ -133,6 +133,13 @@ def test_the_counter_lives_in_the_info_section_above_tasks():
     assert (ROOT / "plugins/_perf/extensions/webui/sidebar-info-list/speed-counter.html").exists()
 
 
+def test_the_counter_draws_a_60_second_graph():
+    markup = (ROOT / "plugins/_perf/extensions/webui/sidebar-info-list/speed-counter.html").read_text(encoding="utf-8")
+    assert '$store.speedCounter.graphLine' in markup and '$store.speedCounter.graphArea' in markup
+    store = (ROOT / "plugins/_perf/webui/speed-counter-store.js").read_text(encoding="utf-8")
+    assert "const GRAPH_SECONDS = 60;" in store
+
+
 def test_the_counter_has_no_switch_and_stops_when_collapsed():
     prefs = (ROOT / "webui/components/sidebar/bottom/preferences/preferences-panel.html").read_text(encoding="utf-8")
     assert "sidebar-preferences-list-end" not in prefs

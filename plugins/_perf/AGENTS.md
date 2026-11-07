@@ -19,7 +19,7 @@
 - Model-call timing lives in `models.py` (`_run_unified`), hook timing in `helpers/extension.py` (`call_extensions_async`); a call's role comes from `a0_perf_role` set by `plugins/_model_config` builders (`main`, `utility`, `vision`; anything else is `other`).
 - Records hold numbers, model names and chat ids only - never prompt, reasoning or response text. Files live in `usr/perf/` (git-ignored) and rotate at 5 MB.
 - Measurement must never fail a turn: storage errors are swallowed.
-- The speed counter polls `perf.live_state()` once a second while an answer runs, every 2 s otherwise, and not while the Info section is collapsed or the tab is hidden. It shows only the agent's streamed answers (`ModelCall._shown_live`). Rates are estimates from streamed characters, like the logs. It returns numbers and model names only.
+- The speed counter polls `perf.live_state()` once a second, and not while the Info section is collapsed or the tab is hidden. Its 60-second graph is kept in the browser, so it starts empty on a page load and skips time when paused. It shows only the agent's streamed answers (`ModelCall._shown_live`). Rates are estimates from streamed characters, like the logs. It returns numbers and model names only.
 
 ## Work Guidance
 
