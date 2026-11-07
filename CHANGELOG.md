@@ -13,6 +13,11 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **Decision model in shadow mode (off by default).** A decision model such as Laya, running on the Utility model's server, predicts whether a step needs thinking and how hard a delegated task is. The predictions are logged next to what really happened, without the text, and never change what runs. This measures whether such a model is worth using.
 - **Shadow safety check (off by default).** When the Main model judges, the Utility model can judge the same step in the background and both verdicts are logged. It never changes what runs. A small model isn't safe for this job yet: on the 18-case test, a 9B model allowed one hostile command.
 
+### Fixed
+- **A model stuck repeating itself is stopped.** Local models can loop on a line with one small change, such as endless rows of a made-up table. One ran for 37 minutes until it was stopped by hand. A long reply that keeps repeating is now cut off, nothing from it runs, and the model is told to do the job another way.
+- **Long replies no longer slow down as they grow.** Agent Zero re-read the whole reply on every token, which held a very long reply near 8 tok/s. Most of that work now happens only when a tool call could have finished, so a 16,000-token reply costs about 15 ms per token instead of about 115 ms.
+- **The timing line no longer blames a hook for your thinking time.** Waiting for you to answer a safety or permission question counted as hook time, which made the safety check look slow. It now shows separately as "waiting for you".
+
 ### Security
 - **A skill learned from a downloaded file now waits for your review.** Reading a file on this PC counted as your own content, so a skill learned from a file downloaded earlier went live at once. A file in a downloads folder, or one Windows marks as coming from the internet even after it was moved, now counts as outside content, like a web page.
 

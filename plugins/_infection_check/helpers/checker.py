@@ -590,7 +590,8 @@ class InfectionChecker:
             # the gated call proceed. A failure to even set up the decision
             # must block, not pass.
             future = approval_registry.register(approval_id)
-            approved = await asyncio.wait_for(future, timeout=timeout)
+            with perf.waiting_for_user():
+                approved = await asyncio.wait_for(future, timeout=timeout)
         except (TimeoutError, asyncio.TimeoutError):
             approval_registry.cleanup(approval_id)
             self._finish_clarification(request_item, outcome="timeout")

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+from helpers import perf
 from helpers.errors import RepairableException
 from plugins._permissions.helpers import rules
 from plugins._safety_policy.helpers import approval_registry
@@ -56,7 +57,8 @@ async def request_approval(
 
     future = approval_registry.register(approval_id)
     try:
-        approved = await asyncio.wait_for(future, timeout=timeout)
+        with perf.waiting_for_user():
+            approved = await asyncio.wait_for(future, timeout=timeout)
     except (TimeoutError, asyncio.TimeoutError):
         approval_registry.cleanup(approval_id)
         _resolve(log_item, approved=False, outcome="timeout")

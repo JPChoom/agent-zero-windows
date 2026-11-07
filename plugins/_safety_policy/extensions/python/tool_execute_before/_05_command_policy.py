@@ -30,6 +30,7 @@ import asyncio
 import time
 import uuid
 
+from helpers import perf
 from helpers.extension import Extension
 from helpers.errors import RepairableException
 from helpers import kill_switch
@@ -235,7 +236,8 @@ class SafetyCommandPolicy(Extension):
 
         future = approval_registry.register(approval_id, meta={"remember_host": remember_host})
         try:
-            approved = await asyncio.wait_for(future, timeout=timeout)
+            with perf.waiting_for_user():
+                approved = await asyncio.wait_for(future, timeout=timeout)
         except TimeoutError:
             approval_registry.cleanup(approval_id)
             self._finish_approval(log_item, approval_id, approved=False, outcome="timeout")

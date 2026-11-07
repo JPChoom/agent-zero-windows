@@ -25,6 +25,11 @@ def extract_tool_request(content: str) -> dict[str, Any] | None:
         return None
 
     content = content.strip()
+    # A finished call ends in its closing brace or tag. This runs on every
+    # token of a stream, twice, and parsing the whole reply each time held a
+    # long reply near 8 tok/s.
+    if not content.endswith(("}", ">")):
+        return None
     root = extract_json_root_string(content)
     if root != content:
         return _trailing_tool_request(content) or _tagged_tool_request(content)

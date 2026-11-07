@@ -1,4 +1,13 @@
 import json
+import re
+from functools import lru_cache
+
+
+@lru_cache(maxsize=8)
+def _string_run(quote_char: str) -> "re.Pattern[str]":
+    """Plain characters inside a string, up to its quote or a backslash."""
+    return re.compile(r"[^\\" + re.escape(quote_char) + "]+")
+
 
 def try_parse(json_string: str):
     try:
@@ -299,7 +308,12 @@ class DirtyJson:
                         result += "\\u" + unicode_char
                     continue
             else:
-                result += self.current_char
+                # a run at a time: this runs on every token of a stream, and a
+                # character at a time was most of its cost on a long reply
+                run = _string_run(quote_char).match(self.json_string, self.index).group()
+                result += run
+                self._advance(len(run))
+                continue
             self._advance()
         if self.current_char == quote_char:
             self._advance()  # Skip closing quote

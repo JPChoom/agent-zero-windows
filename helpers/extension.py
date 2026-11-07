@@ -306,6 +306,8 @@ async def call_extensions_async(
     context_id = _perf_context_id(agent)
     for cls in classes:
         started = time.monotonic()
+        user_wait = [0.0]
+        user_wait_token = perf.HOOK_USER_WAIT.set(user_wait)
         try:
             if cls.FAIL_LOUD:
                 result = cls(agent=agent).execute(**kwargs)
@@ -324,9 +326,11 @@ async def call_extensions_async(
             except Exception as e:
                 _log_extension_failure(extension_point, cls, agent, e)
         finally:
+            perf.HOOK_USER_WAIT.reset(user_wait_token)
             if context_id:
                 perf.add_hook_time(
-                    context_id, extension_point, _perf_extension_name(cls), time.monotonic() - started
+                    context_id, extension_point, _perf_extension_name(cls),
+                    time.monotonic() - started - user_wait[0],
                 )
 
 

@@ -17,6 +17,7 @@ usage on every streaming path. Good enough to compare runs on one PC.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import functools
 import json
@@ -137,6 +138,28 @@ LIVE_WINDOW_SECONDS = 3.0
 
 _live_calls: dict[int, "ModelCall"] = {}
 _last_live: dict[str, Any] | None = None
+
+
+# Hook time excludes the wait for a person: a safety question took 178 s to
+# answer once, and the timing line blamed the check, which took 3 s.
+HOOK_USER_WAIT: contextvars.ContextVar[list[float] | None] = contextvars.ContextVar("a0_perf_hook_wait", default=None)
+
+
+@contextlib.contextmanager
+def waiting_for_user():
+    """Around a wait for a person's answer: charged to them, not to the hook."""
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        seconds = time.monotonic() - started
+        hook_wait = HOOK_USER_WAIT.get()
+        if hook_wait is not None:
+            hook_wait[0] += seconds
+        with _lock:
+            turn = _turn(CONTEXT_ID.get())
+            if turn is not None:
+                turn.user_wait_s += seconds
 
 
 def _short_model(name: str) -> str:
@@ -330,6 +353,7 @@ class Turn:
     tools: list[tuple[str, float]] = field(default_factory=list)
     loop_stall_max_s: float = 0.0
     loop_stalls: int = 0
+    user_wait_s: float = 0.0
 
 
 _turns: dict[str, Turn] = {}
@@ -420,6 +444,7 @@ def summarize_turn(turn: Turn, now: float) -> dict[str, Any]:
         "models": by_role,
         "tools_s": round(sum(seconds for _, seconds in turn.tools), 3),
         "tools": [{"tool": name, "s": round(seconds, 3)} for name, seconds in turn.tools],
+        "user_wait_s": round(turn.user_wait_s, 3),
         "hooks_s": round(sum(turn.hooks.values()), 3),
         "hooks": {name: round(seconds, 3) for name, seconds in sorted(turn.hooks.items())},
         "slowest_extensions": [{"extension": name, "s": round(seconds, 3)} for name, seconds in slowest],
@@ -452,6 +477,8 @@ def format_turn(record: dict[str, Any]) -> str:
         parts.append(piece + " (" + ", ".join(details) + ")")
     parts.append(f"tools {record['tools_s']:.1f}s")
     parts.append(f"hooks {record['hooks_s']:.1f}s")
+    if record.get("user_wait_s", 0) >= 0.1:
+        parts.append(f"waiting for you {record['user_wait_s']:.1f}s")
     if record["slowest_extensions"] and record["slowest_extensions"][0]["s"] >= 0.2:
         top = record["slowest_extensions"][0]
         parts.append(f"slowest hook {top['extension']} {top['s']:.1f}s")

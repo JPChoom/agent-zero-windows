@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- Ordered Python files own chunk-level response masking.
+- Ordered Python files own chunk-level response masking; `_20_runaway_guard.py` stops a repeating reply (`helpers/runaway_guard.py`). `reasoning_stream_chunk/` runs the same guard.
 
 ## Local Contracts
 
