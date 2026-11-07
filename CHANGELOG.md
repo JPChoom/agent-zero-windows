@@ -19,6 +19,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **The timing line no longer blames a hook for your thinking time.** Waiting for you to answer a safety or permission question counted as hook time, which made the safety check look slow. It now shows separately as "waiting for you".
 
 ### Security
+- **New self-learned skills wait for your approval.** A skill learned from a task that only used this PC used to go live at once. Every new one now waits under *Learned skills > Needs a look* until you approve it. You can turn this off in the Skills settings.
 - **A skill learned from a downloaded file now waits for your review.** Reading a file on this PC counted as your own content, so a skill learned from a file downloaded earlier went live at once. A file in a downloads folder, or one Windows marks as coming from the internet even after it was moved, now counts as outside content, like a web page.
 
 ## v1.5.5

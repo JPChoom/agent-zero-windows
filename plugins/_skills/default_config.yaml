@@ -5,3 +5,7 @@ hidden_skills: []
 auto_learn: true
 auto_learn_min_steps: 8
 auto_learn_min_seconds: 180
+# Every self-learned skill waits under Learned skills > Needs a look until the
+# user approves it. Off: a skill from a task that only used this PC goes live
+# at once (one from outside content always waits).
+auto_learn_review_all: true

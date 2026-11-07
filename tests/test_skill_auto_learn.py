@@ -235,7 +235,7 @@ def test_the_background_job_learns_quietly_at_low_priority(root, monkeypatch):
     monkeypatch.setattr(auto_learn, "_announce", lambda agent, outcome: None)
     agent = _LearnAgent(json.dumps(_decision()))
     outcome = asyncio.run(auto_learn.learn_from_task(agent, TASK))
-    assert outcome["result"] == "live"
+    assert outcome["result"] == "review"  # every new skill waits by default
     call = agent.calls[0]
     assert call["background"] and call["bg"] and call["caller"] == "skill_learn_auto"
     assert "build it" in call["message"] and "12 tool steps" in call["message"]
@@ -345,3 +345,31 @@ def test_the_window_api(root):
     assert asyncio.run(api.process({"action": "approve", "name": "build-release"}, None)) == {"ok": True}
     assert asyncio.run(api.process({"action": "delete", "name": "nope-skill"}, None))["ok"] is False
     assert asyncio.run(api.process({"action": "explode"}, None))["ok"] is False
+
+
+# -- review every new skill (owner decision 2026-11-07, on by default) ------------------
+
+def test_with_review_all_a_local_skill_waits_too(root):
+    outcome = auto_learn.apply_decision(_decision(), TASK, "chat-7", [], review_all=True)
+    assert outcome["result"] == "review" and outcome["reason"] == ""
+    assert not (root / "build-release").exists()
+    review = json.loads((root / ".pending" / "build-release" / "REVIEW.json").read_text(encoding="utf-8"))
+    assert review["review_all"] is True and review["sources"] == []
+    learned.approve("build-release")
+    assert (root / "build-release" / "SKILL.md").is_file()
+
+
+def test_review_all_is_on_by_default(monkeypatch):
+    from helpers import plugins
+
+    monkeypatch.setattr(plugins, "get_plugin_config", lambda name, agent=None, **k: {})
+    assert auto_learn.settings()["review_all"] is True
+    monkeypatch.setattr(plugins, "get_plugin_config", lambda name, agent=None, **k: {"auto_learn_review_all": False})
+    assert auto_learn.settings()["review_all"] is False
+
+
+def test_the_shipped_default_turns_it_on():
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "plugins/_skills/default_config.yaml").read_text(encoding="utf-8")
+    assert "auto_learn_review_all: true" in text

@@ -61,6 +61,15 @@
                 @change="config.auto_learn_min_seconds = Math.max(1, parseInt($event.target.value) || 3) * 60"> min
             </div>
           </div>
+          <div class="field" x-show="config.auto_learn">
+            <div class="field-label">
+              <div class="field-title">Review every new skill</div>
+              <div class="field-description">New skills wait under Learned skills &gt; Needs a look until you approve them. Off: a skill from a task that only used this PC goes live at once. One from web pages, messages or downloads always waits.</div>
+            </div>
+            <div class="field-control">
+              <label class="toggle"><input type="checkbox" :checked="config.auto_learn_review_all !== false" @change="config.auto_learn_review_all = $event.target.checked"><span class="toggler"></span></label>
+            </div>
+          </div>
           <div class="field">
             <div class="field-label">
               <div class="field-title">Learned skills</div>

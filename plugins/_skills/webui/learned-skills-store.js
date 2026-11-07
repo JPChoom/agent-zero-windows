@@ -99,7 +99,8 @@ const model = {
 
   reviewLine(skill) {
     const sources = skill.review?.sources || [];
-    return sources.length ? `The task read ${sources.join(", ")}. Check the steps before approving.` : "";
+    if (sources.length) return `The task read ${sources.join(", ")}. Check the steps before approving.`;
+    return skill.review?.review_all ? "New skills wait for your approval (Skills settings). Check the steps before approving." : "";
   },
 
   async act(skill, action, extra = {}, message = "") {

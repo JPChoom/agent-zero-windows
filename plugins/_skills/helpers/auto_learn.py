@@ -36,6 +36,7 @@ def settings(agent=None) -> dict:
         "enabled": bool(cfg.get("auto_learn", True)),
         "min_steps": int(cfg.get("auto_learn_min_steps", 8) or 8),
         "min_seconds": int(cfg.get("auto_learn_min_seconds", 180) or 180),
+        "review_all": bool(cfg.get("auto_learn_review_all", True)),
     }
 
 
@@ -94,7 +95,7 @@ def parse_decision(text: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def apply_decision(decision: dict | None, task: dict, chat_id: str, similar: list[dict]) -> dict:
+def apply_decision(decision: dict | None, task: dict, chat_id: str, similar: list[dict], review_all: bool = False) -> dict:
     """Turn the model's decision into an installed or waiting skill.
 
     Returns {"result": "live" | "review" | "skipped", "name", "reason"}.
@@ -123,14 +124,16 @@ def apply_decision(decision: dict | None, task: dict, chat_id: str, similar: lis
     triggers = decision.get("triggers") if isinstance(decision.get("triggers"), list) else None
     version = learned.current_version(name) + 1
     content = learned.render(name, description, body, version, chat_id, triggers, learned_by="auto")
-    return place(name, content, task)
+    return place(name, content, task, review_all)
 
 
-def place(name: str, content: str, task: dict) -> dict:
-    """Live at once for a task on the user's own PC; else wait for review."""
+def place(name: str, content: str, task: dict, review_all: bool = False) -> dict:
+    """Wait for review when the setting says so or the task read outside
+    content; otherwise live at once."""
     sources = list(task.get("sources") or [])
-    if sources:
-        learned.write_draft(name, content, review={"sources": sources, "request": task.get("user_message", "")[:500]})
+    if sources or review_all:
+        review = {"sources": sources, "request": task.get("user_message", "")[:500], "review_all": review_all}
+        learned.write_draft(name, content, review=review)
         result = "review"
     else:
         learned.write_draft(name, content)
@@ -152,7 +155,12 @@ async def learn_from_task(agent, task: dict) -> dict:
         )
     except model_concurrency.Preempted:
         return {"result": "skipped", "name": "", "reason": "the chat stayed busy"}
-    outcome = apply_decision(parse_decision(reply), task, str(getattr(agent.context, "id", "") or ""), similar)
+    try:
+        review_all = settings(agent)["review_all"]
+    except Exception:
+        review_all = True  # unsure: the user decides
+    outcome = apply_decision(parse_decision(reply), task, str(getattr(agent.context, "id", "") or ""), similar,
+                             review_all=review_all)
     _announce(agent, outcome)
     return outcome
 
@@ -165,9 +173,12 @@ def _announce(agent, outcome: dict) -> None:
     if outcome["result"] == "live":
         message = f"Learned a new skill: {outcome['name']}. It is used from the next matching task on."
         kind = NotificationType.SUCCESS
-    else:
+    elif outcome["reason"]:
         message = (f"Learned a new skill, {outcome['name']}, from a task that read {outcome['reason']}. "
                    "It waits for you under Learned skills > Needs a look.")
+        kind = NotificationType.INFO
+    else:
+        message = f"Learned a new skill, {outcome['name']}. It waits for your approval under Learned skills > Needs a look."
         kind = NotificationType.INFO
     try:
         NotificationManager.send_notification(
