@@ -11,7 +11,7 @@
 - `extensions/python/monologue_start/_01_perf_turn_start.py` / `monologue_end/_99_perf_turn_end.py` open and close a turn for agent 0 and print the summary line.
 - `extensions/python/tool_execute_before/_99_perf_tool_start.py` / `tool_execute_after/_00_perf_tool_end.py` bracket the tool call itself (last before-hook, first after-hook).
 - `default_config.yaml` owns `print_summary`.
-- `api/live.py` and `webui/speed-counter-store.js` own the sidebar speed counter; its markup is in `extensions/webui/sidebar-tasks-list-start/`, its Preferences switch in `extensions/webui/sidebar-preferences-list-end/`.
+- `api/live.py` and `webui/speed-counter-store.js` own the sidebar speed counter; its markup is in `extensions/webui/sidebar-info-list/`, in the sidebar's Info section.
 
 ## Local Contracts
 
@@ -19,7 +19,7 @@
 - Model-call timing lives in `models.py` (`_run_unified`), hook timing in `helpers/extension.py` (`call_extensions_async`); a call's role comes from `a0_perf_role` set by `plugins/_model_config` builders (`main`, `utility`, `vision`; anything else is `other`).
 - Records hold numbers, model names and chat ids only - never prompt, reasoning or response text. Files live in `usr/perf/` (git-ignored) and rotate at 5 MB.
 - Measurement must never fail a turn: storage errors are swallowed.
-- The speed counter polls `perf.live_state()` once a second while an answer runs, every 2 s otherwise, and not while the switch is off (per browser, off by default) or the tab is hidden. It shows only the agent's streamed answers (`ModelCall._shown_live`). Rates are estimates from streamed characters, like the logs. It returns numbers and model names only.
+- The speed counter polls `perf.live_state()` once a second while an answer runs, every 2 s otherwise, and not while the Info section is collapsed or the tab is hidden. It shows only the agent's streamed answers (`ModelCall._shown_live`). Rates are estimates from streamed characters, like the logs. It returns numbers and model names only.
 
 ## Work Guidance
 

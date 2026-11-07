@@ -1,7 +1,6 @@
 import { createStore } from "/js/AlpineStore.js";
 import { callJsonApi } from "/js/api.js";
 
-const STORAGE_KEY = "a0_speed_counter";
 const POLL_MS = 1000;
 const IDLE_POLL_MS = 2000;
 const FAILED_POLL_MS = 10000;
@@ -12,16 +11,11 @@ const PHASES = {
   writing: "writing",
 };
 
-function readEnabled() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
+function sectionOpen() {
+  return globalThis.Alpine?.store("sidebar")?.isSectionOpen("info") ?? true;
 }
 
 const model = {
-  enabled: false,
   expanded: false,
   phase: "idle",
   rate: null,
@@ -29,10 +23,6 @@ const model = {
   last: null,
   _mounted: 0,
   _timer: null,
-
-  init() {
-    this.enabled = readEnabled();
-  },
 
   get active() {
     return this.phase !== "idle";
@@ -62,16 +52,6 @@ const model = {
     return rows;
   },
 
-  setEnabled(value) {
-    this.enabled = Boolean(value);
-    try {
-      localStorage.setItem(STORAGE_KEY, this.enabled ? "1" : "0");
-    } catch {
-      // the switch still works for this page
-    }
-    if (this.enabled) this._schedule(0);
-  },
-
   onMount() {
     this._mounted += 1;
     this._schedule(0);
@@ -89,11 +69,11 @@ const model = {
 
   _schedule(delay) {
     this._stop();
-    if (this.enabled && this._mounted) this._timer = setTimeout(() => this._poll(), delay);
+    if (this._mounted) this._timer = setTimeout(() => this._poll(), delay);
   },
 
   async _poll() {
-    if (document.hidden) {
+    if (document.hidden || !sectionOpen()) {
       this._schedule(IDLE_POLL_MS);
       return;
     }

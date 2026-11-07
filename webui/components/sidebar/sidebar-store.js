@@ -8,6 +8,7 @@ const model = {
 
   // Centralized collapse state for all sidebar sections (persisted in localStorage)
   sectionStates: {
+    info: true,         // default: expanded
     tasks: false,       // default: collapsed
     chatActions: false, // default: collapsed
     preferences: false  // default: collapsed

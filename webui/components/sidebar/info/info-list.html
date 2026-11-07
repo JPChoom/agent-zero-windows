@@ -1,0 +1,19 @@
+<html>
+<body>
+  <div x-data>
+    <h3 class="section-header section-header-collapsible"
+        data-bs-toggle="collapse"
+        @click="$store.sidebar.toggleSection('info')"
+        x-effect="!$store.sidebar.isSectionOpen('info') ? $el.classList.add('collapsed') : $el.classList.remove('collapsed')">
+      Info
+      <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+        <path d="M8 4l8 8-8 8" />
+      </svg>
+    </h3>
+    <div class="collapse" id="info-collapse"
+         x-effect="(() => { const c = bootstrap.Collapse.getOrCreateInstance($el, { toggle: false }); $store.sidebar.isSectionOpen('info') ? c.show() : c.hide(); })()">
+      <x-extension id="sidebar-info-list"></x-extension>
+    </div>
+  </div>
+</body>
+</html>

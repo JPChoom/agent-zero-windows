@@ -35,6 +35,11 @@
               <x-component path="sidebar/chats/chats-list.html"></x-component>
             </div>
 
+            <!-- Info: live readouts; plugins add to sidebar-info-list -->
+            <div class="config-section" id="info-section">
+              <x-component path="sidebar/info/info-list.html"></x-component>
+            </div>
+
             <!-- Tasks List -->
             <div class="config-section" id="tasks-section">
               <x-component path="sidebar/tasks/tasks-list.html"></x-component>
@@ -156,7 +161,7 @@
 
     /* Chats section container inside sidebar. Sized to content (not
        flex-grown) so a short chat list sits right under the header, with
-       Tasks pinned at the bottom (margin-top: auto); still capped so a long
+       Info and Tasks pinned at the bottom (margin-top: auto); still capped so a long
        chat list scrolls internally instead of pushing Tasks/Preferences
        off-screen. */
     #chats-section {
@@ -169,6 +174,13 @@
       overflow: hidden;
     }
 
+    /* Info section: pinned with Tasks at the bottom of the upper area */
+    #info-section {
+      flex: 0 0 auto;
+      margin-top: auto;
+      padding-top: var(--spacing-md);
+    }
+
     /* Tasks section container inside sidebar */
     #tasks-section {
       display: -webkit-flex;
@@ -179,9 +191,8 @@
       /* Shrink to content, no reserved space */
       max-height: 40%;
       /* Limit to 40% of viewport height when expanded */
-      /* Pinned to the bottom of .left-panel-top, i.e. directly above
-         Preferences; the spare height sits between Chats and Tasks. */
-      margin-top: auto;
+      /* With Info, pinned to the bottom of .left-panel-top, i.e. directly
+         above Preferences; the spare height sits between Chats and Info. */
       padding-top: var(--spacing-md);
       overflow: hidden;
     }

@@ -7,7 +7,7 @@
 <body>
   <div x-data>
     <template x-if="$store.speedCounter">
-      <div x-show="$store.speedCounter.enabled" class="speed-counter"
+      <div class="speed-counter"
            :class="{ 'speed-counter-active': $store.speedCounter.active }"
            x-create="$store.speedCounter.onMount()"
            x-destroy="$store.speedCounter.cleanup()">
@@ -38,7 +38,6 @@
 
   <style>
     .speed-counter {
-      margin-bottom: var(--spacing-sm);
       font-size: 0.8rem;
       color: var(--color-text-muted);
     }

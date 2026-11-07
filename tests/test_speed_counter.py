@@ -104,8 +104,8 @@ def test_a_subordinate_on_another_model_shows():
 
 
 def test_the_newest_answer_wins():
-    _call(model="first")
-    time.sleep(0.01)
+    first = _call(model="first")
+    first.started -= 5  # the Windows clock can give both the same time
     _call(model="second")
     assert perf.live_state()["model"] == "second"
 
@@ -125,11 +125,17 @@ def test_the_state_holds_no_text():
     assert "private" not in str(perf.live_state())
 
 
-def test_the_counter_sits_above_tasks_and_is_off_by_default():
-    tasks = (ROOT / "webui/components/sidebar/tasks/tasks-list.html").read_text(encoding="utf-8")
-    assert tasks.index('id="sidebar-tasks-list-start"') < tasks.index("Tasks\n")
-    assert (ROOT / "plugins/_perf/extensions/webui/sidebar-tasks-list-start/speed-counter.html").exists()
-    store = (ROOT / "plugins/_perf/webui/speed-counter-store.js").read_text(encoding="utf-8")
-    assert 'getItem(STORAGE_KEY) === "1"' in store
+def test_the_counter_lives_in_the_info_section_above_tasks():
+    sidebar = (ROOT / "webui/components/sidebar/left-sidebar.html").read_text(encoding="utf-8")
+    assert sidebar.index('id="chats-section"') < sidebar.index('id="info-section"') < sidebar.index('id="tasks-section"')
+    info = (ROOT / "webui/components/sidebar/info/info-list.html").read_text(encoding="utf-8")
+    assert 'id="sidebar-info-list"' in info and "toggleSection('info')" in info
+    assert (ROOT / "plugins/_perf/extensions/webui/sidebar-info-list/speed-counter.html").exists()
+
+
+def test_the_counter_has_no_switch_and_stops_when_collapsed():
     prefs = (ROOT / "webui/components/sidebar/bottom/preferences/preferences-panel.html").read_text(encoding="utf-8")
-    assert 'id="sidebar-preferences-list-end"' in prefs
+    assert "sidebar-preferences-list-end" not in prefs
+    store = (ROOT / "plugins/_perf/webui/speed-counter-store.js").read_text(encoding="utf-8")
+    assert "localStorage" not in store and "enabled" not in store
+    assert "document.hidden || !sectionOpen()" in store

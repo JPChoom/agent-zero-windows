@@ -9,6 +9,7 @@
 - `left-sidebar.html` and `sidebar-store.js` own sidebar shell and shared state.
 - `top-section/` owns header and quick actions.
 - `chats/` owns chat list UI and state.
+- `info/` owns the Info section, a collapsible home for live readouts; content comes from plugins through the `sidebar-info-list` extension point.
 - `tasks/` owns task list UI and state.
 - `bottom/` owns lower sidebar controls and the preferences panel. `bottom/preferences/preferences-store.js` is the single owner of appearance state (dark mode, accent color, material, wallpaper + fit; the wallpaper blob lives in IndexedDB and may be an image (body::before `--backdrop-image`) or a looping muted mp4/webm in a fixed `video.wallpaper-video` that pauses while the tab is hidden or under reduced motion); custom accent colors open the shared `$store.colorPicker` via `pickAccent(anchor)` for both the sidebar panel and Settings > Appearance.
 
@@ -23,7 +24,7 @@
 - Avoid text or controls overflowing fixed sidebar widths.
 - Show/hide is the `.sidebar-edge-toggle` tab in `left-sidebar.html` (the header has no hamburger): it sits right of the header pill while open and at the screen edge while hidden; hiding slides both `#left-panel` and the header pill (`.is-offscreen`, moved with `left`, never a transform) off the left edge.
 - Chat deletion is optimistic (`chats-store.js killChat`): the row is removed on the confirming click and tracked in `_removing` so `applyContexts` cannot resurrect it from a stale sync; it is restored with an error toast if `/chat_remove` fails. Saved chats go to the trash (`helpers/chat_trash.py`); the success toast offers Undo, and the sidebar menu's "Recently deleted" opens `modals/chat-trash/` (restore, delete forever, empty).
-- Chats sit directly under the header; Tasks are pinned to the bottom of `.left-panel-top` (`margin-top: auto`), directly above Preferences. The `_perf` speed counter uses `sidebar-tasks-list-start`, between them; `sidebar-preferences-list-end` adds rows to Preferences.
+- Chats sit directly under the header; Info and Tasks are pinned to the bottom of `.left-panel-top` (`margin-top: auto` on Info), directly above Preferences. New live readouts go in `sidebar-info-list`, and should stop their polling while the section is collapsed.
 
 ## Work Guidance
 
