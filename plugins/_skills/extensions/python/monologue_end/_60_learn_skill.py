@@ -15,9 +15,11 @@ class LearnSkillFromTask(Extension):
         task = task_watch.finish(self.agent, ok=bool(current and current.get("answered")))
         if not task:
             return
-        if task["ok"]:
-            for name in task.get("used_skills", []):
-                learned.record_use(name, task["seconds"], task["steps"])
+        used = task.get("used_skills", [])
+        for name in used:
+            learned.record_use(name, task["seconds"], task["steps"], ok=task["ok"], errors=task.get("errors", 0))
+        for name in task.get("matched", []):
+            learned.record_match(name, used=name in used)
         cfg = auto_learn.settings(self.agent)
         if not cfg["enabled"] or auto_learn.worth_trying(task, cfg):
             return

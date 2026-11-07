@@ -281,14 +281,26 @@ def record_learned(name: str, seconds: float, steps: int) -> None:
 MAX_USES_KEPT = 50
 
 
-def record_use(name: str, seconds: float, steps: int) -> None:
-    """A later task that loaded `name` (the after-numbers)."""
+def record_use(name: str, seconds: float, steps: int, ok: bool = True, errors: int = 0) -> None:
+    """A later task that loaded `name` (the after-numbers): whether it ended
+    with an answer, and how many tool results reported a problem."""
     with _STATS_LOCK:
         data = load_stats()
         entry = data.setdefault(name, {"uses": []})
         uses = entry.setdefault("uses", [])
-        uses.append({"seconds": round(float(seconds), 1), "steps": int(steps), "at": time.time()})
+        uses.append({"seconds": round(float(seconds), 1), "steps": int(steps), "at": time.time(),
+                     "ok": bool(ok), "errors": int(errors)})
         del uses[:-MAX_USES_KEPT]
+        _save_stats(data)
+
+
+def record_match(name: str, used: bool) -> None:
+    """A task whose request matched `name`, and whether the skill was loaded."""
+    with _STATS_LOCK:
+        data = load_stats()
+        matches = data.setdefault(name, {}).setdefault("matches", {"shown": 0, "used": 0})
+        matches["shown"] = int(matches.get("shown", 0)) + 1
+        matches["used"] = int(matches.get("used", 0)) + (1 if used else 0)
         _save_stats(data)
 
 
@@ -336,6 +348,11 @@ def _summary(path: Path, state: str, stats: dict) -> dict:
         "last_used": max((u.get("at", 0) for u in uses), default=None),
         "avg_seconds": round(sum(u.get("seconds", 0) for u in uses) / len(uses), 1) if uses else None,
         "avg_steps": round(sum(u.get("steps", 0) for u in uses) / len(uses), 1) if uses else None,
+        # uses recorded before outcomes were tracked count as having worked
+        "worked": sum(1 for u in uses if u.get("ok", True)),
+        "avg_errors": round(sum(u.get("errors", 0) for u in uses) / len(uses), 1) if uses else None,
+        "matched": int((entry.get("matches") or {}).get("shown", 0)),
+        "matched_used": int((entry.get("matches") or {}).get("used", 0)),
         "versions": sorted(int(m.group(1)) for p in (path.parent / ".versions").glob("SKILL.v*.md")
                            if (m := re.match(r"SKILL\.v(\d+)\.md$", p.name))) if state != "review" else [],
     }

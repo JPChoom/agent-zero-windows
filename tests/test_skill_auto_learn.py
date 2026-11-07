@@ -373,3 +373,71 @@ def test_the_shipped_default_turns_it_on():
 
     text = (Path(__file__).resolve().parents[1] / "plugins/_skills/default_config.yaml").read_text(encoding="utf-8")
     assert "auto_learn_review_all: true" in text
+
+
+# -- outcomes of learned skills --------------------------------------------------------
+
+def _install(root, name="build-release"):
+    (root / name).mkdir(parents=True)
+    (root / name / "SKILL.md").write_text(
+        learned.render(name, "Build and copy the release output", GOOD_BODY, 1, "c"), encoding="utf-8")
+
+
+def _finish_task(agent, hook):
+    asyncio.run(hook.LearnSkillFromTask(agent).execute())
+
+
+@pytest.fixture
+def hook(monkeypatch):
+    from plugins._skills.extensions.python.monologue_end import _60_learn_skill as module
+
+    monkeypatch.setattr(auto_learn, "settings", lambda agent=None: {"enabled": False, "min_steps": 8, "min_seconds": 180, "review_all": True})
+    return module
+
+
+def test_a_use_records_whether_it_worked_and_its_problems(root, hook):
+    _install(root)
+    agent = _Agent()
+    task_watch.start(agent)
+    task_watch.on_tool(agent, "skills_tool", {"action": "load", "skill_name": "build-release"})
+    task_watch.on_result(agent, type("R", (), {"message": "Traceback: build failed"})())
+    task_watch.on_result(agent, type("R", (), {"message": "done, 0 warnings"})())
+    _finish_task(agent, hook)  # never answered
+    use = learned.load_stats()["build-release"]["uses"][0]
+    assert use["ok"] is False and use["errors"] == 1
+    summary = next(s for s in learned.list_all() if s["name"] == "build-release")
+    assert (summary["uses"], summary["worked"], summary["avg_errors"]) == (1, 0, 1.0)
+
+
+def test_old_uses_without_an_outcome_count_as_worked(root):
+    _install(root)
+    learned._save_stats({"build-release": {"uses": [{"seconds": 10, "steps": 2, "at": 1}]}})
+    summary = next(s for s in learned.list_all() if s["name"] == "build-release")
+    assert summary["worked"] == 1 and summary["avg_errors"] == 0
+
+
+def test_a_matched_skill_that_was_not_loaded_is_counted(root, hook, monkeypatch):
+    _install(root)
+    monkeypatch.setattr(task_watch, "_matched_skills", lambda agent, request: ["build-release"])
+    agent = _Agent()
+    task_watch.start(agent)
+    task_watch.current(agent)["answered"] = True
+    _finish_task(agent, hook)
+    agent = _Agent()
+    task_watch.start(agent)
+    task_watch.on_tool(agent, "skills_tool", {"action": "load", "skill_name": "build-release"})
+    task_watch.current(agent)["answered"] = True
+    _finish_task(agent, hook)
+    summary = next(s for s in learned.list_all() if s["name"] == "build-release")
+    assert (summary["matched"], summary["matched_used"]) == (2, 1)
+
+
+def test_matching_never_breaks_a_task(monkeypatch):
+    from helpers import skills as skills_helper
+
+    def broken(*a, **k):
+        raise RuntimeError("index gone")
+
+    monkeypatch.setattr(skills_helper, "search_skills", broken)
+    assert task_watch._matched_skills(None, "build the release") == []
+    assert task_watch._matched_skills(None, "  ") == []

@@ -81,9 +81,13 @@ const model = {
     if (skill.learned) parts.push(`Learned from a ${minutes(skill.learned.seconds)}, ${skill.learned.steps}-step task`);
     if (skill.uses) {
       parts.push(`used ${skill.uses}x, on average ${minutes(skill.avg_seconds)}, ${skill.avg_steps} steps`);
+      if (skill.worked < skill.uses) parts.push(`worked ${skill.worked} of ${skill.uses} times`);
       parts.push(`last used ${day(skill.last_used)}`);
     } else if (skill.state === "active") {
       parts.push("not used yet");
+    }
+    if (skill.matched > skill.matched_used) {
+      parts.push(`matched ${skill.matched} requests, loaded for ${skill.matched_used}`);
     }
     return parts.join(" · ");
   },

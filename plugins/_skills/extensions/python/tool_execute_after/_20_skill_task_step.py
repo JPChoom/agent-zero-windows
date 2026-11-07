@@ -19,6 +19,7 @@ class SkillTaskStep(Extension):
         except Exception:
             mcp = False
         task_watch.on_tool(self.agent, tool_name, args, mcp=mcp)
+        task_watch.on_result(self.agent, response)
         if self.agent.number == 0 and tool_name == "response" and getattr(response, "break_loop", False):
             task = task_watch.current(self.agent)
             if task is not None:

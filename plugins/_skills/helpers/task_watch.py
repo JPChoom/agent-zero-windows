@@ -12,9 +12,15 @@ When a task ends, its record becomes the chat's "last task", which is what
 
 from __future__ import annotations
 
+import re
 import time
 
 from plugins._skills.helpers import learned
+
+# A tool result that reports a problem: counted per task as a rough measure of
+# how smoothly a learned skill worked.
+_TROUBLE = re.compile(r"\b(error|exception|traceback|failed|denied|not found|timed out)\b", re.IGNORECASE)
+MATCHED_SKILLS = 3
 
 CURRENT = "_skills_task"
 LAST = "_skills_last_task"
@@ -35,8 +41,32 @@ def start(agent) -> None:
         "steps": 0,
         "sources": [],
         "used_skills": [],
+        "errors": 0,
+        "matched": _matched_skills(agent, str(text or "")),
         "user_message": str(text or "")[:4000],
     })
+
+
+def _matched_skills(agent, request: str) -> list[str]:
+    """Learned skills a search for this request would surface: if one is
+    never loaded, matching is the problem, not the skill."""
+    if not request.strip():
+        return []
+    try:
+        from helpers import skills as skills_helper
+
+        names = learned.learned_names()
+        found = skills_helper.search_skills(request, limit=MATCHED_SKILLS, agent=agent)
+        return [skill.name for skill in found if skill.name in names]
+    except Exception:
+        return []
+
+
+def on_result(agent, response) -> None:
+    ctx = _context(agent)
+    task = ctx.get_data(CURRENT) if ctx is not None else None
+    if isinstance(task, dict) and _TROUBLE.search(str(getattr(response, "message", "") or "")[:4000]):
+        task["errors"] = int(task.get("errors", 0)) + 1
 
 
 def on_tool(agent, tool_name: str, tool_args: dict | None, mcp: bool = False) -> None:
