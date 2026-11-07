@@ -219,8 +219,21 @@
             <span x-text="$store.editor.error || $store.editor.message || 'Working'"></span>
           </div>
 
+          <div class="editor-review-bar" x-show="$store.editor.review" style="display: none;">
+            <span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>
+            <span class="editor-review-text">
+              <b>The agent changed this file.</b>
+              <span x-text="$store.editor.review?.conflict ? 'You had unsaved changes: rejecting a change keeps your text.' : 'Accept or reject each change, then finish.'"></span>
+              <span x-show="$store.editor.review?.remaining" x-text="'(' + $store.editor.review?.remaining + ' left)'"></span>
+            </span>
+            <button type="button" class="button" @click="$store.editor.finishReview('reject')">Reject all</button>
+            <button type="button" class="button" @click="$store.editor.finishReview('accept')">Accept all</button>
+            <button type="button" class="button confirm" @click="$store.editor.finishReview('done')">Finish</button>
+          </div>
+
           <div class="editor-body">
-            <div class="editor-wrap" x-show="$store.editor.session && $store.editor.isSourceMode()" style="display: none;">
+            <div class="editor-review" data-editor-review x-show="$store.editor.review" style="display: none;"></div>
+            <div class="editor-wrap" x-show="$store.editor.session && $store.editor.isSourceMode() && !$store.editor.review" style="display: none;">
               <div class="editor-scroll" @click.self="$store.editor.focusEditor()">
                 <div class="editor-ace" data-editor-ace x-show="!$store.editor.aceUnavailable"></div>
                 <textarea
@@ -237,7 +250,7 @@
               </div>
             </div>
 
-            <div class="editor-preview-shell" x-show="$store.editor.session && $store.editor.isMarkdown() && $store.editor.isPreviewMode()" style="display: none;">
+            <div class="editor-preview-shell" x-show="$store.editor.session && $store.editor.isMarkdown() && $store.editor.isPreviewMode() && !$store.editor.review" style="display: none;">
               <div class="editor-preview-title">
                 <h1 x-text="$store.editor.pageTitle()"></h1>
               </div>
@@ -564,6 +577,27 @@
       flex: 0 0 auto;
       align-items: center;
       gap: 6px;
+    }
+
+    .editor-review-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--color-border, rgba(127, 127, 127, 0.3));
+      background: var(--accent-faint, transparent);
+      font-size: 0.85rem;
+    }
+
+    .editor-review-text {
+      flex: 1;
+      min-width: 12rem;
+    }
+
+    .editor-review {
+      height: 100%;
+      overflow: auto;
     }
 
     .editor-toolbar {

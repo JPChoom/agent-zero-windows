@@ -13,6 +13,8 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **Decision model in shadow mode (off by default).** A decision model such as Laya, running on the Utility model's server, predicts whether a step needs thinking and how hard a delegated task is. The predictions are logged next to what really happened, without the text, and never change what runs. This measures whether such a model is worth using.
 - **Shadow safety check (off by default).** When the Main model judges, the Utility model can judge the same step in the background and both verdicts are logged. It never changes what runs. A small model isn't safe for this job yet: on the 18-case test, a 9B model allowed one hostile command.
 
+- **Review the agent's changes in the Editor.** When the agent changes a file you have open, the Editor shows each change against the text from before, with Accept and Reject on every change, plus Reject all and Accept all. Rejected changes are written back to the file. If you had unsaved edits, they are kept: rejecting a change keeps your text. Built on CodeMirror 6 (MIT).
+
 ### Improved
 - **Learned skills show how well they work.** Each use now records whether the task ended with an answer and how many problems came up, and the Learned skills window shows "worked 3 of 4 times". It also shows when a skill matched a request but was not used, which helps tell a weak skill from one A0W fails to pick up.
 - **Freezes record what caused them.** When the interface stalls for more than half a second, A0W notes which code was running (names only, no content), so the remaining freezes can be fixed one by one.

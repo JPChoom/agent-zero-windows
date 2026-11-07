@@ -115,6 +115,19 @@ class EditorSession(ApiHandler):
                 **result,
                 "store_session_id": store_session["session_id"],
             }
+        if action == "review_state":
+            session_id = str(input.get("session_id") or "").strip()
+            if not session_id:
+                return {"ok": False, "error": "session_id is required."}
+            return markdown_sessions.get_manager().review_state(session_id)
+        if action == "review_resolve":
+            session_id = str(input.get("session_id") or "").strip()
+            if not session_id:
+                return {"ok": False, "error": "session_id is required."}
+            denied = self._recheck_policy(session_id, request)
+            if denied:
+                return denied
+            return markdown_sessions.get_manager().review_resolve(session_id, str(input.get("text") or ""))
         if action == "renamed":
             return self._renamed(input, context_id)
         if action == "refresh":

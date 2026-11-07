@@ -9,12 +9,13 @@
 - `api/` owns editor session and WebSocket handlers.
 - `helpers/` owns editor text session and open-file context helpers.
 - `prompts/` owns agent-visible open-file context.
-- `webui/` owns editor panel, preview, store, and main surface.
+- `webui/` owns editor panel, preview, store, and main surface; `webui/editor-review.js` owns the review of agent changes (CodeMirror merge view from `webui/vendor/codemirror`).
 - `extensions/` owns editor hook contributions.
 
 ## Local Contracts
 
 - Keep editor session state synchronized across API, WebSocket, and WebUI panel behavior.
+- Agent changes to an open file wait for review: `sync_external_file_mutations` (called by the text_editor write/patch hooks) keeps the editor text from before the first unreviewed change in `agent_before`. A clean session takes the agent's version; a session with unsaved text keeps it (`agent_conflict`), and `review_state` reads the agent's version from disk. The store polls `review_state` every 2 s while the panel is mounted; the panel shows the merge view with Accept and Reject on each change, plus Reject all, Accept all and Finish. `review_resolve` saves the chosen text when it differs from the agent's version and ends the review. Changes left undecided at Finish are kept. Ace stays the editor for typing.
 - Do not expose unsaved content or local paths beyond intended chat/context surfaces.
 - Keep the floating Editor modal on the shared surface modal chrome so the header remains draggable while existing Focus mode continues to work.
 - Keep Editor Open wired through the File Browser text picker so users can open one or more Markdown or plain text files with an obvious confirmation action.

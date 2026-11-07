@@ -25,6 +25,11 @@ class MarkdownSession:
     base_version: str = ""
     external_modified: bool = False
     external_version: str = ""
+    # Agent changes waiting for review: the editor text from before the first
+    # unreviewed agent change (the user's own unsaved text, if any), kept until
+    # the user accepts or rejects each change.
+    agent_before: str | None = None
+    agent_conflict: bool = False
     # Opened by the user through the File Browser access policy rather than
     # the document roots (workdir/projects); see api/editor_session.py.
     policy_checked: bool = False
@@ -187,7 +192,7 @@ class MarkdownSessionManager:
         updated = self._refresh_file_sessions(doc, text=text, dirty=False, refresh_dirty=True)
         return {"ok": True, "updated": updated, "file_id": file_id}
 
-    def refresh_document(self, file_id: str) -> dict[str, Any]:
+    def refresh_document(self, file_id: str, for_review: bool = False) -> dict[str, Any]:
         normalized = str(file_id or "").strip()
         if not normalized:
             return {"ok": True, "refreshed": 0, "sessions": []}
@@ -198,12 +203,57 @@ class MarkdownSessionManager:
         if str(doc.get("extension") or "").lower() not in document_store.EDITOR_TEXT_EXTENSIONS:
             return {"ok": True, "refreshed": 0, "sessions": []}
 
-        refreshed = self._refresh_file_sessions(
-            doc,
-            text=document_store.read_text_for_editor(doc),
-            dirty=False,
-        )
+        text = document_store.read_text_for_editor(doc)
+        # Unsaved text stays in the editor; the review compares it with the
+        # agent's version on disk (review_state).
+        refreshed = self._refresh_file_sessions(doc, text=text, dirty=False)
+        if for_review:
+            for session in self._sessions.values():
+                if session.file_id == doc.get("file_id") and not session.agent_conflict and session.agent_before == session.text:
+                    session.agent_before, session.agent_conflict = None, False  # nothing changed
         return {"ok": True, "refreshed": len(refreshed), "sessions": refreshed}
+
+    def review_state(self, session_id: str) -> dict[str, Any]:
+        """Agent changes waiting for review in this session, if any."""
+        session = self._require(session_id)
+        if session.agent_before is None:
+            return {"ok": True, "pending": False}
+        text = session.text
+        if session.agent_conflict:
+            try:
+                text = document_store.read_text_for_editor(document_store.get_document(session.file_id))
+            except Exception:
+                pass
+        return {
+            "ok": True,
+            "pending": True,
+            "before": session.agent_before,
+            "text": text,
+            "conflict": session.agent_conflict,
+        }
+
+    def review_resolve(self, session_id: str, text: str) -> dict[str, Any]:
+        """The user's decision on every change: save `text` if it differs from
+        the agent's version, and end the review."""
+        session = self._require(session_id)
+        if session.agent_before is None:
+            return {"ok": True, "saved": False}
+        final = str(text)
+        if session.agent_conflict:
+            # the user chose against the agent's version on disk: save over it
+            try:
+                _set_session_base(session, document_store.get_document(session.file_id))
+            except Exception:
+                pass
+            result = self.save(session_id, final)
+            if not result.get("ok"):
+                return result
+        elif final != session.text:
+            result = self.save(session_id, final)
+            if not result.get("ok"):
+                return result
+        session.agent_before, session.agent_conflict = None, False
+        return {"ok": True, "saved": final != session.agent_before}
 
     def sync_external_file_mutations(self, paths: list[str] | tuple[str, ...] | str, context_id: str = "") -> dict[str, Any]:
         raw_paths = [paths] if isinstance(paths, str) else list(paths or [])
@@ -224,6 +274,10 @@ class MarkdownSessionManager:
             if not sessions:
                 continue
             session = sessions[0]
+            for target in sessions:
+                if target.agent_before is None:
+                    target.agent_before = target.text
+                target.agent_conflict = target.agent_conflict or target.dirty
             try:
                 doc = document_store.register_document(
                     session.path, context_id=session.context_id, policy_checked=session.policy_checked
@@ -236,7 +290,7 @@ class MarkdownSessionManager:
                 for target in sessions:
                     _mark_session_external(target, doc)
                 continue
-            self.refresh_document(file_id)
+            self.refresh_document(file_id, for_review=True)
 
         return {
             "ok": True,
@@ -425,6 +479,7 @@ class MarkdownSessionManager:
             "active": session.active,
             "external_modified": session.external_modified,
             "external_version": session.external_version,
+            "agent_review": session.agent_before is not None,
             "context_id": session.context_id,
             "document": _public_doc(doc),
             "version": document_store.item_version(doc),

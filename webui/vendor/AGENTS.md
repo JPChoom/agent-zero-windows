@@ -35,6 +35,7 @@ Direct child DOX files:
 | [_ace/AGENTS.md](_ace/AGENTS.md) | Minimal Ace editor subset used by core editor surfaces. |
 | [ace-min/AGENTS.md](ace-min/AGENTS.md) | Full minified Ace distribution and supporting assets. |
 | [alpine/AGENTS.md](alpine/AGENTS.md) | Vendored Alpine.js core and collapse plugin. |
+| [codemirror/AGENTS.md](codemirror/AGENTS.md) | Vendored CodeMirror 6 bundle for the Editor's review of agent changes. |
 | [dompurify/AGENTS.md](dompurify/AGENTS.md) | Vendored DOMPurify sanitizer module. |
 | [flatpickr/AGENTS.md](flatpickr/AGENTS.md) | Vendored Flatpickr date/time picker assets. |
 | [google/AGENTS.md](google/AGENTS.md) | Vendored Google Material Symbols font and stylesheet. |

@@ -1,4 +1,6 @@
 import { createStore } from "/js/AlpineStore.js";
+
+const REVIEW_POLL_MS = 2000; // how often an open file is checked for agent changes
 import { callJsonApi } from "/js/api.js";
 import { getNamespacedClient } from "/js/websocket.js";
 import { store as fileBrowserStore } from "/components/modals/file-browser/file-browser-store.js";
@@ -267,8 +269,87 @@ const model = {
     await this.refresh();
   },
 
+  // -- review of agent changes (editor-review.js, CodeMirror merge view) ----
+  review: null, // { before, conflict, remaining } while agent changes wait
+  _reviewAfter: "", // the agent's version, as first shown
+  _reviewView: null,
+  _reviewTimer: null,
+
+  startReviewPolling() {
+    if (this._reviewTimer) return;
+    this._reviewTimer = globalThis.setInterval(() => this.checkReview(), REVIEW_POLL_MS);
+  },
+
+  stopReviewPolling() {
+    if (this._reviewTimer) globalThis.clearInterval(this._reviewTimer);
+    this._reviewTimer = null;
+  },
+
+  async checkReview() {
+    if (this.review || this._reviewBusy || !this.session?.session_id || globalThis.document?.hidden) return;
+    this._reviewBusy = true;
+    try {
+      const state = await callEditor("review_state", { session_id: this.session.session_id });
+      if (state?.ok && state.pending && !this.review) await this.startReview(state);
+    } catch {
+      // the next check tries again
+    } finally {
+      this._reviewBusy = false;
+    }
+  },
+
+  async startReview(state) {
+    this.syncEditorText();
+    this.review = { before: String(state.before ?? ""), conflict: Boolean(state.conflict), remaining: 0 };
+    this._reviewAfter = String(state.text ?? "");
+    await new Promise((resolve) => globalThis.requestAnimationFrame?.(resolve) ?? resolve());
+    const container = this._root?.querySelector?.("[data-editor-review]");
+    if (!container || !this.review) return;
+    try {
+      const { mountReview } = await import("/plugins/_editor/webui/editor-review.js");
+      container.replaceChildren();
+      this._reviewView = mountReview(container, {
+        before: this.review.before,
+        after: String(state.text ?? ""),
+        extension: this.session?.extension || "",
+        dark: globalThis.localStorage?.getItem("darkMode") !== "false",
+        onChange: () => {
+          if (this.review) this.review.remaining = this._reviewView?.remaining() ?? 0;
+        },
+      });
+      this.review.remaining = this._reviewView.remaining();
+    } catch (error) {
+      this.error = `Could not show the agent's changes: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  },
+
+  async finishReview(choice = "done") {
+    if (!this.review || !this.session?.session_id) return;
+    const final = choice === "reject" ? this.review.before
+      : choice === "accept" ? this._reviewAfter
+      : (this._reviewView?.text() ?? this._reviewAfter);
+    const result = await callEditor("review_resolve", { session_id: this.session.session_id, text: final });
+    if (!result?.ok) {
+      this.error = result?.error || "Could not save the reviewed text.";
+      return;
+    }
+    this._reviewView?.destroy();
+    this._reviewView = null;
+    this.review = null;
+    this.editorText = final;
+    if (this.session) {
+      this.session.text = final;
+      this.session.dirty = false;
+    }
+    this.dirty = false;
+    this.resetHistory(final);
+    this.setSourceEditorText(final);
+    this.message = choice === "reject" ? "Rejected the agent's changes." : "Review finished.";
+  },
+
   async onMount(element = null, options = {}) {
     await this.init();
+    this.startReviewPolling();
     if (element && element !== this._root) {
       if (this.sourceEditor && !element.contains?.(this.sourceEditor.container)) {
         this.destroySourceEditor();
@@ -304,6 +385,10 @@ const model = {
   },
 
   cleanup() {
+    this.stopReviewPolling();
+    this._reviewView?.destroy();
+    this._reviewView = null;
+    this.review = null;
     this.flushInput();
     this.destroySourceEditor();
     if (this._previewEnhanceTimer) globalThis.clearTimeout(this._previewEnhanceTimer);
