@@ -163,6 +163,20 @@
                      @change="config.job_routing.subordinate_profiles = $event.target.value.split(',').map(p => p.trim()).filter(Boolean)" />
             </div>
           </div>
+          <template x-if="config.job_routing.decision_shadow">
+            <div class="field">
+              <div class="field-label">
+                <div class="field-title">Decision model in shadow mode</div>
+                <div class="field-description">Compare only: a decision model such as Laya, on the Utility model's server, predicts whether a step needs thinking and how hard a delegated task is. The predictions are logged next to what really happened. It never changes what runs.</div>
+              </div>
+              <div class="field-control">
+                <label class="toggle">
+                  <input type="checkbox" x-model="config.job_routing.decision_shadow.enabled" />
+                  <span class="toggler"></span>
+                </label>
+              </div>
+            </div>
+          </template>
           <template x-if="config.job_routing.tool_digest">
             <div class="field">
               <div class="field-label">

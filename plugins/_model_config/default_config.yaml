@@ -152,3 +152,10 @@ job_routing:
     keep_head_chars: 2000
     keep_tail_chars: 3000
     tools: [code_execution_tool, search_engine, browser, document_query]
+  # Off by default: a decision model (Laya, Jev) predicts beside each step and
+  # the predictions are logged next to what really happened. It changes
+  # nothing. api_base empty = the Utility model's server.
+  decision_shadow:
+    enabled: false
+    model: laya
+    api_base: ""

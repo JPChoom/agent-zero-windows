@@ -7,7 +7,7 @@
 ## Ownership
 
 - `helpers/model_config.py` owns config resolution, presets, overrides, and runtime model object construction.
-- `helpers/job_routing.py` owns which model runs which job and the Utility fallback; `helpers/tool_digest.py` owns shortening long tool results.
+- `helpers/job_routing.py` owns which model runs which job and the Utility fallback; `helpers/tool_digest.py` owns shortening long tool results; `helpers/decision_shadow.py` owns the decision model in shadow mode.
 - `api/` owns model config, override, preset, search, and API-key endpoints.
 - `webui/` owns model settings, summaries, switcher, and API-key UI.
 - `default_config.yaml`, `default_presets.yaml`, `provider_metadata.yaml`, `hooks.py`, and `plugin.yaml` own defaults, metadata, hooks, and manifest.
@@ -22,6 +22,7 @@
 - `hooks.py get_plugin_config` backfills `BACKFILLED_KEYS` into configs saved before they existed.
 - `job_routing` (Settings > Models > Background jobs): `get_utility_model` goes through `job_routing.utility_model_for_call`. The job comes from `perf.CALLER`, so a new job needs a `perf.tagged` name in `JOBS` and a row in `webui/config.html`. `fallback_to_main` wraps the model in `RoutedUtilityModel`: a TCP check first, then one retry on Main for any failure except a stop, `Preempted`, or an answer already streaming; only outages (`_is_outage`) mark the server down. A refused request (over context) moves that job alone. Nothing wraps when Utility is the Main model. `banners/_40_utility_fallback.py` shows while a server is marked down.
 - `subordinate_profiles`: `get_chat_model_config` gives a listed subordinate the Utility model with Main's limits (`subordinate_on_utility`, `_subordinate_slot`); `routed=False` is always the real Main model. Never the main agent, and never a call tagged `infection_check*`: the safety check stays on its own model. `chat_model_call_before/_10_subordinate_route.py` returns it to Main when the server is away.
+- `job_routing.decision_shadow` (off by default): a decision model predicts beside each Main step (`thinking`) and each `call_subordinate` (`subordinate`) through `POST <api_base>/systemone`, in hooks that start a task and return. Verdicts, timings and an input hash go to `usr/perf/decision_shadow.jsonl`, never text; `tests/manual/decision_shadow_report.py` compares them with what happened. Nothing may read a prediction back into a decision: acting on one is a separate, measured change behind its own setting. Never use it for the safety check.
 - `tool_digest` is EXPERIMENTAL and off by default: `tool_execute_after/_90_tool_digest.py` replaces the middle of a long result, after the secret mask and completion gate. Head and tail stay word for word, the full text goes in the chat's folder, and any problem keeps the original. It never runs on Main (`UTILITY_ONLY_CALLERS`). The result stays untrusted by tool name in `hist_add_tool_result`; do not exempt it.
 
 - Preserve global, project, agent, and chat override resolution order.

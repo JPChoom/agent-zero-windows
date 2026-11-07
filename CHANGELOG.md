@@ -9,6 +9,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **Choose which model runs each background job.** The same section sets chat naming, memory, compression and skill learning to Utility or Main, one by one.
 - **Subordinate agents can run on the Utility model.** List agent profiles to send their subordinates there, such as simple research work. Nothing moves until you list one. Their safety checks stay on the model set for the check.
 - **Long tool results can be shortened (experimental, off by default).** The Utility model summarizes the middle of very long outputs, so later steps read less. The start and end stay word for word and the full text is saved. A detail in the middle can still be lost from what the agent sees.
+- **Decision model in shadow mode (off by default).** A decision model such as Laya, running on the Utility model's server, predicts whether a step needs thinking and how hard a delegated task is. The predictions are logged next to what really happened, without the text, and never change what runs. This measures whether such a model is worth using.
 - **Shadow safety check (off by default).** When the Main model judges, the Utility model can judge the same step in the background and both verdicts are logged. It never changes what runs. A small model isn't safe for this job yet: on the 18-case test, a 9B model allowed one hostile command.
 
 ### Security
