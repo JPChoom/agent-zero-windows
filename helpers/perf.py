@@ -131,6 +131,68 @@ def estimate_tokens(chars: int) -> int:
 # model calls
 # --------------------------------------------------------------------------
 
+LIVE_SAMPLE_SECONDS = 0.25
+LIVE_MAX_SAMPLES = 16
+LIVE_WINDOW_SECONDS = 3.0
+
+_live_calls: dict[int, "ModelCall"] = {}
+_last_live: dict[str, Any] | None = None
+
+
+def _short_model(name: str) -> str:
+    return str(name or "").rsplit("/", 1)[-1]
+
+
+def _note_live_end(call: "ModelCall", record: dict[str, Any]) -> None:
+    global _last_live
+    with _lock:
+        _live_calls.pop(id(call), None)
+        if record["tokens_per_s"] is not None:
+            _last_live = {
+                "tok_s": record["tokens_per_s"],
+                "first_token_s": record["first_token_s"],
+                "prompt_kept": record["prompt_kept"],
+                "prompt_tokens": record["prompt_tokens_est"],
+                "model": _short_model(record["model"]),
+                "role": record["role"],
+            }
+
+
+def _live_rate(call: "ModelCall", now: float) -> float | None:
+    """Estimated tok/s over the last few seconds, 0 once the stream stalls."""
+    recent = [sample for sample in call.samples if now - sample[0] <= LIVE_WINDOW_SECONDS]
+    if not recent:
+        return 0.0 if call.samples else None
+    newest_time = recent[-1][0]
+    if len(recent) < 2 or newest_time - recent[0][0] < LIVE_SAMPLE_SECONDS:
+        return None
+    return round((recent[-1][1] - recent[0][1]) / CHARS_PER_TOKEN / (newest_time - recent[0][0]), 1)
+
+
+def live_state() -> dict[str, Any]:
+    """What the speed counter shows: the newest answer being written, and the
+    last one finished. Token counts are estimates from the streamed text."""
+    now = time.monotonic()
+    with _lock:
+        last = dict(_last_live) if _last_live else None
+        calls = list(_live_calls.values())
+        call = max(calls, key=lambda item: item.started, default=None)
+        if call is None:
+            return {"phase": "idle", "tok_s": None, "last": last}
+        rate = _live_rate(call, now)
+    phase = "reading" if call.first_chunk_at is None else ("thinking" if call.thinking_now else "writing")
+    return {
+        "phase": phase,
+        "tok_s": rate,
+        "model": _short_model(call.model),
+        "role": call.role,
+        "seconds": round(now - call.started, 1),
+        "prompt_tokens": estimate_tokens(call.prompt_chars),
+        "prompt_kept": (call.reuse or {}).get("kept"),
+        "last": last,
+    }
+
+
 @dataclass
 class ModelCall:
     model: str
@@ -153,17 +215,34 @@ class ModelCall:
     streamed: bool = True
     # prompt_reuse() against the chat's previous call of the same kind
     reuse: dict[str, Any] | None = None
+    # (time, characters so far) every LIVE_SAMPLE_SECONDS, for the live rate
+    samples: list[tuple[float, int]] = field(default_factory=list)
+    thinking_now: bool = False
 
     def slot_acquired(self) -> None:
         self.attempts += 1
         if self.slot_at is None:
             self.slot_at = time.monotonic()
+        if self._shown_live():
+            with _lock:
+                _live_calls[id(self)] = self
 
     def chunk(self, reasoning_delta: str, response_delta: str) -> None:
         if self.first_chunk_at is None and (reasoning_delta or response_delta):
             self.first_chunk_at = time.monotonic()
         self.reasoning_chars += len(reasoning_delta or "")
         self.response_chars += len(response_delta or "")
+        if reasoning_delta or response_delta:
+            self.thinking_now = bool(reasoning_delta) and not response_delta
+            now = time.monotonic()
+            if not self.samples or now - self.samples[-1][0] >= LIVE_SAMPLE_SECONDS:
+                with _lock:
+                    self.samples.append((now, self.reasoning_chars + self.response_chars))
+                    del self.samples[:-LIVE_MAX_SAMPLES]
+
+    def _shown_live(self) -> bool:
+        """The agent's own answers: the calls a person is waiting to read."""
+        return self.streamed and not self.background and not self.caller and self.role in ("main", "subordinate")
 
     def finish(self, error: BaseException | None = None) -> dict[str, Any]:
         self.ended = time.monotonic()
@@ -172,6 +251,8 @@ class ModelCall:
             self.error = type(error).__name__
         record = self.as_dict()
         _record_call(record)
+        if self._shown_live():
+            _note_live_end(self, record)
         return record
 
     def as_dict(self) -> dict[str, Any]:

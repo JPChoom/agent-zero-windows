@@ -23,7 +23,7 @@
 - Avoid text or controls overflowing fixed sidebar widths.
 - Show/hide is the `.sidebar-edge-toggle` tab in `left-sidebar.html` (the header has no hamburger): it sits right of the header pill while open and at the screen edge while hidden; hiding slides both `#left-panel` and the header pill (`.is-offscreen`, moved with `left`, never a transform) off the left edge.
 - Chat deletion is optimistic (`chats-store.js killChat`): the row is removed on the confirming click and tracked in `_removing` so `applyContexts` cannot resurrect it from a stale sync; it is restored with an error toast if `/chat_remove` fails. Saved chats go to the trash (`helpers/chat_trash.py`); the success toast offers Undo, and the sidebar menu's "Recently deleted" opens `modals/chat-trash/` (restore, delete forever, empty).
-- Chats sit directly under the header; Tasks are pinned to the bottom of `.left-panel-top` (`margin-top: auto`), directly above Preferences.
+- Chats sit directly under the header; Tasks are pinned to the bottom of `.left-panel-top` (`margin-top: auto`), directly above Preferences. The `_perf` speed counter uses `sidebar-tasks-list-start`, between them; `sidebar-preferences-list-end` adds rows to Preferences.
 
 ## Work Guidance
 
