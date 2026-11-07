@@ -27,11 +27,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          # A virtualenv: the runner's own Python holds tools (pipx) whose
+          # requirements have nothing to do with this project.
+          python -m venv .venv
+          .venv\Scripts\python -m pip install --upgrade pip
           # The same hash-checked lock installs use (fails if it is incomplete
           # or a file on PyPI no longer matches), then the test tools.
-          python -m pip install --require-hashes -r requirements.lock.txt
-          python -m pip install -r requirements.dev.txt
+          .venv\Scripts\python -m pip install --require-hashes -r requirements.lock.txt
+          .venv\Scripts\python -m pip install -r requirements.dev.txt
 
       - name: Run tests
-        run: python -m pytest -q -p no:cacheprovider tests
+        run: .venv\Scripts\python -m pytest -q -p no:cacheprovider tests

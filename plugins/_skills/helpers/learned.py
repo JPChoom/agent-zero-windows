@@ -201,6 +201,25 @@ _NETWORK_COMMAND = re.compile(
 )
 
 
+def _is_downloaded(path: object) -> bool:
+    """A file on this PC that came from the internet: in a downloads folder,
+    or carrying Windows' mark of the web (ZoneId 3 internet, 4 restricted).
+    Text in it was written by whoever published it, not by the user."""
+    if not isinstance(path, str) or not path.strip():
+        return False
+    real = Path(files.native_path(path.strip()))
+    if not real.is_absolute():
+        real = Path(files.get_abs_path("usr/workdir")) / real
+    folders = (Path(files.get_abs_path("usr/downloads")), Path.home() / "Downloads")
+    if any(real.is_relative_to(folder) for folder in folders):
+        return True
+    try:
+        with open(f"{real}:Zone.Identifier", encoding="utf-8", errors="replace") as mark:
+            return bool(re.search(r"^ZoneId=[34]\s*$", mark.read(), re.MULTILINE))
+    except OSError:  # no mark, or not Windows
+        return False
+
+
 def outside_source(tool_name: str, args: dict | None, mcp: bool = False) -> str:
     """What outside source a tool call read ("" for the user's own PC only)."""
     name = str(tool_name or "").strip().lower().split(":", 1)[0]
@@ -211,8 +230,12 @@ def outside_source(tool_name: str, args: dict | None, mcp: bool = False) -> str:
         if name == "document_query":
             target = " ".join(str(v) for v in args.values() if isinstance(v, (str, list)))
             if not re.search(r"https?://", target, re.IGNORECASE):
-                return ""  # a local document the user pointed at
+                document = args.get("document")
+                paths = document if isinstance(document, list) else [document]
+                return "a downloaded file" if any(_is_downloaded(p) for p in paths) else ""
         return _OUTSIDE_TOOLS[name]
+    if name == "text_editor":
+        return "a downloaded file" if _is_downloaded(args.get("path")) else ""
     if name in ("code_execution_tool", "code_execution_remote", "terminal_tool", "terminal_access"):
         code = str(args.get("code") or args.get("command") or "")
         if _NETWORK_COMMAND.search(code):

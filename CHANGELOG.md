@@ -2,6 +2,11 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Security
+- **A skill learned from a downloaded file now waits for your review.** Reading a file on this PC counted as your own content, so a skill learned from a file downloaded earlier went live at once. A file in a downloads folder, or one Windows marks as coming from the internet even after it was moved, now counts as outside content, like a web page.
+
 ## v1.5.5
 
 The safety check now blocks what it can't check and is firm again on hostile actions, a chat can't be damaged or rolled back by a save, and installs in a folder with a space work with `/a0/...` paths.

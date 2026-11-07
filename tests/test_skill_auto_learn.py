@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 import pytest
 
@@ -60,6 +61,50 @@ class _Agent:
 ])
 def test_outside_sources_are_told_apart_from_the_users_own_pc(tool, args, mcp, expected):
     assert learned.outside_source(tool, args, mcp=mcp) == expected
+
+
+@pytest.fixture
+def pc(tmp_path, monkeypatch):
+    """A PC with an install and a home folder, nothing real."""
+    monkeypatch.setattr(learned.files, "_base_dir", str(tmp_path / "install"))
+    monkeypatch.setattr(learned.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    return tmp_path
+
+
+def _read(path):
+    return learned.outside_source("text_editor", {"action": "read", "path": str(path)})
+
+
+def test_a_file_in_a_downloads_folder_is_outside_content(pc):
+    assert _read(pc / "home" / "Downloads" / "notes.md") == "a downloaded file"
+    assert _read(pc / "install" / "usr" / "downloads" / "browser" / "page.txt") == "a downloaded file"
+    assert learned.outside_source("text_editor:read", {"path": str(pc / "home" / "Downloads" / "a.md")}) == "a downloaded file"
+
+
+def test_the_users_own_files_stay_local(pc):
+    assert _read(pc / "home" / "Documents" / "notes.md") == ""
+    assert _read("usr/workdir/project/a.py") == ""
+    assert learned.outside_source("text_editor", {"action": "read"}) == ""
+    assert learned.outside_source("text_editor", None) == ""
+
+
+def test_a_local_document_query_checks_the_file_too(pc):
+    downloaded = str(pc / "home" / "Downloads" / "report.pdf")
+    own = str(pc / "home" / "Documents" / "report.pdf")
+    assert learned.outside_source("document_query", {"document": downloaded}) == "a downloaded file"
+    assert learned.outside_source("document_query", {"document": [own, downloaded]}) == "a downloaded file"
+    assert learned.outside_source("document_query", {"document": own}) == ""
+
+
+@pytest.mark.skipif(os.name != "nt", reason="NTFS alternate data stream")
+@pytest.mark.parametrize("zone,expected", [(3, "a downloaded file"), (4, "a downloaded file"), (0, ""), (1, ""), (2, "")])
+def test_the_mark_of_the_web_follows_a_file_moved_out_of_downloads(pc, zone, expected):
+    moved = pc / "home" / "Documents" / "guide.md"
+    moved.parent.mkdir(parents=True)
+    moved.write_text("text", encoding="utf-8")
+    with open(f"{moved}:Zone.Identifier", "w", encoding="utf-8") as mark:
+        mark.write(f"[ZoneTransfer]\nZoneId={zone}\nHostUrl=https://example.com/guide.md\n")
+    assert _read(moved) == expected
 
 
 def test_a_task_counts_subordinate_steps_sources_and_learned_skills(root):
