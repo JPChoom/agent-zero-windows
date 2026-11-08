@@ -431,3 +431,130 @@ def test_the_report_counts_what_the_shadow_would_have_missed():
         {"main": "ok", "shadow": "", "error": "Timeout"},
     ])
     assert (summary["missed"], summary["softer"], summary["agreed"], summary["stricter"], summary["errors"]) == (1, 1, 1, 1, 1)
+
+
+# -- any model: presets, profiles ---------------------------------------------------
+
+SECOND = "http://203.0.113.9:1234/v1"
+
+
+@pytest.fixture
+def presets(setup, monkeypatch):
+    preset = {"name": "Coder", "chat": {"provider": "lm_studio", "name": "coder-14b", "api_base": SECOND, "ctx_length": 16384}}
+    monkeypatch.setattr(model_config, "resolve_preset", lambda name, **k: preset if name == "Coder" else None)
+    return preset
+
+
+def test_a_preset_is_a_target(presets):
+    slot = model_config.target_slot(None, "preset:Coder")
+    assert (slot["name"], slot["api_base"]) == ("coder-14b", SECOND)
+    assert model_config.target_slot(None, "preset:Missing") is None
+    assert model_config.target_slot(None, "utility")["name"] == "small"
+    assert model_config.target_slot(None, "main")["name"] == "big"
+    assert model_config.target_slot(None, "nonsense") is None
+
+
+def test_a_job_can_run_on_a_preset(presets, monkeypatch):
+    built = []
+    monkeypatch.setattr(model_config, "build_model_for_target", lambda agent, target, utility=False: built.append(target) or _Model("coder"))
+    presets  # noqa
+    setup_routing = model_config.get_config()["job_routing"]
+    setup_routing["jobs"] = {"history_compression": "preset:Coder"}
+    job_routing._checked[SECOND] = (True, 1e12)
+    token = _as_job("history_compression")
+    try:
+        assert _call(job_routing.utility_model_for_call(None))[0] == "coder" and built == ["preset:Coder"]
+    finally:
+        perf.CALLER.reset(token)
+
+
+def test_profiles_map_to_any_target(presets, setup):
+    setup.routing["profile_models"] = "researcher = utility\ndeveloper = preset:Coder\n# a comment\nhacker = main"
+    assert model_config.subordinate_target(_subordinate("researcher")) == "utility"
+    assert model_config.subordinate_target(_subordinate("developer")) == "preset:Coder"
+    assert model_config.subordinate_target(_subordinate("hacker")) == ""  # main is the default anyway
+    slot = model_config.get_chat_model_config(_subordinate("developer"))
+    assert (slot["name"], slot["ctx_history"]) == ("coder-14b", 0.7)  # its model, Main's limits
+
+
+def test_the_old_profile_list_still_means_utility(setup):
+    setup.routing["subordinate_profiles"] = ["researcher"]
+    assert model_config.subordinate_target(_subordinate("researcher")) == "utility"
+
+
+def test_a_child_agents_own_chat_follows_its_profile_but_the_users_chat_does_not(setup):
+    setup.routing["profile_models"] = {"researcher": "utility"}
+    child = SimpleNamespace(number=0, config=SimpleNamespace(profile="researcher"), context=SimpleNamespace(data={"child_of": "parent"}))
+    own = SimpleNamespace(number=0, config=SimpleNamespace(profile="researcher"), context=SimpleNamespace(data={}))
+    assert model_config.subordinate_target(child) == "utility"
+    assert model_config.subordinate_target(own) == ""
+
+
+def test_an_unknown_preset_falls_back_to_main(presets, setup):
+    setup.routing["profile_models"] = {"developer": "preset:Missing"}
+    assert model_config.subordinate_target(_subordinate("developer")) == ""
+
+
+# -- error classes, health, history -----------------------------------------------
+
+@pytest.mark.parametrize("exc,kind", [
+    (ConnectionError("refused"), "outage"),
+    (TimeoutError("slow"), "outage"),
+    (type("BadRequestError", (Exception,), {})("This model's maximum context length is 8192 tokens"), "context"),
+    (type("BadRequestError", (Exception,), {})("invalid tool schema"), "request"),
+    (ValueError("bad json"), "request"),
+])
+def test_errors_are_classified(exc, kind):
+    assert job_routing.classify(exc) == kind
+
+
+def test_a_refused_request_is_not_resent_to_main(setup):
+    job_routing._checked[DELL] = (True, 1e12)
+    setup.utility.fail = type("BadRequestError", (Exception,), {})("invalid tool schema")
+    with pytest.raises(Exception, match="invalid tool schema"):
+        _call(job_routing.utility_model_for_call(None))
+    assert setup.main.calls == 0
+
+
+def test_fallbacks_are_recorded(setup, monkeypatch):
+    monkeypatch.setattr(job_routing, "HISTORY", __import__("collections").deque(maxlen=5))
+    job_routing._checked[DELL] = (False, 1e12)
+    job_routing._reasons[DELL] = "no connection"
+    _call(job_routing.utility_model_for_call(None))
+    entry = job_routing.HISTORY[-1]
+    assert entry["server"] == DELL and entry["reason"] == "no connection" and entry["to"] == "main"
+
+
+def _serve(status):
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(status)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}/v1"
+
+
+@pytest.mark.parametrize("status,up", [(200, True), (404, True), (401, True), (503, False)])
+def test_a_server_is_ready_only_when_it_answers_for_its_models(status, up):
+    server, base = _serve(status)
+    try:
+        assert asyncio.run(job_routing.available(base)) is up
+        if not up:
+            assert "not ready" in job_routing._reasons[base]
+    finally:
+        server.shutdown()
+
+
+def test_the_settings_show_profiles_presets_and_fallbacks():
+    html = (ROOT / "plugins/_model_config/webui/config.html").read_text(encoding="utf-8")
+    assert "Model per agent profile" in html and "'preset:' + preset.name" in html and "Recent fallbacks" in html
+    assert (ROOT / "plugins/_model_config/api/routing_status.py").is_file()

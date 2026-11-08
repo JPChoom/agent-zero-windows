@@ -9,8 +9,9 @@ this, every memory save, chat name and compression then fails. Three settings
   1.5 s once rather than a connection timeout on every call.
 - `jobs`: job name -> "main" sends that job to the Main model. Anything else
   uses Utility. The job comes from perf.CALLER, set by perf.tagged on each job.
-- `subordinate_profiles`: agent profiles whose subordinates run on the Utility
-  model (model_config.subordinate_on_utility).
+- `profile_models` (and the older `subordinate_profiles`): the model target of
+  each agent profile's subordinates and child agents (model_config
+  .subordinate_target). Targets are `main`, `utility` or `preset:<name>`.
 
 The safety check is not a job here: it has its own Model setting, and it never
 follows a subordinate onto the Utility model.
@@ -19,7 +20,10 @@ follows a subordinate onto the Utility model.
 from __future__ import annotations
 
 import asyncio
+import collections
 import time
+import urllib.error
+import urllib.request
 from urllib.parse import urlsplit
 
 from helpers import model_concurrency, perf
@@ -48,6 +52,9 @@ DOWN_FOR_SECONDS = 30.0  # a failed server is left alone this long
 PRIMARY_TIMEOUT_SECONDS = 120.0
 
 _checked: dict[str, tuple[bool, float]] = {}  # server -> (up, valid until)
+_reasons: dict[str, str] = {}  # server -> why it is down
+HISTORY: collections.deque = collections.deque(maxlen=50)  # fallbacks, newest last
+HEALTH_TIMEOUT_SECONDS = 2.0
 
 
 def settings(agent=None) -> dict:
@@ -68,12 +75,39 @@ def _is_outage(exc: Exception) -> bool:
     if isinstance(exc, (OSError, TimeoutError)):
         return True
     name = type(exc).__name__
-    return any(word in name for word in ("Connection", "Timeout", "ServiceUnavailable", "InternalServer"))
+    return any(word in name for word in ("Connection", "Timeout", "ServiceUnavailable", "InternalServer", "APIError"))
 
 
-def mark_down(api_base) -> None:
+_CONTEXT_WORDS = ("context", "n_ctx", "too long", "maximum length", "max_tokens", "token limit")
+
+
+def classify(exc: Exception) -> str:
+    """outage (the server is away: fall back), context (the prompt does not fit
+    that model: fall back to the larger Main model), request (a malformed or
+    refused request: re-sending it elsewhere would only hide the problem)."""
+    if _is_outage(exc):
+        return "outage"
+    text = f"{type(exc).__name__} {exc}".lower()
+    if any(word in text for word in _CONTEXT_WORDS):
+        return "context"
+    return "request"
+
+
+def note_fallback(server, reason: str, target: str = "main") -> None:
+    HISTORY.append({"ts": time.time(), "caller": perf.CALLER.get() or "step", "server": str(server or ""),
+                    "reason": reason, "to": target})
+
+
+def server_states() -> list[dict]:
+    now = time.monotonic()
+    return [{"server": server, "up": up, "checked": True, "reason": "" if up else _reasons.get(server, ""),
+             "fresh": until > now} for server, (up, until) in _checked.items()]
+
+
+def mark_down(api_base, reason: str = "failed") -> None:
     if api_base:
         _checked[str(api_base)] = (False, time.monotonic() + DOWN_FOR_SECONDS)
+        _reasons[str(api_base)] = reason
 
 
 def is_marked_down(api_base) -> bool:
@@ -91,16 +125,36 @@ async def available(api_base) -> bool:
     known = _checked.get(key)
     if known and known[1] > time.monotonic():
         return known[0]
+    reason = ""
     try:
         _, writer = await asyncio.wait_for(asyncio.open_connection(*address), CHECK_TIMEOUT_SECONDS)
         writer.close()
         up = True
     except (OSError, asyncio.TimeoutError):
-        up = False
+        up, reason = False, "no connection"
+    if up:
+        # An open port is not a ready model: ask the server for its models
+        # (llama.cpp and LM Studio both answer /models; 503 while loading).
+        up, reason = await asyncio.to_thread(_models_answer, str(api_base))
+    if not up:
+        _reasons[key] = reason
     if known and known[0] and not up:
         PrintStyle(font_color="orange").print(f"Utility model at {key} does not answer: using the Main model")
     _checked[key] = (up, time.monotonic() + (UP_FOR_SECONDS if up else DOWN_FOR_SECONDS))
     return up
+
+
+def _models_answer(api_base: str) -> tuple[bool, str]:
+    url = api_base.rstrip("/") + "/models"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method="GET"), timeout=HEALTH_TIMEOUT_SECONDS):
+            return True, ""
+    except urllib.error.HTTPError as exc:
+        if exc.code >= 500:
+            return False, f"not ready (HTTP {exc.code})"
+        return True, ""  # 401/404: the server answers; it just has no such list or needs a key
+    except Exception:
+        return False, "no answer"
 
 
 def _same_server(agent) -> bool:
@@ -118,10 +172,11 @@ class RoutedUtilityModel:
     """A Utility model that falls back to the Main model. Everything except
     the two call methods goes straight to the Utility model object."""
 
-    def __init__(self, primary, make_fallback, api_base):
+    def __init__(self, primary, make_fallback, api_base, target: str = "utility"):
         self._primary = primary
         self._make_fallback = make_fallback
         self._api_base = api_base
+        self._target = target
 
     def __getattr__(self, name):
         return getattr(self._primary, name)
@@ -134,6 +189,7 @@ class RoutedUtilityModel:
 
     async def _run(self, method: str, args: tuple, kwargs: dict):
         if not await available(self._api_base):
+            note_fallback(self._api_base, _reasons.get(str(self._api_base), "unavailable"))
             return await getattr(self._make_fallback(), method)(*args, **kwargs)
 
         streamed = False
@@ -154,10 +210,14 @@ class RoutedUtilityModel:
         except Exception as exc:
             if streamed:
                 raise  # part of an answer is out: a second one would mix with it
-            if _is_outage(exc):
-                mark_down(self._api_base)
+            kind = classify(exc)
+            if kind == "request":
+                raise  # a refused request would be refused or hidden elsewhere too
+            if kind == "outage":
+                mark_down(self._api_base, type(exc).__name__)
+            note_fallback(self._api_base, f"{kind}: {type(exc).__name__}")
             PrintStyle(font_color="orange").print(
-                f"Utility model failed ({type(exc).__name__}): using the Main model"
+                f"{self._target} model failed ({type(exc).__name__}): using the Main model"
             )
             kwargs = {**kwargs, "response_callback": given} if given is not None else kwargs
             return await getattr(self._make_fallback(), method)(*args, **kwargs)
@@ -171,8 +231,15 @@ def utility_model_for_call(agent):
         return model_config.build_utility_model(agent)
     job = _JOB_OF_CALLER.get(caller, "")
     jobs = routing.get("jobs") if isinstance(routing.get("jobs"), dict) else {}
-    if jobs.get(job) == "main":
+    target = str(jobs.get(job) or "utility")
+    if target == "main":
         return model_config.build_main_for_utility(agent)
+    if target.startswith("preset:") and model_config.target_slot(agent, target) is not None:
+        model = model_config.build_model_for_target(agent, target, utility=True)
+        if not routing.get("fallback_to_main", True):
+            return model
+        api_base = (model_config.target_slot(agent, target) or {}).get("api_base")
+        return RoutedUtilityModel(model, lambda: model_config.build_main_for_utility(agent), api_base, target)
     model = model_config.build_utility_model(agent)
     if not routing.get("fallback_to_main", True) or not utility_is_separate(agent):
         return model

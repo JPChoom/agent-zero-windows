@@ -124,7 +124,7 @@
                ['history_compression', 'Compressing history'],
                ['skill_learn', 'Learning skills'],
              ] }">
-          <div class="section-title">Background jobs</div>
+          <div class="section-title" x-init="$store.modelConfig._presetsLoaded || $store.modelConfig.loadGlobalPresets()">Background jobs</div>
           <div class="section-description">Useful when the Utility model runs on another PC. The safety check is set separately, in its own plugin settings.</div>
           <div class="field">
             <div class="field-label">
@@ -148,19 +148,37 @@
                         @change="config.job_routing.jobs = { ...(config.job_routing.jobs || {}), [job]: $event.target.value }">
                   <option value="utility">Utility model</option>
                   <option value="main">Main model</option>
+                  <template x-for="preset in ($store.modelConfig.globalPresets || [])" :key="preset.name">
+                    <option :value="'preset:' + preset.name" x-text="'Preset: ' + preset.name"></option>
+                  </template>
                 </select>
               </div>
             </div>
           </template>
           <div class="field">
             <div class="field-label">
-              <div class="field-title">Subordinates on the Utility model</div>
-              <div class="field-description">Agent profiles, separated by commas, for example researcher. Best for simple delegated work: a small model is weak at coding. Their safety checks stay on the model set for the check.</div>
+              <div class="field-title">Model per agent profile</div>
+              <div class="field-description">One line per profile: <code>researcher = utility</code>, <code>developer = preset:Max Power</code> or <code>= main</code>. Applies to subordinates and child agents; your own chat keeps the Main model. Their safety checks stay on the model set for the check.</div>
             </div>
             <div class="field-control">
-              <input type="text" placeholder="none"
-                     :value="(config.job_routing.subordinate_profiles || []).join(', ')"
-                     @change="config.job_routing.subordinate_profiles = $event.target.value.split(',').map(p => p.trim()).filter(Boolean)" />
+              <textarea rows="3" placeholder="researcher = utility"
+                        :value="[...(config.job_routing.subordinate_profiles || []).map(p => p + ' = utility'), ...(typeof config.job_routing.profile_models === 'string' ? config.job_routing.profile_models.split('\n') : Object.entries(config.job_routing.profile_models || {}).map(([k, v]) => k + ' = ' + v))].filter(Boolean).join('\n')"
+                        @change="config.job_routing.profile_models = $event.target.value; config.job_routing.subordinate_profiles = []"></textarea>
+            </div>
+          </div>
+          <div class="field" x-data="{ status: null, async load() { try { const { callJsonApi } = await import('/js/api.js'); this.status = await callJsonApi('/plugins/_model_config/routing_status', {}); } catch { this.status = null; } } }" x-init="load()">
+            <div class="field-label">
+              <div class="field-title">Recent fallbacks</div>
+              <div class="field-description">When a job moved to the Main model, and why. Cleared on restart.</div>
+            </div>
+            <div class="field-control routing-status">
+              <template x-for="server in (status?.servers || [])" :key="server.server">
+                <div><span x-text="server.up ? 'up' : 'down'"></span> <code x-text="server.server"></code> <span x-text="server.reason"></span></div>
+              </template>
+              <template x-for="item in (status?.fallbacks || [])" :key="item.ts">
+                <div x-text="new Date(item.ts * 1000).toLocaleTimeString() + '  ' + item.caller + ': ' + item.reason"></div>
+              </template>
+              <div x-show="status && !status.fallbacks.length">None since the last restart.</div>
             </div>
           </div>
           <template x-if="config.job_routing.decision_shadow">

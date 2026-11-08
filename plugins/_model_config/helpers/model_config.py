@@ -487,40 +487,115 @@ def _resolve_override(agent) -> dict | None:
     return override
 
 
-def subordinate_on_utility(agent) -> bool:
-    """Does this subordinate work on the Utility model (`job_routing.
-    subordinate_profiles`)? The safety check never follows it there: on a
-    Dell-sized model it allowed a hostile command the Main model blocks."""
-    if agent is None or not getattr(agent, "number", 0):
-        return False
+def _is_delegated(agent) -> bool:
+    """A subordinate, or the agent of a child agent's or worker's chat, as
+    opposed to the agent the user talks to."""
+    if getattr(agent, "number", 0):
+        return True
+    data = getattr(getattr(agent, "context", None), "data", None)
+    return isinstance(data, dict) and bool(data.get("_parallel_parent_context_id") or data.get("child_of"))
+
+
+def profile_models(agent) -> dict[str, str]:
+    """Agent profile -> model target (`job_routing.profile_models`, plus the
+    older `subordinate_profiles` list, which means Utility)."""
     routing = get_config(agent).get("job_routing")
-    profiles = routing.get("subordinate_profiles") if isinstance(routing, dict) else None
-    if not profiles or is_single_model_mode(agent):
-        return False
+    routing = routing if isinstance(routing, dict) else {}
+    mapping = {str(p): "utility" for p in routing.get("subordinate_profiles") or []}
+    raw = routing.get("profile_models")
+    if isinstance(raw, dict):
+        mapping.update({str(k).strip(): str(v).strip() for k, v in raw.items() if str(k).strip() and str(v).strip()})
+    elif isinstance(raw, str):
+        for line in raw.splitlines():
+            if "=" in line and not line.strip().startswith("#"):
+                key, _, value = line.partition("=")
+                if key.strip() and value.strip():
+                    mapping[key.strip()] = value.strip()
+    return mapping
+
+
+def subordinate_target(agent) -> str:
+    """The model target this delegated agent runs on ("" = Main as usual).
+    The safety check never follows it: on a Dell-sized model it allowed a
+    hostile command the Main model blocks."""
+    if agent is None or not _is_delegated(agent):
+        return ""
     if perf.CALLER.get().startswith("infection_check"):
-        return False
-    return getattr(getattr(agent, "config", None), "profile", "") in profiles
+        return ""
+    target = profile_models(agent).get(getattr(getattr(agent, "config", None), "profile", "") or "", "")
+    if target in ("", "main"):
+        return ""
+    if target == "utility" and is_single_model_mode(agent):
+        return ""
+    return target if target_slot(agent, target) is not None else ""
 
 
-def _subordinate_slot(agent) -> dict:
-    """The Main slot's settings around the Utility slot's model, so history
-    limits follow the smaller context."""
+def subordinate_on_utility(agent) -> bool:
+    """Kept for callers: True when this delegated agent runs off the Main model."""
+    return bool(subordinate_target(agent))
+
+
+def target_slot(agent, target: str) -> dict | None:
+    """The model slot for a target: `main`, `utility` or `preset:<name>` (a
+    saved preset's Main model, project presets first). None if unknown."""
+    target = str(target or "").strip()
+    if target == "main":
+        return dict(get_chat_model_config(agent, routed=False))
+    if target == "utility":
+        return dict(_get_utility_model_config(agent))
+    if target.startswith("preset:"):
+        name = target[len("preset:"):].strip()
+        project = None
+        try:
+            from helpers import projects
+
+            project = projects.get_context_project_name(agent.context) if agent is not None else None
+        except Exception:
+            project = None
+        preset = (resolve_preset(name, scope=PRESET_SCOPE_PROJECT, project_name=project) if project else None) \
+            or resolve_preset(name)
+        if not preset:
+            return None
+        built = build_config_from_preset(preset, get_config(agent), strip_api_key=False, slots=("chat",))
+        slot = built.get("chat_model")
+        return dict(slot) if isinstance(slot, dict) and slot.get("provider") else None
+    return None
+
+
+def _subordinate_slot(agent, target: str = "utility") -> dict:
+    """The Main slot's settings around the target's model, so history limits
+    follow the target's context."""
     slot = dict(get_chat_model_config(agent, routed=False))
-    utility = _get_utility_model_config(agent)
+    chosen = target_slot(agent, target) or {}
     for key in _MODEL_IDENTITY_FIELDS:
-        if key in utility:
-            slot[key] = deepcopy(utility[key])
-    slot["vision"] = False
+        if key in chosen:
+            slot[key] = deepcopy(chosen[key])
+    if target == "utility":
+        slot["vision"] = False
     if slot.get("provider") in ("lm_studio", "llama_cpp"):
         slot["kwargs"] = {"a0_api_mode": "chat_completions", **(slot.get("kwargs") or {})}
     return slot
 
 
+def build_model_for_target(agent, target: str, utility: bool = False):
+    """A model object for any target; `utility` asks for an answer, not thinking."""
+    slot = target_slot(agent, target)
+    if slot is None:
+        raise ValueError(f"Unknown model target: {target}")
+    cfg = apply_sampling(slot, get_sampling(agent))
+    mc = build_model_config(cfg, models.ModelType.CHAT)
+    kwargs = utility_kwargs(mc.provider, mc.build_kwargs()) if utility else mc.build_kwargs()
+    model = models.get_chat_model(mc.provider, mc.name, model_config=mc, **kwargs)
+    model.a0_perf_role = "utility" if utility and target == "utility" else ("main" if target == "main" else "routed")
+    return model
+
+
 def get_chat_model_config(agent=None, routed=True) -> dict:
     """Get chat model config, with per-chat override if active. `routed=False`
     ignores `subordinate_on_utility`: the real Main model."""
-    if routed and subordinate_on_utility(agent):
-        return _subordinate_slot(agent)
+    target = subordinate_target(agent) if routed else ""
+    if target:
+        return _subordinate_slot(agent, target)
     cfg = get_config(agent)
     override = _resolve_override(agent)
     if override:
