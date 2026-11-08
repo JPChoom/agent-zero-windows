@@ -141,6 +141,7 @@ class DiscordBot:
             {C.CTX_BOT: self.name, C.CTX_BOT_CFG: cfg, C.CTX_CHANNEL: str(message.channel.id),
              C.CTX_USER: str(author.id)},
             project=str((cfg.get("user_projects") or {}).get(str(author.id)) or cfg.get("default_project") or ""),
+            profile=str(cfg.get("agent_profile") or ""),
         )
         context.data[C.CTX_REPLY_TO] = message.id
 

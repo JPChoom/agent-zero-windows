@@ -154,7 +154,9 @@ async def _start_new_chat(config: dict, msg: dict) -> None:
     chat_id = msg.get("chatId", "")
     is_group = msg.get("isGroup", False)
 
-    agent_config = initialize_agent()
+    from helpers import chat_channels
+
+    agent_config = chat_channels.agent_config_for(config.get("agent_profile", ""))
     context = AgentContext(agent_config, name=f"WhatsApp: {sender_name[:50]}")
 
     context.data[CTX_WA_CHAT_ID] = chat_id

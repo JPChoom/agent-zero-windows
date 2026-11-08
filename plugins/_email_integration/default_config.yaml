@@ -15,6 +15,7 @@ handlers: []
 #   poll_interval_cron: "*/2 * * * *"
 #   process_unread_days: 0
 #   sender_whitelist: []
+#   agent_profile: ""        # Agent profile for new chats from this account (empty = default).
 #   project: ""
 #   dispatcher_model: utility
 #   chat_model_preset: ""       # Optional preset from Model Configuration for new email chats

@@ -393,7 +393,9 @@ async def _get_or_create_context_from_user(
 
         # Create new context
         try:
-            config = initialize_agent()
+            from helpers import chat_channels
+
+            config = chat_channels.agent_config_for(bot_cfg.get("agent_profile", ""))
             display_name = f"@{username}" if username else str(user_id)
             ctx = AgentContext(config, name=f"Telegram: {display_name}")
 

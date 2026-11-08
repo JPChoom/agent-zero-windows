@@ -189,3 +189,29 @@ def test_the_resolve_is_safe_across_threads():
     assert approval_registry.resolve("approval-cross", True) is True
     thread.join(5)
     assert holder.get("result") is True
+
+
+# -- a profile per channel ------------------------------------------------------------
+
+def test_a_channel_profile_shapes_new_chats(monkeypatch):
+    from helpers import chat_channels, subagents
+    import initialize
+
+    calls = []
+    monkeypatch.setattr(subagents, "get_all_agents_list", lambda: [{"key": "researcher"}, {"key": "developer"}])
+    monkeypatch.setattr(initialize, "initialize_agent", lambda override_settings=None: calls.append(override_settings) or "cfg")
+    assert chat_channels.agent_config_for("researcher") == "cfg" and calls[-1] == {"agent_profile": "researcher"}
+    chat_channels.agent_config_for("")
+    assert calls[-1] is None
+    chat_channels.agent_config_for("no-such-profile")  # logged, default used
+    assert calls[-1] is None
+
+
+def test_every_channel_uses_the_profile_setting():
+    for path in ("plugins/_telegram_integration/helpers/handler.py", "plugins/_whatsapp_integration/helpers/handler.py",
+                 "plugins/_email_integration/helpers/handler.py", "plugins/_discord_integration/helpers/bot.py",
+                 "plugins/_slack_integration/helpers/bot.py"):
+        source = (ROOT / path).read_text(encoding="utf-8")
+        assert "agent_profile" in source, path
+    for plugin in ("telegram", "whatsapp", "email", "discord", "slack"):
+        assert "agent_profile" in (ROOT / f"plugins/_{plugin}_integration/webui/config.html").read_text(encoding="utf-8"), plugin

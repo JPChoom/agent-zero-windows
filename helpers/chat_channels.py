@@ -142,11 +142,30 @@ class ChannelState:
                 self._save(data)
 
 
-def get_or_create_context(state: ChannelState, key: str, name: str, data: dict, project: str = ""):
+def agent_config_for(profile: str = ""):
+    """The agent config for a new channel chat: the channel's `agent_profile`
+    when set and known, else the default. An unknown profile is logged and
+    ignored rather than failing the chat."""
+    from initialize import initialize_agent
+
+    profile = str(profile or "").strip()
+    if profile:
+        try:
+            from helpers import subagents
+
+            known = {str(item.get("key")) for item in subagents.get_all_agents_list() if item.get("key")}
+        except Exception:
+            known = set()
+        if profile in known:
+            return initialize_agent(override_settings={"agent_profile": profile})
+        PrintStyle.warning(f"Channel agent profile {profile!r} not found; using the default profile.")
+    return initialize_agent()
+
+
+def get_or_create_context(state: ChannelState, key: str, name: str, data: dict, project: str = "", profile: str = ""):
     """Existing context for this conversation, or a new one stamped with `data`."""
     from agent import AgentContext
     from helpers import projects
-    from initialize import initialize_agent
 
     ctx_id = state.get(key)
     if ctx_id:
@@ -156,7 +175,7 @@ def get_or_create_context(state: ChannelState, key: str, name: str, data: dict, 
             return ctx
         state.drop(key)
 
-    ctx = AgentContext(initialize_agent(), name=name)
+    ctx = AgentContext(agent_config_for(profile), name=name)
     ctx.data.update(data)
     if project:
         try:

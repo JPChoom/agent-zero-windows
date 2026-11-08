@@ -152,7 +152,7 @@ def captured(monkeypatch):
     seen = {"created": [], "delivered": [], "sent": []}
     ctx = _Ctx()
 
-    def fake_context(state, key, name, data, project=""):
+    def fake_context(state, key, name, data, project="", profile=""):
         ctx.data.update(data)
         seen["created"].append((key, name, data))
         return ctx

@@ -271,7 +271,9 @@ async def _start_new_chat(agent: Agent, handler_cfg: dict, msg: InboundMessage):
     handler_name = handler_cfg.get("name", "default")
     thread_id = guids.generate_id()
 
-    config = initialize_agent()
+    from helpers import chat_channels
+
+    config = chat_channels.agent_config_for(handler_cfg.get("agent_profile", ""))
     context = AgentContext(config, name=f"Email: {msg.subject[:50]}")
 
     context.data[disp.CTX_EMAIL_HANDLER] = handler_name

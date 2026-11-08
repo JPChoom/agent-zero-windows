@@ -155,6 +155,7 @@ class SlackBot:
             STATE, key, f"Slack: {user_id}",
             {C.CTX_BOT: self.name, C.CTX_BOT_CFG: cfg, C.CTX_CHANNEL: channel, C.CTX_USER: user_id},
             project=str((cfg.get("user_projects") or {}).get(user_id) or cfg.get("default_project") or ""),
+            profile=str(cfg.get("agent_profile") or ""),
         )
         context.data[C.CTX_THREAD] = thread_ts
         context.data[C.CTX_MESSAGE_TS] = str(event.get("ts") or "")

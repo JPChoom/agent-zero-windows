@@ -11,6 +11,7 @@
 
 ## Runtime Contracts
 
+- `agent_config_for(profile)` builds a new channel chat's config from the bot's or account's `agent_profile` (every integration uses it); an unknown profile is logged and the default used.
 - `is_allowed`: an empty allowlist allows nobody. The same rule holds on every channel: Telegram (`_is_allowed`), WhatsApp (`allowed_numbers`) and email (`sender_whitelist`) answer nobody when their list is empty (owner decision 2026-11-08). Matches ids and (case-insensitive, `@` optional) names.
 - `ChannelState(plugin)` persists `usr/plugins/<plugin>/state.json` (`chats`: key -> context id), written atomically.
 - `get_or_create_context` stamps the integration's context data on new chats (including the `_permissions` channel marker key) and refreshes non-underscore keys on reuse; stale ids are dropped.

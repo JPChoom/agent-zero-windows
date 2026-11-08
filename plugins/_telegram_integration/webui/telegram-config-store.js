@@ -274,7 +274,7 @@ export const store = createStore("telegramConfig", {
   accessWarning(bot) {
     if (!bot?.enabled) return "";
     if (Array.isArray(bot.allowed_users) && bot.allowed_users.length > 0) return "";
-    return "Allowed users is empty. Anyone who finds this bot can reach your Agent Zero.";
+    return "Allowed users is empty, so this bot answers nobody. Add your @username or numeric ID.";
   },
 
   async testConnection(idx) {

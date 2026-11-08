@@ -158,6 +158,16 @@
                       </div>
                     </div>
 
+                    <div class="field">
+                      <div class="field-label">
+                        <div class="field-title">Agent profile</div>
+                        <div class="field-description">Profile for new chats from this bot, for example researcher. Empty = the default agent.</div>
+                      </div>
+                      <div class="field-control">
+                        <input type="text" x-model="bot.agent_profile" placeholder="default" />
+                      </div>
+                    </div>
+
                     <div class="tg-warning" x-show="$store.telegramConfig.accessWarning(bot)">
                       <span x-text="$store.telegramConfig.accessWarning(bot)"></span>
                     </div>

@@ -57,6 +57,11 @@
             <div class="field-control"><input type="text" :value="list(bot.allowed_users)" @change="bot.allowed_users = parse($event.target.value)" placeholder="U0123ABCD" /></div>
           </div>
           <div class="field">
+            <div class="field-label"><div class="field-title">Agent profile</div>
+              <div class="field-description">Profile for new chats from this bot, for example researcher. Empty = the default agent.</div></div>
+            <div class="field-control"><input type="text" x-model="bot.agent_profile" placeholder="default" /></div>
+          </div>
+          <div class="field">
             <div class="field-label"><div class="field-title">In channels</div>
               <div class="field-description">DMs always work. Channel replies go in a thread. "Every message" needs the message.channels event and channels:history.</div></div>
             <div class="field-control">
