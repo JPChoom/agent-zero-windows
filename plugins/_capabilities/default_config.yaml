@@ -1,0 +1,12 @@
+# What an agent may use at all, whatever its chat's permission mode.
+# One pattern per line: a tool (`browser`, all its actions) or tool:action
+# (`text_editor:write`, `code_execution_tool:terminal`); * and ? work.
+# Global, project, agent profile and project + profile settings all apply:
+# a call must be allowed by every one, so a narrower scope only narrows.
+# Subordinate agents are also bound by their superior's limits.
+
+# Allowed. Everything by default.
+allow: "*"
+
+# Never allowed for this scope, in any mode.
+deny: ""

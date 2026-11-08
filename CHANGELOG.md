@@ -15,6 +15,8 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 - **Review the agent's changes in the Editor.** When the agent changes a file you have open, the Editor shows each change against the text from before, with Accept and Reject on every change, plus Reject all and Accept all. Rejected changes are written back to the file. If you had unsaved edits, they are kept: rejecting a change keeps your text. Built on CodeMirror 6 (MIT).
 
+- **Capability limits per agent.** Settings > Capabilities sets which tools and actions an agent may use at all, globally, per project or per agent profile: for example a research profile limited to reading and searching. The limits hold in every permission mode, Bypass included, a narrower scope can only narrow them, and subordinate agents keep their superior's limits. Fully refused tools are not offered to the model. Nothing changes until you set a limit.
+
 ### Improved
 - **Learned skills show how well they work.** Each use now records whether the task ended with an answer and how many problems came up, and the Learned skills window shows "worked 3 of 4 times". It also shows when a skill matched a request but was not used, which helps tell a weak skill from one A0W fails to pick up.
 - **Freezes record what caused them.** When the interface stalls for more than half a second, A0W notes which code was running (names only, no content), so the remaining freezes can be fixed one by one.

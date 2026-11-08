@@ -48,16 +48,29 @@ async def build_prompt(agent: Agent) -> str:
     # per-file kwargs registered by plugin config extensions (e.g. _09_text_editor_config)
     all_tool_kwargs: dict[str, dict[str, Any]] = agent.get_data(TOOL_KWARGS_KEY) or {}
 
+    try:
+        from plugins._capabilities.helpers import policy as capability_policy
+    except Exception:
+        capability_policy = None
+
     tools: list[str] = []
     for tool_file in tool_files:
         try:
             basename = os.path.basename(tool_file)
+            tool_name = basename[len("agent.system.tool."):-len(".md")]
+            if capability_policy and capability_policy.tool_hidden(agent, tool_name):
+                continue  # outside this agent's capabilities: not offered
             extra = all_tool_kwargs.get(basename, {})
             tool = _read_tool_prompt(agent, prompt_dirs, basename, extra)
             tools.append(tool)
         except Exception as e:
             PrintStyle().error(f"Error loading tool '{tool_file}': {e}")
 
+    if capability_policy:
+        limits = capability_policy.restrictions(agent)
+        if limits:
+            tools.append("## Capability limits\nThis agent may not use these tools or actions, in any mode: "
+                         + "; ".join(limits) + ". Do the task without them, or tell the user it needs a different agent.")
     tools_str = "\n\n".join(tools)
     prompt = agent.read_prompt("agent.system.tools.md", tools=tools_str)
 

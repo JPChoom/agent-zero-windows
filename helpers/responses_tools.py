@@ -85,6 +85,13 @@ def _local_tool_prompts(agent: Any) -> list[tuple[str, str]]:
 
 def _include_local_tool_prompt(agent: Any, tool_name: str) -> bool:
     try:
+        from plugins._capabilities.helpers import policy as capability_policy
+
+        if capability_policy.tool_hidden(agent, tool_name):
+            return False  # outside this agent's capabilities
+    except Exception:
+        pass
+    try:
         from plugins._a0_connector.helpers.remote_tool_prompts import (
             should_include_remote_tool_prompt,
         )

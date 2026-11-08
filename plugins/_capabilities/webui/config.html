@@ -1,0 +1,35 @@
+<html>
+<head>
+  <title>Capabilities</title>
+</head>
+<body>
+  <div x-data>
+    <div class="section-title">Capabilities</div>
+    <div class="section-description">
+      What an agent may use at all, in every permission mode, Bypass included. One pattern per line:
+      a tool (<code>browser</code>) or tool:action (<code>text_editor:write</code>,
+      <code>code_execution_tool:terminal</code>); <code>*</code> works. Global, project and agent-profile
+      settings all apply, so a narrower scope only narrows, and subordinates keep their superior's limits.
+    </div>
+    <div class="field">
+      <div class="field-label">
+        <div class="field-title">Allowed</div>
+        <div class="field-description"><code>*</code> allows everything. For a read-only agent, for example:
+          <code>text_editor:read</code>, <code>search_engine</code>, <code>document_query</code>.</div>
+      </div>
+      <div class="field-control">
+        <textarea rows="5" x-model="config.allow" placeholder="*"></textarea>
+      </div>
+    </div>
+    <div class="field">
+      <div class="field-label">
+        <div class="field-title">Never allowed</div>
+        <div class="field-description">Refused even when another line allows it.</div>
+      </div>
+      <div class="field-control">
+        <textarea rows="5" x-model="config.deny" placeholder="e.g. code_execution_tool"></textarea>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

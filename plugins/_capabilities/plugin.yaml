@@ -1,0 +1,9 @@
+name: _capabilities
+title: Capabilities
+description: Limits which tools and tool actions an agent may use at all, per project and agent profile, in every permission mode.
+version: 1.0.0
+always_enabled: true
+settings_sections:
+  - agent
+per_project_config: true
+per_agent_config: true
