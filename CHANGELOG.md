@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.6
+
+Agents can be limited to the tools you choose, run as independent named children, and use any model for any job; coding tasks get their own branch and a syntax check after every edit; the Editor reviews the agent's changes; and messaging chats can answer approval questions from the phone. An empty channel allowlist now answers nobody, and new learned skills wait for your approval.
 
 ### New
 - **Background jobs keep working when the Utility model's PC is off.** If a Utility model on another PC doesn't answer, its jobs move to the Main model and a banner says so, instead of memory saves and compression failing. They move back by themselves. You can turn this off in *Settings > Models > Background jobs*.
