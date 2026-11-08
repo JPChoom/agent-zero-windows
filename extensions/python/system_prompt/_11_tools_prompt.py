@@ -37,6 +37,17 @@ def _read_tool_prompt(agent: Agent, prompt_dirs: list[str], basename: str, extra
     return prompt
 
 
+def _declared_tool_name(basename: str, prompt: str) -> str:
+    """The tool name a prompt declares (code_exe.md describes code_execution_tool)."""
+    fallback = basename[len("agent.system.tool."):-len(".md")]
+    try:
+        from helpers.responses_tools import _tool_name_from_prompt
+
+        return _tool_name_from_prompt(prompt, fallback=fallback)
+    except Exception:
+        return fallback
+
+
 @extensible
 async def build_prompt(agent: Agent) -> str:
     # collect tool files from all prompt directories
@@ -57,11 +68,10 @@ async def build_prompt(agent: Agent) -> str:
     for tool_file in tool_files:
         try:
             basename = os.path.basename(tool_file)
-            tool_name = basename[len("agent.system.tool."):-len(".md")]
-            if capability_policy and capability_policy.tool_hidden(agent, tool_name):
-                continue  # outside this agent's capabilities: not offered
             extra = all_tool_kwargs.get(basename, {})
             tool = _read_tool_prompt(agent, prompt_dirs, basename, extra)
+            if capability_policy and capability_policy.tool_hidden(agent, _declared_tool_name(basename, tool)):
+                continue  # outside this agent's capabilities: not offered
             tools.append(tool)
         except Exception as e:
             PrintStyle().error(f"Error loading tool '{tool_file}': {e}")

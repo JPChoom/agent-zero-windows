@@ -3,7 +3,7 @@
   <title>Capabilities</title>
 </head>
 <body>
-  <div x-data>
+  <div x-data="{ known: [], async init() { try { const { callJsonApi } = await import('/js/api.js'); this.known = (await callJsonApi('/plugins/_capabilities/known', {})).tools || []; } catch { this.known = []; } } }">
     <div class="section-title">Capabilities</div>
     <div class="section-description">
       What an agent may use at all, in every permission mode, Bypass included. One pattern per line:
@@ -30,6 +30,29 @@
         <textarea rows="5" x-model="config.deny" placeholder="e.g. code_execution_tool"></textarea>
       </div>
     </div>
+    <div class="field">
+      <div class="field-label">
+        <div class="field-title">Never allowed in messaging chats</div>
+        <div class="field-description">For chats that came in over Telegram, WhatsApp, email, Discord or Slack, on top of the lines above.</div>
+      </div>
+      <div class="field-control">
+        <textarea rows="3" x-model="config.messaging_deny" placeholder="e.g. code_execution_tool"></textarea>
+      </div>
+    </div>
+    <div class="field" x-show="known.length">
+      <div class="field-label">
+        <div class="field-title">Tools on this install</div>
+        <div class="field-description">Names to use above, with the actions you can add after a colon.</div>
+      </div>
+      <div class="field-control capability-names">
+        <template x-for="item in known" :key="item.tool">
+          <div><code x-text="item.tool"></code><span x-show="item.actions.length" x-text="': ' + item.actions.join(', ')"></span></div>
+        </template>
+      </div>
+    </div>
+    <style>
+      .capability-names { max-height: 12rem; overflow: auto; font-size: 0.85rem; }
+    </style>
   </div>
 </body>
 </html>

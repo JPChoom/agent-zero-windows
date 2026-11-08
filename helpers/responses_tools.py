@@ -38,6 +38,8 @@ def build_responses_function_tools(agent: Any) -> tuple[list[dict[str, Any]], di
         )
 
     for tool_name, tool in _mcp_tools(agent):
+        if not _include_local_tool_prompt(agent, tool_name):
+            continue  # outside this agent's capabilities
         native_name = _native_tool_name(tool_name)
         name_map[native_name] = tool_name
         tools.append(

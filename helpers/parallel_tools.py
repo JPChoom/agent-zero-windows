@@ -57,6 +57,8 @@ class ParallelJob:
     tool_args: dict[str, Any]
     kind: JobKind
     parent_agent: str = ""
+    # the starting agent's capability scopes: a worker must not escape them
+    capability_scopes: list = field(default_factory=list)
     state: JobState = "pending"
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
@@ -72,6 +74,25 @@ class ParallelJob:
         end = self.completed_at or time.time()
         start = self.started_at or self.created_at
         return max(0.0, end - start)
+
+
+def _capability_scopes(agent) -> list:
+    try:
+        from plugins._capabilities.helpers import policy
+
+        return policy.worker_scopes(agent)
+    except Exception:
+        return []
+
+
+def _set_capability_scopes(worker_context, job) -> None:
+    if job.capability_scopes:
+        try:
+            from plugins._capabilities.helpers import policy
+
+            worker_context.set_data(policy.CONTEXT_SCOPES_KEY, list(job.capability_scopes))
+        except Exception:
+            pass
 
 
 def extract_tool_calls(args: dict[str, Any]) -> Any:
@@ -234,6 +255,7 @@ async def start_parallel_jobs(
             tool_args=call.tool_args,
             kind=kind,
             parent_agent=str(getattr(agent, "agent_name", "") or ""),
+            capability_scopes=_capability_scopes(agent),
         )
         job_store[job.id] = job
         jobs.append(job)
@@ -466,6 +488,7 @@ async def _run_subordinate_context_job(parent_context_id: str, job: ParallelJob)
     worker_context.set_data(PARALLEL_WORKER_JOB_KEY, job.id)
     worker_context.set_data(PARALLEL_WORKER_KIND_KEY, job.kind)
     worker_context.set_data(PARALLEL_WORKER_PARENT_AGENT_KEY, job.parent_agent)
+    _set_capability_scopes(worker_context, job)
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_ID_KEY, parent_context.id)
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_KIND_KEY, "parallel")
     worker_context.set_output_data(CHILD_PARENT_CONTEXT_LABEL_KEY, child_name)
@@ -510,6 +533,7 @@ async def _run_direct_tool_job(parent_context_id: str, job: ParallelJob) -> str:
         worker_context.set_data(PARALLEL_WORKER_JOB_KEY, job.id)
         worker_context.set_data(PARALLEL_WORKER_KIND_KEY, job.kind)
         worker_context.set_data(PARALLEL_WORKER_PARENT_AGENT_KEY, job.parent_agent)
+        _set_capability_scopes(worker_context, job)
         job.worker_context_id = worker_context.id
         _copy_project(parent_context, worker_context)
 

@@ -10,3 +10,8 @@ allow: "*"
 
 # Never allowed for this scope, in any mode.
 deny: ""
+
+# Also never allowed in chats that came in over a messaging channel
+# (Telegram, WhatsApp, email, Discord, Slack). Per channel, a `channels:`
+# mapping takes allow/deny lists too, e.g.  channels: {telegram: {deny: "browser"}}
+messaging_deny: ""

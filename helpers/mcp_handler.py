@@ -1088,8 +1088,9 @@ class MCPConfig(BaseModel):
                     tools.append({f"{server.name}.{tool['name']}": tool_copy})
             return tools
 
-    def get_tools_prompt(self, server_name: str = "") -> str:
-        """Get a prompt for all tools"""
+    def get_tools_prompt(self, server_name: str = "", include=None) -> str:
+        """Get a prompt for all tools; `include(qualified_name)` can leave
+        tools out (capability policies)."""
 
         # just to wait for pending initialization
         with self.__lock:
@@ -1112,6 +1113,8 @@ class MCPConfig(BaseModel):
                 tools = server.get_tools()
 
                 for tool in tools:
+                    if include is not None and not include(f"{server_name}.{tool['name']}"):
+                        continue
                     prompt += (
                         f"\n### {server_name}.{tool['name']}:\n"
                         f"{tool['description']}\n\n"

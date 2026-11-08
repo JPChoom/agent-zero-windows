@@ -15,6 +15,7 @@ class CapabilityGate(Extension):
     async def execute(self, tool_name: str = "", tool_args: dict | None = None, **kwargs):
         if not tool_name or not self.agent:
             return
-        reason = policy.denial(self.agent, policy.capability_id(tool_name, tool_args))
+        # the call itself and every call it bundles (browser multi, parallel)
+        reason = policy.denial_for_call(self.agent, tool_name, tool_args)
         if reason:
             raise RepairableException(reason)

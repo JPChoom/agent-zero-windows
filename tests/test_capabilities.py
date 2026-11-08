@@ -161,10 +161,20 @@ def test_the_model_is_told_its_limits(scopes):
     assert "code_execution_tool" in notes
 
 
+def test_prompts_are_matched_by_the_tool_name_they_declare():
+    import importlib
+
+    module = importlib.import_module("extensions.python.system_prompt._11_tools_prompt")
+    code_prompt = (ROOT / "prompts/agent.system.tool.code_exe.md")
+    if not code_prompt.exists():
+        code_prompt = next(ROOT.glob("plugins/*/prompts/agent.system.tool.code_exe.md"))
+    assert module._declared_tool_name("agent.system.tool.code_exe.md", code_prompt.read_text(encoding="utf-8")) == "code_execution_tool"
+
+
 def test_the_prompt_and_native_tools_use_the_policy():
     tools_prompt = (ROOT / "extensions/python/system_prompt/_11_tools_prompt.py").read_text(encoding="utf-8")
     native = (ROOT / "helpers/responses_tools.py").read_text(encoding="utf-8")
-    assert "tool_hidden(agent, tool_name)" in tools_prompt and "Capability limits" in tools_prompt
+    assert "tool_hidden(agent, _declared_tool_name(basename, tool))" in tools_prompt and "Capability limits" in tools_prompt
     assert "tool_hidden(agent, tool_name)" in native
 
 
@@ -183,3 +193,83 @@ def test_a_changed_policy_takes_effect_at_once(scopes):
     path = plugins.determine_plugin_asset_path("", "", "", plugins.CONFIG_FILE_NAME)
     os.utime(path, (time.time() + 5, time.time() + 5))  # a later save, even within the same second
     assert policy.is_allowed(_agent(), "browser:navigate")
+
+
+# -- messaging channels -------------------------------------------------------------
+
+def _channel_agent(channel, profile=""):
+    agent = _agent(profile)
+    agent.context = SimpleNamespace(data={"channel_origin": channel} if channel else {})
+    return agent
+
+
+def test_messaging_chats_get_their_extra_limits(scopes):
+    scopes(messaging_deny="code_execution_tool")
+    assert not policy.is_allowed(_channel_agent("telegram"), "code_execution_tool:terminal")
+    assert policy.is_allowed(_channel_agent(""), "code_execution_tool:terminal")  # the WebUI is unaffected
+
+
+def test_a_single_channel_can_be_limited(scopes):
+    scopes(channels={"email": {"deny": "browser"}})
+    assert not policy.is_allowed(_channel_agent("email"), "browser:navigate")
+    assert policy.is_allowed(_channel_agent("telegram"), "browser:navigate")
+
+
+def test_the_model_sees_its_messaging_limits(scopes):
+    scopes(messaging_deny="code_execution_tool")
+    assert "code_execution_tool" in policy.restrictions(_channel_agent("whatsapp"))
+    assert "code_execution_tool" not in policy.restrictions(_channel_agent(""))
+
+
+# -- bundled calls ------------------------------------------------------------------
+
+def test_every_step_of_a_browser_multi_call_is_checked(scopes):
+    scopes(deny="browser:evaluate")
+    args = {"action": "multi", "calls": [{"action": "navigate", "url": "https://example.com"}, {"action": "evaluate", "script": "1"}]}
+    assert "browser:evaluate is not allowed" in policy.denial_for_call(_agent(), "browser", args)
+    assert policy.denial_for_call(_agent(), "browser", {"action": "multi", "calls": [{"action": "navigate"}]}) == ""
+
+
+def test_every_call_of_a_parallel_batch_is_checked(scopes):
+    scopes(deny="code_execution_tool")
+    args = {"tool_calls": [{"tool_name": "search_engine", "tool_args": {"query": "x"}},
+                           {"tool_name": "code_execution_tool", "tool_args": {"runtime": "terminal", "code": "dir"}}]}
+    assert "code_execution_tool:terminal" in policy.denial_for_call(_agent(), "parallel", args)
+
+
+def test_a_parallel_worker_keeps_the_limits_of_the_agent_that_started_it(scopes):
+    scopes(profile="researcher", deny="code_execution_tool")
+    child = _agent("developer", superior=_agent("researcher"))
+    scopes_carried = policy.worker_scopes(child)
+    assert ["", "researcher"] in scopes_carried
+    worker = _agent("developer")  # a fresh top-level agent in a hidden context
+    worker.context = SimpleNamespace(data={policy.CONTEXT_SCOPES_KEY: scopes_carried})
+    assert not policy.is_allowed(worker, "code_execution_tool:terminal")
+
+
+def test_jobs_carry_and_workers_receive_the_scopes():
+    source = (ROOT / "helpers/parallel_tools.py").read_text(encoding="utf-8")
+    assert "capability_scopes=_capability_scopes(agent)" in source
+    calls = [line for line in source.splitlines() if line.strip() == "_set_capability_scopes(worker_context, job)"]
+    assert len(calls) == 2  # both kinds of worker
+
+
+# -- MCP and the settings list -------------------------------------------------------
+
+def test_the_mcp_prompt_leaves_out_refused_tools(monkeypatch):
+    from helpers import mcp_handler
+
+    server = SimpleNamespace(name="files", description="file server", get_tools=lambda: [
+        {"name": "read", "description": "read a file", "input_schema": {}},
+        {"name": "delete", "description": "delete a file", "input_schema": {}}])
+    config = object.__new__(mcp_handler.MCPConfig)
+    monkeypatch.setattr(mcp_handler.MCPConfig, "servers", [server], raising=False)
+    monkeypatch.setattr(mcp_handler.MCPConfig, "_MCPConfig__lock", __import__("threading").Lock(), raising=False)
+    prompt = config.get_tools_prompt(include=lambda name: name != "files.delete")
+    assert "files.read" in prompt and "files.delete" not in prompt
+
+
+def test_the_settings_list_names_this_installs_tools():
+    names = {item["tool"]: item["actions"] for item in policy.known_capabilities()}
+    assert "text_editor" in names and "read" in names["text_editor"]
+    assert "code_execution_tool" in names

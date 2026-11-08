@@ -24,9 +24,13 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 from typing import Any
 
 PLUGIN = "_capabilities"
+# Scopes a hidden worker context inherits from the agent that started it (a
+# parallel job runs as a fresh top-level agent, outside the superior chain).
+CONTEXT_SCOPES_KEY = "_capability_scopes"
 # Tools every agent needs to finish a turn or report trouble.
 ALWAYS_ALLOWED = {"response"}
 
@@ -60,10 +64,30 @@ def _matches(capability: str, pattern: str) -> bool:
     return fnmatch.fnmatchcase(capability, pattern)
 
 
-def _layer_allows(layer: dict, capability: str) -> bool:
+def _layer_allows(layer: dict, capability: str, channel: str = "") -> bool:
     allow = _patterns(layer.get("allow")) if "allow" in layer else ["*"]
     deny = _patterns(layer.get("deny"))
-    return any(_matches(capability, p) for p in allow) and not any(_matches(capability, p) for p in deny)
+    if not any(_matches(capability, p) for p in allow) or any(_matches(capability, p) for p in deny):
+        return False
+    if channel:
+        # A chat that came in over Telegram, WhatsApp, email, Discord or Slack.
+        if any(_matches(capability, p) for p in _patterns(layer.get("messaging_deny"))):
+            return False
+        per_channel = (layer.get("channels") or {}).get(channel) if isinstance(layer.get("channels"), dict) else None
+        if isinstance(per_channel, dict) and not _layer_allows(per_channel, capability):
+            return False
+    return True
+
+
+def _channel(agent) -> str:
+    """The messaging channel the agent's chat acts for ("" for the WebUI)."""
+    try:
+        from helpers import channels, parallel_tools
+
+        context, _orphaned = parallel_tools.governing_context(getattr(agent, "context", None))
+        return channels.channel_of(context or getattr(agent, "context", None))
+    except Exception:
+        return ""
 
 
 _cache: dict[str, tuple[float, dict | None]] = {}  # path -> (mtime, policy): checked on every tool call
@@ -143,14 +167,70 @@ def _agent_chain(agent):
             agent = None
 
 
+def scope_chain(agent) -> list[tuple[str, str]]:
+    """Every (project, profile) whose policy binds this agent: its own, each
+    superior's, and those a worker context inherited."""
+    found: list[tuple[str, str]] = []
+    for member in _agent_chain(agent):
+        candidates = [_scope_of(member)]
+        data = getattr(getattr(member, "context", None), "data", None)
+        inherited = data.get(CONTEXT_SCOPES_KEY) if isinstance(data, dict) else None
+        if isinstance(inherited, list):
+            candidates += [tuple(item) for item in inherited if isinstance(item, (list, tuple)) and len(item) == 2]
+        for scope in candidates:
+            if scope not in found:
+                found.append(scope)
+    return found
+
+
+def _all_layers(agent) -> list[dict]:
+    result = []
+    for project, profile in scope_chain(agent):
+        result += layers(project, profile)
+    return result
+
+
 def is_allowed(agent, capability: str) -> bool:
     if capability.split(":", 1)[0] in ALWAYS_ALLOWED:
         return True
-    for member in _agent_chain(agent):
-        for layer in layers(*_scope_of(member)):
-            if not _layer_allows(layer, capability):
-                return False
-    return True
+    channel = _channel(agent)
+    return all(_layer_allows(layer, capability, channel) for layer in _all_layers(agent))
+
+
+def calls_of(tool_name: str, tool_args: dict | None) -> list[str]:
+    """The capability of a call and of every call it bundles: a browser
+    `multi` call's steps, a `parallel` call's tool calls."""
+    found = [capability_id(tool_name, tool_args)]
+    args = tool_args if isinstance(tool_args, dict) else {}
+    tool = str(tool_name or "").split(":", 1)[0].lower()
+    if tool == "browser" and found[0] == "browser:multi":
+        for step in args.get("calls") or []:
+            if isinstance(step, dict):
+                found.append(capability_id("browser", step))
+    if tool == "parallel":
+        try:
+            from helpers import parallel_tools
+
+            raw = parallel_tools.extract_tool_calls(args)
+            if raw is not None:
+                for call in parallel_tools.normalize_parallel_tool_calls(raw):
+                    found += calls_of(call.tool_name, call.tool_args)
+        except Exception:
+            pass  # a malformed batch fails in the tool itself
+    return found
+
+
+def worker_scopes(agent) -> list[list[str]]:
+    """What a worker context started by `agent` must carry (CONTEXT_SCOPES_KEY)."""
+    return [list(scope) for scope in scope_chain(agent)]
+
+
+def denial_for_call(agent, tool_name: str, tool_args: dict | None) -> str:
+    for capability in calls_of(tool_name, tool_args):
+        reason = denial(agent, capability)
+        if reason:
+            return reason
+    return ""
 
 
 def denial(agent, capability: str) -> str:
@@ -171,23 +251,69 @@ def tool_hidden(agent, tool: str) -> bool:
     if is_allowed(agent, tool):
         return False
     # The bare tool is refused, but a specific action may still be allowed.
-    for member in _agent_chain(agent):
-        for layer in layers(*_scope_of(member)):
-            if any(p.startswith(tool + ":") for p in _patterns(layer.get("allow"))):
-                return False
+    for layer in _all_layers(agent):
+        if any(p.startswith(tool + ":") for p in _patterns(layer.get("allow"))):
+            return False
     return True
 
 
 def restrictions(agent) -> list[str]:
     """The deny patterns that apply to this agent, for the prompt notice."""
     found: list[str] = []
-    for member in _agent_chain(agent):
-        for layer in layers(*_scope_of(member)):
-            for pattern in _patterns(layer.get("deny")):
-                if pattern not in found:
-                    found.append(pattern)
-            if "allow" in layer and _patterns(layer.get("allow")) != ["*"]:
-                note = "only: " + ", ".join(_patterns(layer.get("allow")) or ["nothing"])
-                if note not in found:
-                    found.append(note)
+    channel = _channel(agent)
+    for layer in _all_layers(agent):
+        denied = _patterns(layer.get("deny"))
+        if channel:
+            denied += _patterns(layer.get("messaging_deny"))
+            per_channel = (layer.get("channels") or {}).get(channel) if isinstance(layer.get("channels"), dict) else None
+            if isinstance(per_channel, dict):
+                denied += _patterns(per_channel.get("deny"))
+        for pattern in denied:
+            if pattern not in found:
+                found.append(pattern)
+        if "allow" in layer and _patterns(layer.get("allow")) != ["*"]:
+            note = "only: " + ", ".join(_patterns(layer.get("allow")) or ["nothing"])
+            if note not in found:
+                found.append(note)
     return found
+
+
+# Actions users can write after a tool name, for the list in Settings.
+KNOWN_ACTIONS = {
+    "text_editor": ["read", "write", "patch"],
+    "code_execution_tool": ["terminal", "python", "nodejs", "output", "reset"],
+    "browser": ["open", "navigate", "content", "click", "type", "submit", "evaluate", "multi", "screenshot", "close"],
+    "parallel": ["start", "await", "cancel"],
+}
+
+
+def known_capabilities(agent=None) -> list[dict]:
+    """Tool names this install offers, with their known actions."""
+    from helpers import files, subagents
+
+    names: set[str] = set()
+    try:
+        dirs = subagents.get_paths(agent, "prompts") if agent else [files.get_abs_path("prompts")]
+        dirs += [str(p) for p in __import__("pathlib").Path(files.get_abs_path("plugins")).glob("*/prompts")]
+        from helpers.responses_tools import _tool_name_from_prompt
+
+        for path in files.get_unique_filenames_in_dirs(dirs, "agent.system.tool.*.md"):
+            base = os.path.basename(path)
+            fallback = base[len("agent.system.tool."):-len(".md")]
+            try:
+                names.add(_tool_name_from_prompt(files.read_file(path), fallback=fallback))
+            except Exception:
+                names.add(fallback)
+    except Exception:
+        pass
+    try:
+        from helpers import mcp_handler
+
+        for entry in mcp_handler.MCPConfig.get_instance().get_tools() or []:
+            if isinstance(entry, dict):
+                names.update(str(name) for name in entry)
+    except Exception:
+        pass
+    names.discard("tools")
+    names.discard("tools_vision")
+    return [{"tool": name, "actions": KNOWN_ACTIONS.get(name, [])} for name in sorted(names)]
