@@ -15,6 +15,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 - **Review the agent's changes in the Editor.** When the agent changes a file you have open, the Editor shows each change against the text from before, with Accept and Reject on every change, plus Reject all and Accept all. Rejected changes are written back to the file. If you had unsaved edits, they are kept: rejecting a change keeps your text. Built on CodeMirror 6 (MIT).
 
+- **Answer approval questions from your phone.** In a chat that came in over Telegram, WhatsApp, Discord or Slack, permission and safety questions are now also sent to that chat with a short code: reply `yes 7KQ2` or `no 7KQ2`. Only senders on that channel's allowlist can answer, and only when the list is not empty. Email never answers approvals, because sender addresses are easy to fake.
 - **A branch and folder per coding task.** A new `coding_task` tool gives a coding task its own git worktree: it works there, shows its diff, commits on its own branch and merges back only by fast-forward, refusing when the main checkout has changed or has unsaved work. Commits and merges ask first in Manual mode.
 - **A syntax check after every edit.** When the agent writes or patches a Python, JSON, YAML, TOML or JavaScript file, A0W checks that it still parses and tells the agent in the same step. It runs no code and is on by default (Coding controller settings).
 - **Read-only coding roles stay read-only everywhere.** The code reviewer and diagnostician now ship capability limits, so they cannot change anything through a child agent, a parallel call, the browser or an MCP tool either.
@@ -35,6 +36,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **The timing line no longer blames a hook for your thinking time.** Waiting for you to answer a safety or permission question counted as hook time, which made the safety check look slow. It now shows separately as "waiting for you".
 
 ### Security
+- **An empty allowlist now means nobody, on every channel.** Telegram, WhatsApp and email used to answer anyone when their allowed-users list was empty; Discord and Slack already answered nobody. Add yourself to a channel's list for it to answer you.
 - **The setup script installs only signed releases.** `installer/install.ps1` now verifies the release tag against a release key pinned in the script before checking anything out, and installs only from the hash-checked package list.
 - **New self-learned skills wait for your approval.** A skill learned from a task that only used this PC used to go live at once. Every new one now waits under *Learned skills > Needs a look* until you approve it. You can turn this off in the Skills settings.
 - **A skill learned from a downloaded file now waits for your review.** Reading a file on this PC counted as your own content, so a skill learned from a file downloaded earlier went live at once. A file in a downloads folder, or one Windows marks as coming from the internet even after it was moved, now counts as outside content, like a web page.

@@ -11,7 +11,7 @@
 
 ## Runtime Contracts
 
-- `is_allowed`: an empty allowlist allows nobody. Matches ids and (case-insensitive, `@` optional) names.
+- `is_allowed`: an empty allowlist allows nobody. The same rule holds on every channel: Telegram (`_is_allowed`), WhatsApp (`allowed_numbers`) and email (`sender_whitelist`) answer nobody when their list is empty (owner decision 2026-11-08). Matches ids and (case-insensitive, `@` optional) names.
 - `ChannelState(plugin)` persists `usr/plugins/<plugin>/state.json` (`chats`: key -> context id), written atomically.
 - `get_or_create_context` stamps the integration's context data on new chats (including the `_permissions` channel marker key) and refreshes non-underscore keys on reuse; stale ids are dropped.
 - `deliver` queues through `helpers/message_queue` while a run is active and returns the notice to send back; otherwise logs and starts the run.

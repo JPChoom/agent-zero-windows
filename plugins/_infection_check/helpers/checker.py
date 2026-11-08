@@ -590,6 +590,12 @@ class InfectionChecker:
             # the gated call proceed. A failure to even set up the decision
             # must block, not pass.
             future = approval_registry.register(approval_id)
+            try:
+                from helpers import channel_approvals
+
+                channel_approvals.announce(agent, approval_id, f"Safety check: {question}")
+            except Exception:
+                pass  # the WebUI card still asks
             with perf.waiting_for_user():
                 approved = await asyncio.wait_for(future, timeout=timeout)
         except (TimeoutError, asyncio.TimeoutError):

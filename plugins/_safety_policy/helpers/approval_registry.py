@@ -58,7 +58,18 @@ def resolve(approval_id: str, approved: bool) -> bool:
     _meta.pop(approval_id, None)
     if future is None or future.done():
         return False
-    future.set_result(approved)
+    # The answer can arrive on another thread's loop (the WebUI server, a
+    # messaging bot): wake the waiting loop safely instead of setting the
+    # result from the wrong thread.
+    loop = future.get_loop()
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is loop:
+        future.set_result(approved)
+    else:
+        loop.call_soon_threadsafe(lambda: future.done() or future.set_result(approved))
     return True
 
 

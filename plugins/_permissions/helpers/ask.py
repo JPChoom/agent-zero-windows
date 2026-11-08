@@ -56,6 +56,9 @@ async def request_approval(
         pass
 
     future = approval_registry.register(approval_id)
+    from helpers import channel_approvals
+
+    channel_approvals.announce(agent, approval_id, f"{tool_name} {rules.target_text(tool_name, tool_args)} - {reason}")
     try:
         with perf.waiting_for_user():
             approved = await asyncio.wait_for(future, timeout=timeout)

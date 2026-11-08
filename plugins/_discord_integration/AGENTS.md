@@ -13,6 +13,8 @@
 
 ## Local Contracts
 
+- `helpers/allowlist.py` tells phone approvals (`helpers/channel_approvals.py`) whether this bot's `allowed_users` is set.
+
 - `allowed_users` empty = nobody; ignored senders are logged with their id. Other bots and the bot itself are ignored.
 - DMs are always considered; servers follow `server_mode` (mention | all | off) and optional `allowed_channels`. Only `all` requests the privileged Message Content intent.
 - New chats carry `discord_channel_id` (`CTX_CHANNEL`), the `_permissions` channel marker, so Discord chats are capped at `channel_mode_caps.discord` (default manual).

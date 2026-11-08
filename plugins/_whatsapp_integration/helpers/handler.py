@@ -91,9 +91,13 @@ async def poll_messages(config: dict) -> None:
     # Allowed-numbers filtering is authoritative in Python.
     allowed_set = normalize_allowed_numbers(config.get("allowed_numbers"))
 
+    if not allowed_set and messages:
+        # Empty = nobody, the same rule on every channel.
+        PrintStyle.warning("WhatsApp: allowed numbers is empty, so no message is answered. Add your number in its settings.")
+        return
+
     for msg in messages:
         try:
-            # Filter by allowed numbers if configured
             if allowed_set:
                 sender_num = normalize_number(msg.get("senderNumber", "") or msg.get("senderId", ""))
                 if sender_num not in allowed_set:

@@ -148,8 +148,8 @@
                     <div class="field">
                       <div class="field-label">
                         <div class="field-title">Allowed users</div>
-                        <div class="field-description">Comma-separated @usernames or numeric IDs. Leave empty only if
-                          you truly want open access.</div>
+                        <div class="field-description">Comma-separated @usernames or numeric IDs. Empty = nobody: the
+                          bot answers only the people listed here.</div>
                       </div>
                       <div class="field-control">
                         <input type="text" :value="$store.telegramConfig.whitelistText(bot)"

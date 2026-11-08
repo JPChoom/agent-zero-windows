@@ -236,6 +236,12 @@ class SafetyCommandPolicy(Extension):
 
         future = approval_registry.register(approval_id, meta={"remember_host": remember_host})
         try:
+            from helpers import channel_approvals
+
+            channel_approvals.announce(self.agent, approval_id, f"{decision.category} - {code[:300]}")
+        except Exception:
+            pass  # the WebUI card still asks
+        try:
             with perf.waiting_for_user():
                 approved = await asyncio.wait_for(future, timeout=timeout)
         except TimeoutError:

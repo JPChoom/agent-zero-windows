@@ -27,7 +27,7 @@ Dependencies are auto-installed on first bridge start if missing.
 5. Use `/project <name>`, `/config <preset>`, or `/send` in WhatsApp to control the active chat directly
 
 The WhatsApp session persists across restarts in `tmp/whatsapp/session/`. No re-pairing needed unless you disconnect via settings.
-Be careful: if you use your personal number and leave `allowed_numbers` open, other people could misuse your Agent Zero.
+Only numbers in `allowed_numbers` are answered; an empty list answers nobody.
 
 ## Configuration
 
@@ -38,7 +38,7 @@ Be careful: if you use your personal number and leave `allowed_numbers` open, ot
 | `allow_group` | Respond in group chats when mentioned or replied to | `false` |
 | `bridge_port` | Local HTTP port for bridge | `3100` |
 | `poll_interval_seconds` | Poll frequency (min 2) | `3` |
-| `allowed_numbers` | Phone numbers without + prefix | `[]` (all) |
+| `allowed_numbers` | Phone numbers without + prefix | `[]` (nobody) |
 | `project` | Activate project for WA chats | `""` |
 | `agent_instructions` | Extra agent instructions | `""` |
 

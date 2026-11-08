@@ -13,6 +13,8 @@
 
 ## Local Contracts
 
+- An empty `sender_whitelist` answers nobody (one rule for every channel, owner decision 2026-11-08). Email never answers approval questions: a sender address is easy to fake.
+
 - Treat mailbox credentials and downloaded attachments as sensitive.
 - Preserve UID/state tracking so restarts do not duplicate old mail.
 - Keep SMTP replies threaded and safe around user-visible errors.

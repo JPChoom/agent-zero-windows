@@ -99,7 +99,7 @@ def cleanup_old_attachments():
 def _is_allowed(bot_cfg: dict, user_id: int, username: str | None) -> bool:
     allowed = bot_cfg.get("allowed_users") or []
     if not allowed:
-        return True  # empty = allow all
+        return False  # empty = nobody (same rule on every channel)
     for entry in allowed:
         entry_str = str(entry).strip()
         if entry_str.startswith("@"):

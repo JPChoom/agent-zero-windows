@@ -13,6 +13,8 @@
 
 ## Local Contracts
 
+- `helpers/allowlist.py` tells phone approvals (`helpers/channel_approvals.py`) whether this bot's `allowed_users` is set.
+
 - Needs both a bot token (xoxb-) and an app-level token (xapp-, connections:write); no public URL or webhook.
 - `allowed_users` empty = nobody; ignored member ids are logged. Bot messages, edits and the app's own messages are ignored.
 - DMs (`message.im`) are always considered; channels follow `channel_mode` (mention via `app_mention` | all via `message.channels` | off) and optional `allowed_channels`. A mention that also arrives as a channel message is answered once.

@@ -78,6 +78,11 @@ async def _poll_single_handler(handler_cfg: dict, state: dict):
     name = handler_cfg.get("name", "default")
     account_type = handler_cfg.get("account_type", "imap")
     whitelist = handler_cfg.get("sender_whitelist") or []
+    if not whitelist:
+        # Empty = nobody, the same rule on every channel: an open inbox would
+        # let anyone who emails it give the agent work.
+        PrintStyle.warning(f"Email ({handler_cfg.get('name', 'default')}): allowed senders is empty, so no email is answered. Add your address in its settings.")
+        return
     last_uid = state.get(name, {}).get("last_uid", 0)
     process_unread_days = int(handler_cfg.get("process_unread_days", 0))
 

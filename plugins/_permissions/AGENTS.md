@@ -26,6 +26,7 @@
 - The gate refuses, in every mode, any tool call whose args reference `permissions_bypass`, `permissions_mode`, `security_audit` (the agent must not unlock itself or erase the trail), or the safety plugins' code and settings (`plugins/_safety_policy`, `plugins/_infection_check`, `plugins/_permissions`, which also covers their `usr/plugins/` folders): changing them switches a floor off, and reading them is how an agent looks for a way around a refusal.
 - `_safety_policy`'s `_05_` floor runs before this `_06_` gate; deny rules bind even in bypass.
 - Messaging chats are capped: `config.get_config` detects the channel from context data (`CHANNEL_MARKERS`: telegram, whatsapp, email, discord, slack) and lowers the mode to `channel_mode_caps[channel]` (default manual; bypass is never a valid cap). New channel plugins must set their marker key on the chat context.
+- Messaging chats can answer approval cards from the phone (`helpers/channel_approvals.py`): Telegram, WhatsApp, Discord and Slack with a non-empty allowlist, never email.
 - Honest limit: an agent already in Bypass runs as the same Windows user; the lock protects against other people and accidental Bypass, not a compromised unlocked agent.
 
 ## Work Guidance

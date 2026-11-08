@@ -14,6 +14,8 @@
 
 ## Local Contracts
 
+- An empty `allowed_numbers` answers nobody (one rule for every channel, owner decision 2026-11-08); `helpers/allowlist.py` tells phone approvals whether the list is set.
+
 - Treat WhatsApp sessions, QR data, phone numbers, attachments, and bridge state as sensitive.
 - Keep allowed-number and group-response controls enforced.
 - Do not leave unmanaged bridge services outside plugin-owned runtime paths.
