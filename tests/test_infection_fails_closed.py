@@ -173,6 +173,24 @@ def test_a_failed_check_is_retried_on_the_main_model(failure):
     assert _passed(agent) and agent.main.calls == 1 and _pending(agent) is None
 
 
+@pytest.mark.parametrize("verdict,passes", [("<ok/>", True), ("<terminate/>", False)])
+def test_a_tool_call_with_no_streamed_text_is_still_judged(verdict, passes):
+    """A native function call can arrive without any streamed reasoning or
+    response; the check used to skip it and let the tool run unchecked."""
+    agent = _Agent(_Model(verdict), _Model(verdict))
+    checker = _checker()
+    checker.reasoning_log = ""
+    checker.response_log = ""
+    if passes:
+        asyncio.run(_gate(checker, agent))
+        assert _passed(agent)
+    else:
+        with pytest.raises(HandledException):
+            asyncio.run(_gate(checker, agent))
+        assert not _passed(agent)
+    assert agent.utility.calls + agent.main.calls == 1
+
+
 def test_the_main_models_verdict_counts_when_it_blocks():
     agent = _Agent(_Model(ConnectionError("down")), _Model("<terminate/>"))
     with pytest.raises(HandledException):

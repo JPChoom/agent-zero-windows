@@ -52,6 +52,20 @@ $AppName = "Agent Zero for Windows"
 $UninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AgentZeroWindows"
 
 function Step($text) { Write-Host "==> $text" -ForegroundColor Cyan }
+
+# The release signing key, pinned here rather than read from the download:
+# a substituted repository or tag can't bring its own key. Same key as
+# conf/release_signers (tests/test_installer_signature.py keeps them equal).
+$ReleaseSigner = 'JPChoom@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGnYkgiTU77cGSXFZgnbr/kSVzRG+VDp3Lv4H856tz1p Agent Zero for Windows release signing'
+
+function Confirm-ReleaseTag($tag) {
+    $signers = Join-Path ([System.IO.Path]::GetTempPath()) "a0w-release-signers-$PID"
+    Set-Content -Path $signers -Value $ReleaseSigner -Encoding ascii
+    try {
+        & git -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$signers" verify-tag $tag 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { Fail "$tag is not signed by the Agent Zero for Windows release key. Nothing was installed." }
+    } finally { Remove-Item $signers -ErrorAction SilentlyContinue }
+}
 function Fail($text) { Write-Host "ERROR: $text" -ForegroundColor Red; exit 1 }
 
 # --- the one supported configuration -------------------------------------
@@ -101,14 +115,21 @@ if (Test-Path (Join-Path $app ".git")) {
         if ($dirty) { Fail "The install has local changes; not touching it. ($app)" }
         & git fetch --quiet --tags origin
         if ($LASTEXITCODE -ne 0) { Fail "git fetch failed." }
+        Confirm-ReleaseTag $Version
         & git -c advice.detachedHead=false checkout --quiet "refs/tags/$Version"
         if ($LASTEXITCODE -ne 0) { Fail "Release $Version not found." }
     } finally { Pop-Location }
 } else {
     if ((Test-Path $app) -and (Get-ChildItem $app -Force | Select-Object -First 1)) { Fail "$app exists and is not an Agent Zero install." }
     Step "Downloading $AppName $Version"
-    & git clone --quiet --depth 1 --branch $Version $RepoUrl $app
+    & git clone --quiet --depth 1 --no-checkout --branch $Version $RepoUrl $app
     if ($LASTEXITCODE -ne 0) { Fail "git clone failed." }
+    Push-Location $app
+    try {
+        Confirm-ReleaseTag $Version
+        & git -c advice.detachedHead=false checkout --quiet "refs/tags/$Version"
+        if ($LASTEXITCODE -ne 0) { Fail "Release $Version could not be checked out." }
+    } finally { Pop-Location }
 }
 
 # --- Python environment ---------------------------------------------------------
@@ -119,15 +140,17 @@ if (-not (Test-Path $venvPython)) {
     if ($LASTEXITCODE -ne 0) { Fail "Could not create .venv." }
 }
 $lock = Join-Path $app "requirements.lock.txt"
-$reqs = if (Test-Path $lock) { $lock } else { Join-Path $app "requirements.txt" }
+# Only the hash-checked lock: a release without one is refused, never
+# installed from unpinned requirements.txt.
+if (-not (Test-Path $lock)) { Fail "Release $Version has no requirements.lock.txt; not installing unchecked packages." }
+$reqs = $lock
 Step "Installing packages from $(Split-Path $reqs -Leaf) (this takes a while the first time)"
 # A private pip cache inside the install: the shared per-user cache can hold
 # files this account may not read (left by an earlier run as another user or
 # as administrator), which made pip fail with "Permission denied".
 $env:PIP_CACHE_DIR = Join-Path $app ".pip-cache"
 & $venvPython -m pip install --disable-pip-version-check --quiet --upgrade pip
-$hashFlag = if ($reqs -eq $lock) { "--require-hashes" } else { $null }
-& $venvPython -m pip install --disable-pip-version-check --quiet $hashFlag -r $reqs
+& $venvPython -m pip install --disable-pip-version-check --quiet --require-hashes -r $reqs
 if ($LASTEXITCODE -ne 0) {
     Fail "Package installation failed. See the messages above. Running setup again continues where it stopped."
 }

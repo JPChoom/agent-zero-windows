@@ -20,11 +20,15 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **Freezes record what caused them.** When the interface stalls for more than half a second, A0W notes which code was running (names only, no content), so the remaining freezes can be fixed one by one.
 
 ### Fixed
+- **A chat save never writes over the last good copy.** If Windows kept the chat file locked, a save fell back to writing it in place, which could leave it half written if A0W stopped at that moment. The old copy is now kept and the save is retried a few seconds later.
+- **The safety check always judges a tool call,** even when nothing was collected from the model's stream, as can happen with native function calls. It used to let such a call run unchecked.
+- **The automatic prompt cache fits the machine.** It never went below 8 GB, even on a PC with 8 GB of RAM. It now uses about a third of RAM (1 GB minimum); PCs with 24 GB or more are unchanged.
 - **A model stuck repeating itself is stopped.** Local models can loop on a line with one small change, such as endless rows of a made-up table. One ran for 37 minutes until it was stopped by hand. A long reply that keeps repeating is now cut off, nothing from it runs, and the model is told to do the job another way.
 - **Long replies no longer slow down as they grow.** Agent Zero re-read the whole reply on every token, which held a very long reply near 8 tok/s. Most of that work now happens only when a tool call could have finished, so a 16,000-token reply costs about 15 ms per token instead of about 115 ms.
 - **The timing line no longer blames a hook for your thinking time.** Waiting for you to answer a safety or permission question counted as hook time, which made the safety check look slow. It now shows separately as "waiting for you".
 
 ### Security
+- **The setup script installs only signed releases.** `installer/install.ps1` now verifies the release tag against a release key pinned in the script before checking anything out, and installs only from the hash-checked package list.
 - **New self-learned skills wait for your approval.** A skill learned from a task that only used this PC used to go live at once. Every new one now waits under *Learned skills > Needs a look* until you approve it. You can turn this off in the Skills settings.
 - **A skill learned from a downloaded file now waits for your review.** Reading a file on this PC counted as your own content, so a skill learned from a file downloaded earlier went live at once. A file in a downloads folder, or one Windows marks as coming from the internet even after it was moved, now counts as outside content, like a web page.
 

@@ -112,8 +112,9 @@ def preset_args(preset: str, model_path: str, extra_args: str = "") -> list[str]
     return args
 
 
-PROMPT_CACHE_DEFAULT_MIB = 8192  # llama.cpp's own default
+PROMPT_CACHE_DEFAULT_MIB = 8192  # llama.cpp's own default, used when RAM is unknown
 PROMPT_CACHE_SHARE = 0.35
+PROMPT_CACHE_MIN_MIB = 1024
 PROMPT_CACHE_MAX_MIB = 32768
 
 
@@ -134,8 +135,10 @@ def prompt_cache_mib(setting) -> int:
     ram = system_ram_mib()
     if not ram:
         return PROMPT_CACHE_DEFAULT_MIB
+    # A share of this machine's RAM, not llama.cpp's flat 8 GiB: on an 8 GB PC
+    # that would leave the system almost nothing.
     auto = int(ram * PROMPT_CACHE_SHARE) // 1024 * 1024
-    return max(PROMPT_CACHE_DEFAULT_MIB, min(PROMPT_CACHE_MAX_MIB, auto))
+    return max(PROMPT_CACHE_MIN_MIB, min(PROMPT_CACHE_MAX_MIB, auto))
 
 
 def cache_args(preset: str, setting) -> list[str]:

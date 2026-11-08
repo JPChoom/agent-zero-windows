@@ -307,8 +307,8 @@ class InfectionChecker:
     async def _gate_inner(self, agent: "Agent", tool_name: str, tool_args: dict | None):
         if agent.get_data(DATA_KEY_PASSED):
             return
-        if not self.reasoning_log and not self.response_log:
-            return
+        if not self.reasoning_log and not self.response_log and not tool_name:
+            return  # nothing to judge; a tool call is always judged, streamed text or not
         call_key = _call_key(tool_name, tool_args)
         if call_key and call_key in _allowed_calls(agent):
             # The same call, with the same arguments, already passed in this

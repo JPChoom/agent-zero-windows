@@ -513,7 +513,7 @@ def is_full_json_template(text):
     return bool(match)
 
 
-ATOMIC_REPLACE_ATTEMPTS = 10
+ATOMIC_REPLACE_ATTEMPTS = 20
 ATOMIC_REPLACE_DELAY_SECONDS = 0.05
 
 
@@ -530,7 +530,10 @@ def write_file_atomic(relative_path: str, content: str, encoding: str = "utf-8")
     window mid-write left it damaged.
 
     Callers serialize writes to one path; the fixed temp name means nothing
-    piles up after a crash.
+    piles up after a crash. When the file stays locked, PermissionError is
+    raised and the old file is left as it was: an in-place write could leave
+    it half written if A0W stopped at that moment. The complete new text stays
+    in the temp file until the next save replaces it.
     """
     abs_path = get_abs_path(relative_path)
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
@@ -547,11 +550,7 @@ def write_file_atomic(relative_path: str, content: str, encoding: str = "utf-8")
         except PermissionError:
             # Windows: a reader, Defender or the indexer has the file open
             time.sleep(ATOMIC_REPLACE_DELAY_SECONDS)
-    # Still held. A plain write works past such a handle, and is better than
-    # losing this save.
-    with open(abs_path, "w", encoding=encoding) as f:
-        f.write(content)
-    os.remove(temp_path)
+    raise PermissionError(f"{abs_path} stayed locked; the previous version was kept")
 
 
 def delete_file(relative_path: str):

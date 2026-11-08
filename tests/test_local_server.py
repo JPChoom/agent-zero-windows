@@ -407,8 +407,12 @@ def test_prompt_cache_size_is_automatic_from_ram_or_as_set(tmp_path, monkeypatch
     monkeypatch.setattr(local_server, "system_ram_mib", lambda: 65536)  # 64 GB
     args = local_server.server_config(cfg).extra_args
     assert args[args.index("--cache-ram") + 1] == str(int(65536 * local_server.PROMPT_CACHE_SHARE) // 1024 * 1024)
-    monkeypatch.setattr(local_server, "system_ram_mib", lambda: 8192)  # small PC: never below llama.cpp's default
-    assert local_server.prompt_cache_mib(0) == local_server.PROMPT_CACHE_DEFAULT_MIB
+    monkeypatch.setattr(local_server, "system_ram_mib", lambda: 8192)  # 8 GB PC: a share, leaving the system room
+    assert local_server.prompt_cache_mib(0) == 2048
+    monkeypatch.setattr(local_server, "system_ram_mib", lambda: 16384)
+    assert local_server.prompt_cache_mib(0) == 5120
+    monkeypatch.setattr(local_server, "system_ram_mib", lambda: 2048)  # tiny: a floor, not zero
+    assert local_server.prompt_cache_mib(0) == local_server.PROMPT_CACHE_MIN_MIB
     monkeypatch.setattr(local_server, "system_ram_mib", lambda: 512 * 1024)  # capped
     assert local_server.prompt_cache_mib(0) == local_server.PROMPT_CACHE_MAX_MIB
     monkeypatch.setattr(local_server, "system_ram_mib", lambda: None)

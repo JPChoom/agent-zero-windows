@@ -6,6 +6,7 @@ from typing import Any
 import uuid
 from agent import Agent, AgentConfig, AgentContext, AgentContextType
 from helpers import files, history
+from helpers.print_style import PrintStyle
 from helpers.litellm_transport import delete_stored_response_ids
 from helpers.localization import Localization
 import json
@@ -66,12 +67,27 @@ def _save_order(ctxid: str) -> _SaveOrder:
         return _save_orders.setdefault(ctxid, _SaveOrder())
 
 
-def _write_chat(ctxid: str, path: str, js: str, sequence: int) -> None:
+SAVE_RETRY_SECONDS = 5.0
+SAVE_RETRY_LIMIT = 6
+
+
+def _write_chat(ctxid: str, path: str, js: str, sequence: int, retry: int = 0) -> None:
     order = _save_order(ctxid)
     with order.lock:
         if sequence < order.written:
             return  # a newer snapshot is already on disk
-        files.write_file_atomic(path, js)
+        try:
+            files.write_file_atomic(path, js)
+        except PermissionError as exc:
+            # The last good save stays on disk; try this one again shortly,
+            # unless a newer save gets there first.
+            if retry < SAVE_RETRY_LIMIT:
+                timer = threading.Timer(SAVE_RETRY_SECONDS, _write_chat, args=(ctxid, path, js, sequence, retry + 1))
+                timer.daemon = True
+                timer.start()
+            PrintStyle.warning(f"Chat {ctxid} not saved yet ({exc}); retrying" if retry < SAVE_RETRY_LIMIT
+                               else f"Chat {ctxid} could not be saved: {exc}")
+            return
         order.written = sequence
 
 

@@ -12,6 +12,7 @@ import asyncio
 import json
 import random
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -120,7 +121,7 @@ def test_a_briefly_locked_file_is_retried(tmp_path, monkeypatch):
     assert target.read_text(encoding="utf-8") == "new" and len(calls) == 3
 
 
-def test_a_file_that_stays_locked_is_still_saved(tmp_path, monkeypatch):
+def test_a_file_that_stays_locked_keeps_its_old_version(tmp_path, monkeypatch):
     target = tmp_path / "chat.json"
     target.write_text("old", encoding="utf-8")
 
@@ -129,17 +130,57 @@ def test_a_file_that_stays_locked_is_still_saved(tmp_path, monkeypatch):
 
     monkeypatch.setattr(files.os, "replace", locked)
     monkeypatch.setattr(files, "ATOMIC_REPLACE_DELAY_SECONDS", 0)
-    files.write_file_atomic(str(target), "new")
-    assert target.read_text(encoding="utf-8") == "new"
-    assert not Path(str(target) + ".tmp").exists()
+    with pytest.raises(PermissionError):
+        files.write_file_atomic(str(target), "new")
+    assert target.read_text(encoding="utf-8") == "old"  # never half written
+    assert Path(str(target) + ".tmp").read_text(encoding="utf-8") == "new"  # complete copy kept
 
 
-def test_a_real_open_reader_does_not_lose_the_save(tmp_path, monkeypatch):
+def test_a_locked_chat_save_is_retried_and_lands(chat, monkeypatch):
+    context, path = chat
+    persist_chat.save_tmp_chat(context)
+    real = files.write_file_atomic
+    calls = []
+
+    def locked_once(p, js):
+        calls.append(1)
+        if len(calls) == 1:
+            raise PermissionError("held by the indexer")
+        real(p, js)
+
+    monkeypatch.setattr(files, "write_file_atomic", locked_once)
+    monkeypatch.setattr(persist_chat, "SAVE_RETRY_SECONDS", 0.05)
+    context.state = "newer"
+    persist_chat.save_tmp_chat(context)
+    assert _state(path) == "first"  # the old save is still there meanwhile
+    deadline = time.time() + 3
+    while _state(path) != "newer" and time.time() < deadline:
+        time.sleep(0.05)
+    assert _state(path) == "newer" and len(calls) == 2
+
+
+def test_a_retry_never_replaces_a_newer_save(chat, monkeypatch):
+    context, path = chat
+    older = persist_chat._prepare_chat_save(context)
+    context.state = "newer"
+    newer = persist_chat._prepare_chat_save(context)
+    persist_chat._write_chat(context.id, *newer)
+    persist_chat._write_chat(context.id, *older, retry=1)  # a late retry of the older one
+    assert _state(path) == "newer"
+
+
+def test_a_real_open_reader_keeps_the_old_file_until_it_lets_go(tmp_path, monkeypatch):
     target = tmp_path / "chat.json"
     target.write_text("old", encoding="utf-8")
     monkeypatch.setattr(files, "ATOMIC_REPLACE_DELAY_SECONDS", 0)
     with open(target, encoding="utf-8") as reader:
-        files.write_file_atomic(str(target), "new")
-        assert reader.read() in ("old", "new")
+        try:
+            files.write_file_atomic(str(target), "new")
+            replaced = True  # this filesystem allows replacing an open file
+        except PermissionError:
+            replaced = False  # Windows: a plain reader blocks the replace
+        assert reader.read() == "old"
+    assert target.read_text(encoding="utf-8") == ("new" if replaced else "old")
+    files.write_file_atomic(str(target), "new")  # the next save, once released
     assert target.read_text(encoding="utf-8") == "new"
     assert not Path(str(target) + ".tmp").exists()
