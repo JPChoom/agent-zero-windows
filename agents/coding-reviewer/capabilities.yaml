@@ -1,0 +1,7 @@
+# Shipped capability limit for this read-only role (plugins/_capabilities):
+# it reads files and the diff and replies. No editing, running, browsing,
+# delegating or MCP tools, on any path, in any permission mode.
+allow: |
+  text_editor:read
+  read_diff
+  response

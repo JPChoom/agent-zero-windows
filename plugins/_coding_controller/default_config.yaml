@@ -3,6 +3,11 @@
 # Enable per project once you've confirmed the commands below work there.
 enforce_completion_gate: false
 
+# After every file the agent writes or patches, check that Python, JSON,
+# YAML, TOML or JavaScript still parses, and report an error in the same
+# tool result. Cheap, runs nothing; on by default.
+quick_check: true
+
 # Maximum automatic repair attempts per project before giving up and
 # reporting the failure instead of blocking forever.
 max_repair_attempts: 3

@@ -26,6 +26,18 @@
 
                 <div class="field">
                     <div class="field-label">
+                        <div class="field-title">Syntax check after every edit</div>
+                        <div class="field-description">
+                            After the agent writes or patches a Python, JSON, YAML, TOML or JavaScript file, check that it still parses and tell the agent at once if it does not. Runs nothing; works without the completion gate.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" :checked="config.quick_check !== false" @change="config.quick_check = $event.target.checked" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
                         <div class="field-title">Max repair attempts</div>
                         <div class="field-description">Automatic repair attempts allowed per project before giving up and reporting the failure.</div>
                     </div>

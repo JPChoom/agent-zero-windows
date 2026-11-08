@@ -118,11 +118,25 @@ def _read_config(path: str) -> dict | None:
     return data
 
 
+def _shipped_profile_layer(profile: str) -> dict | None:
+    """A limit a bundled agent profile ships with (agents/<profile>/
+    capabilities.yaml), e.g. the read-only coding reviewer. User settings can
+    narrow it further, never widen it."""
+    from helpers import files
+
+    if not profile or "/" in profile or "\\" in profile or profile.startswith("."):
+        return None
+    return _read_config(files.get_abs_path("agents", profile, "capabilities.yaml"))
+
+
 def layers(project: str = "", profile: str = "") -> list[dict]:
     """The policies of every scope that has one, broadest first."""
     from helpers import plugins
 
     found = []
+    shipped = _shipped_profile_layer(profile)
+    if shipped is not None:
+        found.append(shipped)
     scopes = [("", "")]
     if project:
         scopes.append((project, ""))
@@ -285,6 +299,7 @@ KNOWN_ACTIONS = {
     "browser": ["open", "navigate", "content", "click", "type", "submit", "evaluate", "multi", "screenshot", "close"],
     "parallel": ["start", "await", "cancel"],
     "child_agent": ["start", "message", "result", "status", "stop", "forget"],
+    "coding_task": ["start", "diff", "commit", "merge", "discard", "list"],
 }
 
 
