@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 PARALLEL_JOBS_KEY = "_parallel_jobs"
 PARALLEL_WORKER_PARENT_CONTEXT_KEY = "_parallel_parent_context_id"
+GOVERNING_DEPTH = 8
 PARALLEL_WORKER_JOB_KEY = "_parallel_job_id"
 PARALLEL_WORKER_KIND_KEY = "_parallel_worker_kind"
 # The agent (A0, A1, ...) in the parent chat that started the job; apps the
@@ -204,14 +205,19 @@ def governing_context(context: "AgentContext | None") -> tuple["AgentContext | N
     """
     if context is None:
         return None, False
-    data = getattr(context, "data", None)
-    parent_id = data.get(PARALLEL_WORKER_PARENT_CONTEXT_KEY) if isinstance(data, dict) else None
-    if not parent_id:
-        return context, False
     from agent import AgentContext
 
-    parent = AgentContext.get(str(parent_id))
-    return (parent, False) if parent is not None else (context, True)
+    current = context
+    for _ in range(GOVERNING_DEPTH):  # a child agent's child acts for the root chat
+        data = getattr(current, "data", None)
+        parent_id = data.get(PARALLEL_WORKER_PARENT_CONTEXT_KEY) if isinstance(data, dict) else None
+        if not parent_id:
+            return current, False
+        parent = AgentContext.get(str(parent_id))
+        if parent is None:
+            return current, True
+        current = parent
+    return current, False
 
 
 def _jobs_for_context(context: "AgentContext") -> dict[str, ParallelJob]:

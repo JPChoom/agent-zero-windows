@@ -30,7 +30,7 @@ from typing import Any
 PLUGIN = "_capabilities"
 # Scopes a hidden worker context inherits from the agent that started it (a
 # parallel job runs as a fresh top-level agent, outside the superior chain).
-CONTEXT_SCOPES_KEY = "_capability_scopes"
+CONTEXT_SCOPES_KEY = "capability_scopes"  # no leading _: saved with a child agent's chat
 # Tools every agent needs to finish a turn or report trouble.
 ALWAYS_ALLOWED = {"response"}
 
@@ -284,6 +284,7 @@ KNOWN_ACTIONS = {
     "code_execution_tool": ["terminal", "python", "nodejs", "output", "reset"],
     "browser": ["open", "navigate", "content", "click", "type", "submit", "evaluate", "multi", "screenshot", "close"],
     "parallel": ["start", "await", "cancel"],
+    "child_agent": ["start", "message", "result", "status", "stop", "forget"],
 }
 
 
