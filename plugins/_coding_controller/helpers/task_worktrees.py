@@ -115,8 +115,10 @@ async def commit(context, name: str, message: str) -> dict:
     return {"name": _name(name), "committed": True, "commit": head, "branch": task["branch"]}
 
 
-async def merge(context, name: str) -> dict:
-    """Fast-forward the starting branch to the task branch, in the main checkout."""
+async def merge(context, name: str, keep: bool = False) -> dict:
+    """Fast-forward the starting branch to the task branch, in the main checkout,
+    then remove the task's worktree and its merged branch (a finished task
+    leaves nothing behind) unless `keep` is set."""
     task = _task(context, name)
     pending = await _git(task["path"], "status", "--porcelain")
     if pending.strip():
@@ -131,7 +133,18 @@ async def merge(context, name: str) -> dict:
         await _git(task["repo"], "merge", "--ff-only", task["branch"])
     except TaskError as exc:
         raise TaskError(f"'{task['base']}' moved on since the task started; rebase the task branch onto it first. ({exc})") from exc
-    return {"name": _name(name), "merged": True, "into": task["base"]}
+    outcome = {"name": _name(name), "merged": True, "into": task["base"]}
+    if keep:
+        return {**outcome, "kept": task["path"]}
+    try:
+        await _git(task["repo"], "worktree", "remove", task["path"])
+        await _git(task["repo"], "branch", "-d", task["branch"])  # merged, so -d is safe
+    except TaskError as exc:
+        return {**outcome, "cleanup": f"merged, but the worktree or branch could not be removed: {exc}; use discard"}
+    tasks = registry(context)
+    tasks.pop(_name(name), None)
+    context.set_data(REGISTRY_KEY, tasks)
+    return {**outcome, "cleaned_up": True}
 
 
 async def discard(context, name: str) -> dict:

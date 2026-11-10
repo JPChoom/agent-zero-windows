@@ -65,11 +65,23 @@ def test_the_whole_lifecycle_lands_only_on_merge(repo):
     assert "v2" in changes["diff"] and "new.py" in changes["new_files"]
     assert (repo / "app.py").read_text(encoding="utf-8") == "print('v1')\n"  # the main checkout is untouched
     assert _run(tw.commit(context, "feature", "Change v2"))["committed"]
-    assert _run(tw.merge(context, "feature"))["merged"]
+    merged = _run(tw.merge(context, "feature"))
+    assert merged["merged"] and merged["cleaned_up"]
     assert (repo / "app.py").read_text(encoding="utf-8") == "print('v2')\n" and (repo / "new.py").is_file()
-    _run(tw.discard(context, "feature"))
+    # a finished task leaves nothing behind: no worktree, no branch, not listed
     assert not folder.exists() and "a0/feature" not in _git(repo, "branch")
     assert tw.describe(context) == []
+
+
+def test_merge_can_keep_the_worktree(repo):
+    context = _Context()
+    folder = Path(_run(tw.start(context, str(repo), "kept"))["path"])
+    (folder / "app.py").write_text("print('v3')\n", encoding="utf-8")
+    _run(tw.commit(context, "kept", "v3"))
+    merged = _run(tw.merge(context, "kept", keep=True))
+    assert merged["merged"] and merged["kept"] and folder.exists()
+    _run(tw.discard(context, "kept"))
+    assert not folder.exists()
 
 
 def test_merge_refuses_uncommitted_work(repo):

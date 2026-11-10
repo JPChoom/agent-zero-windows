@@ -8,7 +8,8 @@ from plugins._coding_controller.helpers import task_worktrees
 class CodingTask(Tool):
     """A git worktree per coding task (helpers/task_worktrees.py)."""
 
-    async def execute(self, action: str = "", name: str = "", repo: str = "", base: str = "", message: str = "", **kwargs):
+    async def execute(self, action: str = "", name: str = "", repo: str = "", base: str = "", message: str = "",
+                      keep: bool = False, **kwargs):
         action = str(action or self.method or "list").strip().lower()
         context = self.agent.context
         try:
@@ -19,7 +20,7 @@ class CodingTask(Tool):
             elif action == "commit":
                 outcome = await task_worktrees.commit(context, name, message)
             elif action == "merge":
-                outcome = await task_worktrees.merge(context, name)
+                outcome = await task_worktrees.merge(context, name, keep=str(keep).lower() in ("true", "1", "yes"))
             elif action == "discard":
                 outcome = await task_worktrees.discard(context, name)
             elif action in ("list", "status"):
