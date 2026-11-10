@@ -2,6 +2,13 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Fixed
+- **Calls through LiteLLM's Responses API work again.** v1.6.1's LiteLLM 1.108 needs a newer MCP library than A0W ships, so every call A0W makes through that API failed with `cannot import name 'CacheableResult'`, while plain completion calls worked. Vision captions on an LM Studio model failed outright, and background jobs on such a model quietly moved to the Main model. LiteLLM is now 1.102.4 (the last release for MCP 1.x) and MCP 1.30.0, and a new test makes a real Responses API call against a local stand-in server, so this combination can't ship again.
+- **A finished coding task leaves nothing behind.** `coding_task merge` fast-forwarded the main branch but left the task's folder and branch until a separate `discard`. A successful merge now removes both (`keep: true` keeps them). Found by the new capability benchmark.
+- **A model that repeats itself gets told why.** When a model sends exactly the same reply twice, Agent Zero does not run its tool call again. The warning only said "You have sent the same message again", so a local model that resent a command because its first result looked empty kept resending it until the turn ended after six tries. The warning now says the call was not run again, that the first result is already in the chat, and to change the call or report what is blocking it.
+
 ## v1.6.1
 
 A virtual machine can no longer reach Agent Zero as if it were you, and the Python packages get minor and patch updates.

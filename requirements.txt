@@ -17,12 +17,12 @@ langchain-core==0.3.49
 langchain-community==0.3.19
 langchain-unstructured==0.1.6
 liteparse==2.18.0
-litellm==1.108.3  # CVE-2026-42271 fix: patched floor is 1.83.7
+litellm==1.102.4  # CVE-2026-42271 floor 1.83.7; 1.103+ needs mcp 2.x
 openai==2.41.1
 openai-whisper==20250625
 lxml_html_clean>=0.4.0  # CVE-2024-52595 fix: XSS CWE-79 CVSS 8.4
 markdown==3.11.3
-mcp==1.27.0
+mcp==1.30.0  # last 1.x; litellm <=1.102 supports it
 paramiko==3.5.0
 playwright==1.52.0
 pypdf==6.0.0
