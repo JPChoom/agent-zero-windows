@@ -162,9 +162,11 @@ def test_liteparse_is_installed_by_docker_and_plugin_hook_requirements():
         ROOT / "plugins" / "_document_query" / "hooks.py"
     ).read_text(encoding="utf-8")
 
-    assert "liteparse==2.0.3" in root_requirements
+    pins = [line.split("#")[0].strip() for line in root_requirements.splitlines()
+            if line.strip().startswith("liteparse==")]
+    assert len(pins) == 1, "requirements.txt must pin liteparse exactly once"
     assert "_ROOT_REQUIREMENTS_FILE" in hooks_source
-    assert document_query_hooks._liteparse_requirement() == "liteparse==2.0.3"
+    assert document_query_hooks._liteparse_requirement() == pins[0]
     assert not (ROOT / "plugins" / "_document_query" / "requirements.txt").exists()
 
 
