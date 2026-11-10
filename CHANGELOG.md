@@ -8,7 +8,7 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 - **A virtual machine can no longer reach Agent Zero as if it were you.** A VM on VirtualBox's default NAT network (QEMU and some others work the same way) reaches this PC through its loopback address, so A0W counted it as a local visitor and let it in without a login or the allowlist. A0W now checks which program is on the other end of a local connection: a VM, an SSH port forward or a tunnel client counts as remote and is refused like any other remote visitor.
 
 ### Dependencies
-- **Refreshed packages, minor and patch versions only.** LiteLLM 1.88 to 1.108, pydantic 2.11 to 2.14, Flask 3.0 to 3.1, tiktoken 0.8 to 0.14, plus smaller updates to uvicorn, python-socketio, urllib3, nltk and others. Major-version updates (openai 3, langchain-core 1, mcp 2, sentence-transformers 6 and more) are left for separate, tested changes. The hash-checked lock file was rebuilt; *Check for updates* installs the new packages.
+- **Refreshed packages, minor and patch versions only.** LiteLLM 1.88 to 1.108, pydantic 2.11 to 2.13 (2.14 breaks the Telegram library), Flask 3.0 to 3.1, tiktoken 0.8 to 0.14, plus smaller updates to uvicorn, python-socketio, urllib3, nltk and others. Major-version updates (openai 3, langchain-core 1, mcp 2, sentence-transformers 6 and more) are left for separate, tested changes. The hash-checked lock file was rebuilt; *Check for updates* installs the new packages.
 
 ## v1.6
 
