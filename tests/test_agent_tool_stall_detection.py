@@ -324,3 +324,16 @@ def test_emit_stall_warning_accepts_the_repeat_prompt_file():
 
     assert "same response" in message
     assert str(Agent.TOOL_STALL_LIMIT + 1) in message
+
+
+def test_the_repeat_warning_says_the_call_did_not_run_and_must_change():
+    """A local model resends an identical call when its first result looked
+    empty; the warning has to tell it the call was not run again, where the
+    earlier result is, and to change the call or report a blocker."""
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "prompts" / "fw.msg_repeat.md").read_text(encoding="utf-8")
+    assert "NOT run again" in text
+    assert "result of the first run" in text
+    assert "change the call" in text
+    assert "`response`" in text
