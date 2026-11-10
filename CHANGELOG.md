@@ -2,6 +2,11 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Security
+- **A virtual machine can no longer reach Agent Zero as if it were you.** A VM on VirtualBox's default NAT network (QEMU and some others work the same way) reaches this PC through its loopback address, so A0W counted it as a local visitor and let it in without a login or the allowlist. A0W now checks which program is on the other end of a local connection: a VM, an SSH port forward or a tunnel client counts as remote and is refused like any other remote visitor.
+
 ## v1.6
 
 Agents can be limited to the tools you choose, run as independent named children, and use any model for any job; coding tasks get their own branch and a syntax check after every edit; the Editor reviews the agent's changes; and messaging chats can answer approval questions from the phone. An empty channel allowlist now answers nobody, and new learned skills wait for your approval.

@@ -226,6 +226,91 @@ async def test_middleware_passes_allowed_and_local_and_lifespan(monkeypatch):
         assert app.called is True
 
 
+# -- relays that arrive from loopback without headers (VM NAT, SSH forwards) -----
+
+def _relay_scope(headers=None):
+    return dict(_scope("http", headers or {}), server=("127.0.0.1", 50001))
+
+
+@pytest.mark.asyncio
+async def test_a_vm_nat_connection_is_not_local(monkeypatch):
+    """A VirtualBox guest reaching 10.0.2.2 arrives from 127.0.0.1."""
+    monkeypatch.setattr(ac, "loopback_forwarder", lambda c, s: "VirtualBoxVM.exe")
+    monkeypatch.setattr(ac, "_cached_forwarder", lambda c, s: None)
+    monkeypatch.setattr(ac, "login_configured", lambda: False)
+    app = _App()
+    sent = await _run(ac.AccessControlMiddleware(app), _relay_scope())
+    assert app.called is False and sent[0]["status"] == 404
+    assert ac.recent_blocks()[0]["ip"] == "relay:VirtualBoxVM.exe"
+
+
+@pytest.mark.asyncio
+async def test_a_relay_is_blocked_even_with_a_login(monkeypatch):
+    _policy(monkeypatch, text=ALLOWED)
+    monkeypatch.setattr(ac, "loopback_forwarder", lambda c, s: "ssh.exe")
+    monkeypatch.setattr(ac, "_cached_forwarder", lambda c, s: None)
+    app = _App()
+    await _run(ac.AccessControlMiddleware(app), _relay_scope())
+    assert app.called is False
+
+
+@pytest.mark.asyncio
+async def test_the_owner_stays_local(monkeypatch):
+    monkeypatch.setattr(ac, "loopback_forwarder", lambda c, s: "")
+    monkeypatch.setattr(ac, "_cached_forwarder", lambda c, s: None)
+    seen = {}
+
+    async def app(scope, receive, send):
+        seen["client"] = scope["client"]
+
+    await _run(ac.AccessControlMiddleware(app), _relay_scope())
+    assert seen["client"] == ("127.0.0.1", 50000)
+
+
+@pytest.mark.asyncio
+async def test_a_proxied_request_keeps_its_header_handling(monkeypatch):
+    _policy(monkeypatch)
+    monkeypatch.setattr(ac, "_active_tunnel_provider", lambda: "cloudflared")
+    monkeypatch.setattr(ac, "loopback_forwarder", lambda c, s: pytest.fail("no lookup for proxied requests"))
+    app = _App()
+    await _run(ac.AccessControlMiddleware(app), _relay_scope(CF))
+    assert app.called is True
+
+
+def test_forwarder_names():
+    for name in ("VirtualBoxVM.exe", "VBoxHeadless.exe", "qemu-system-x86_64.exe", "vmware-vmx.exe", "ssh.exe", "cloudflared"):
+        assert ac._is_forwarder_name(name), name
+    for name in ("chrome.exe", "msedge.exe", "python.exe", "curl.exe", "VirtualBox.exe"):
+        assert not ac._is_forwarder_name(name), name
+
+
+def test_the_real_connection_table_finds_the_other_end(monkeypatch):
+    """A real loopback connection from this process: found, and named only
+    when its program is a relay."""
+    import os
+    import socket
+
+    import psutil
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    client = socket.create_connection(server.getsockname())
+    accepted, _ = server.accept()
+    try:
+        client_port, server_port = client.getsockname()[1], server.getsockname()[1]
+        ac._forwarder_cache.clear()
+        assert ac.loopback_forwarder(client_port, server_port) == ""
+        own = psutil.Process(os.getpid()).name()
+        monkeypatch.setattr(ac, "LOOPBACK_FORWARDERS", frozenset({own.lower()}))
+        ac._forwarder_cache.clear()
+        assert ac.loopback_forwarder(client_port, server_port) == own
+    finally:
+        ac._forwarder_cache.clear()
+        for s in (client, accepted, server):
+            s.close()
+
+
 # -- login throttle ---------------------------------------------------------
 
 def test_login_throttle_locks_after_max_failures_and_expires():

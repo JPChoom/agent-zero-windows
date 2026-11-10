@@ -16,6 +16,14 @@ Client IP for a proxied request:
 - Any other proxy: the right-most `X-Forwarded-For` entry, i.e. the one the
   nearest proxy appended (left-most entries are client-controlled).
 
+Relays without headers: a VM's NAT network (VirtualBox, QEMU and others map
+the guest's "host" address to this PC's loopback), an SSH port forward or a
+tunnel client that adds no forwarding header all arrive from loopback with
+no proxy header. For a loopback connection the middleware therefore asks
+which program owns the other end (`loopback_forwarder`); a known relay in
+`LOOPBACK_FORWARDERS` makes the connection remote, with the relay's name as
+its client address, so it is blocked unless the allowlist is turned off.
+
 Policy (enforced by AccessControlMiddleware around the whole ASGI app, so it
 covers Flask routes, static files, Socket.IO/WebSocket, /mcp and /a2a):
 - Local (loopback, no forwarding headers): always allowed.
@@ -27,6 +35,7 @@ covers Flask routes, static files, Socket.IO/WebSocket, /mcp and /a2a):
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import ipaddress
 import json
@@ -113,6 +122,88 @@ def is_local_request(remote_addr: str | None, headers: Mapping[str, str]) -> boo
     if not remote_addr or not is_loopback_address(str(remote_addr)):
         return False
     return not is_proxied(headers)
+
+
+# Programs that relay other machines' connections to this PC's loopback.
+# A connection whose other end belongs to one of them is not local.
+LOOPBACK_FORWARDERS = frozenset({
+    # virtual machines (NAT: the guest reaches "the host" via loopback)
+    "virtualboxvm.exe", "vboxheadless.exe", "vmware-vmx.exe", "vmnat.exe",
+    "com.docker.backend.exe", "vpnkit.exe",
+    # SSH port forwards and tunnel clients
+    "ssh.exe", "sshd.exe", "plink.exe", "cloudflared.exe", "ngrok.exe",
+    "frpc.exe", "bore.exe", "tailscaled.exe", "zrok.exe",
+})
+LOOPBACK_FORWARDER_PREFIXES = ("qemu-system-",)
+# A connection's client port can't come back for another program within
+# Windows' TIME_WAIT (120 s), so a result can be cached for a while.
+FORWARDER_CACHE_SECONDS = 60.0
+_forwarder_cache: dict[tuple[int, int], tuple[float, str]] = {}
+
+
+def _is_forwarder_name(name: str) -> bool:
+    name = str(name or "").lower()
+    if not name.endswith(".exe"):
+        name += ".exe"
+    return name in LOOPBACK_FORWARDERS or name.startswith(LOOPBACK_FORWARDER_PREFIXES)
+
+
+def _cached_forwarder(client_port: int, server_port: int) -> str | None:
+    hit = _forwarder_cache.get((client_port, server_port))
+    if hit and time.monotonic() - hit[0] < FORWARDER_CACHE_SECONDS:
+        return hit[1]
+    return None
+
+
+def loopback_forwarder(client_port, server_port) -> str:
+    """Name of the relay program on the other end of a loopback connection
+    to `server_port` from `client_port`, or "" for anything else. A lookup
+    that fails counts as no relay, so the owner is never locked out of their
+    own WebUI by an unreadable connection table."""
+    try:
+        client_port, server_port = int(client_port), int(server_port)
+    except (TypeError, ValueError):
+        return ""
+    cached = _cached_forwarder(client_port, server_port)
+    if cached is not None:
+        return cached
+    name = ""
+    try:
+        import psutil
+
+        for conn in psutil.net_connections(kind="tcp"):
+            if (conn.laddr and conn.raddr and conn.pid
+                    and conn.laddr.port == client_port and conn.raddr.port == server_port
+                    and is_loopback_address(str(conn.laddr.ip))):
+                owner = psutil.Process(conn.pid).name()
+                name = owner if _is_forwarder_name(owner) else ""
+                break
+    except Exception:
+        name = ""
+    now = time.monotonic()
+    if len(_forwarder_cache) > 4096:
+        for key, (at, _) in list(_forwarder_cache.items()):
+            if now - at >= FORWARDER_CACHE_SECONDS:
+                _forwarder_cache.pop(key, None)
+    _forwarder_cache[(client_port, server_port)] = (now, name)
+    return name
+
+
+async def relayed_scope(scope):
+    """`scope` with a relay's name as client address when a local-looking
+    connection came through a relay (see LOOPBACK_FORWARDERS); otherwise
+    `scope` unchanged. Proxied requests keep their own handling."""
+    client = scope.get("client") or (None, None)
+    server = scope.get("server") or (None, None)
+    if (len(client) < 2 or len(server) < 2 or not client[0] or not server[1]
+            or not is_loopback_address(str(client[0])) or is_proxied(scope.get("headers") or [])):
+        return scope
+    relay = _cached_forwarder(client[1], server[1]) if isinstance(client[1], int) and isinstance(server[1], int) else None
+    if relay is None:
+        relay = await asyncio.to_thread(loopback_forwarder, client[1], server[1])
+    if not relay:
+        return scope
+    return dict(scope, client=(f"relay:{relay}", client[1]))
 
 
 def _active_tunnel_provider() -> str | None:
@@ -660,6 +751,10 @@ class AccessControlMiddleware:
         if kind not in ("http", "websocket"):
             return await self.app(scope, receive, send)
 
+        try:
+            scope = await relayed_scope(scope)
+        except Exception:
+            pass
         client = scope.get("client") or (None, None)
         headers = scope.get("headers") or []
         allowed, ip, reason = check_access(client[0], headers)

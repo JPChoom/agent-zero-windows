@@ -174,7 +174,7 @@ Key Files:
 - Commit, hardcode or leak secrets or .env files.
 - Bypass CSRF or authentication checks.
 - Hardcode API keys.
-- Treat a loopback `remote_addr` as "local" on its own: tunnel clients connect from localhost. Use `helpers/access_control.is_local_request`.
+- Treat a loopback `remote_addr` as "local" on its own: tunnel clients, SSH forwards and VM NAT networks connect from localhost. Use `helpers/access_control.is_local_request` (the ASGI middleware already rewrites relayed connections to `relay:<program>`).
 - Call `asyncio.run` / `run_until_complete` from code that can run inside a running event loop (nested loops drop task wakeups and freeze agents); use `helpers/sync_async.run_sync`.
 
 ### Security Architecture (summary)
