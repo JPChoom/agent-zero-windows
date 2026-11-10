@@ -1,54 +1,54 @@
-a2wsgi==1.10.8
-ansio==0.0.1
+a2wsgi==1.10.10
+ansio==0.0.2
 duckduckgo-search==6.1.12
 pyreqwest-impersonate==0.5.3  # freeze nearest wheel-backed release; 0.5.5 is source-only
 faiss-cpu
 fastmcp==3.2.4
 fasta2a==0.5.0
-flask[async]==3.0.3
+flask[async]==3.1.3
 flask-basicauth==0.2.0
 flaredantic==0.1.5
-GitPython==3.1.43
-giturlparse==0.14.0
+GitPython==3.2.1
+giturlparse==0.16.0
 inputimeout==1.0.4
 kokoro
-simpleeval==1.0.3
+simpleeval==1.0.8
 langchain-core==0.3.49
 langchain-community==0.3.19
 langchain-unstructured==0.1.6
-liteparse==2.0.3
-litellm==1.88.1  # CVE-2026-42271 fix: patched floor is 1.83.7
+liteparse==2.18.0
+litellm==1.108.3  # CVE-2026-42271 fix: patched floor is 1.83.7
 openai==2.41.1
 openai-whisper==20250625
 lxml_html_clean>=0.4.0  # CVE-2024-52595 fix: XSS CWE-79 CVSS 8.4
-markdown==3.7
+markdown==3.11.3
 mcp==1.27.0
 paramiko==3.5.0
 playwright==1.52.0
 pypdf==6.0.0
-python-dotenv==1.1.0
-pytz==2024.2
+python-dotenv==1.2.4
+pytz==2026.6
 sentence-transformers==3.0.1
-tiktoken==0.8.0
+tiktoken==0.14.0
 unstructured[all-docs]==0.16.23
 unstructured-client==0.31.0
 webcolors==24.6.0
 nest-asyncio==1.6.0
-crontab==1.0.1
-markdownify==1.1.0
-pydantic==2.11.7
+crontab==1.0.5
+markdownify==1.2.3
+pydantic==2.14.3
 pymupdf==1.25.3
 pytesseract==0.3.13
 pdf2image==1.17.0
 pathspec>=0.12.1
 psutil>=7.0.0
-soundfile==0.13.1
+soundfile==0.14.0
 imapclient>=3.0.1
 html2text>=2024.2.26
 beautifulsoup4>=4.12.3
 chardet<6  # unstructured may pull chardet; requests warns when chardet>=6 is present
 exchangelib>=5.4.3
-pywinpty==3.0.2; sys_platform == "win32"
+pywinpty==3.1.2; sys_platform == "win32"
 pywin32==312; sys_platform == "win32"
 python-socketio>=5.14.2
 uvicorn>=0.38.0
