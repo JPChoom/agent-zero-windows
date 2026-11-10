@@ -153,6 +153,26 @@ def test_summary_and_compare():
     assert "coding" in bench.compare(report, report)
 
 
+def test_utility_block_reads_another_config(tmp_path):
+    import json
+
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"chat_model": {"provider": "llama_cpp", "name": "big"},
+                                "utility_model": {"provider": "lm_studio", "name": "small", "api_base": "http://203.0.113.5:1234/v1"}}),
+                    encoding="utf-8")
+    assert bench.utility_block(str(path))["name"] == "small"
+    path.write_text(json.dumps({"chat_model": {}}), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        bench.utility_block(str(path))
+
+
+def test_the_utility_options_exclude_each_other():
+    import asyncio
+
+    with pytest.raises(SystemExit):
+        asyncio.run(bench.main(["--utility-as-main", "--utility-from", "x.json", "--list"]))
+
+
 def test_selection():
     picked = bench.select(bench.TASKS, {"coding"}, set(), with_apps=False)
     assert picked and all(t.category == "coding" for t in picked)
@@ -170,3 +190,15 @@ def test_fresh_memory_is_per_run_and_removed(tmp_path, monkeypatch):
     assert not (tmp_path / "benchmark" / "memory_preference-abc123").exists()
     with bench._FreshMemory(False, "x"):
         assert memory.get_agent_memory_subdir is original
+
+
+def test_reports_are_written_as_the_run_goes(tmp_path):
+    import json
+
+    out = tmp_path / "r.json"
+    header = {"when": "t", "model": "m", "planned_runs": 2}
+    bench.write_report(out, header, [bench.Result("a", "coding", completed=True)], complete=False)
+    partial = json.loads(out.read_text(encoding="utf-8"))
+    assert partial["complete"] is False and len(partial["results"]) == 1 and partial["planned_runs"] == 2
+    bench.write_report(out, header, [bench.Result("a", "coding"), bench.Result("b", "coding")], complete=True)
+    assert json.loads(out.read_text(encoding="utf-8"))["complete"] is True

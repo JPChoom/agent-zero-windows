@@ -20,6 +20,7 @@ configurations and comparing the reports:
     .venv\\Scripts\\python.exe tests\\manual\\capability_benchmark.py
     .venv\\Scripts\\python.exe tests\\manual\\capability_benchmark.py --category coding,subagents --repeats 3
     .venv\\Scripts\\python.exe tests\\manual\\capability_benchmark.py --utility-as-main --out usr/benchmarks/main-only.json
+    .venv\\Scripts\\python.exe tests\\manual\\capability_benchmark.py --utility-from C:\\a0\\usr\\plugins\\_model_config\\config.json
     .venv\\Scripts\\python.exe tests\\manual\\capability_benchmark.py --compare usr/benchmarks/a.json usr/benchmarks/b.json
 
 Every task's folder check is runner-independent (a folder in, pass/fail out),
@@ -745,6 +746,39 @@ def compare(a: dict, b: dict) -> str:
     return "\n".join(lines)
 
 
+def utility_block(path: str) -> dict:
+    """The Utility model of another install's model config (for example the
+    live install's model on a second PC), so a run can compare it without
+    changing this checkout's settings or naming its address here."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    block = data.get("utility_model") if isinstance(data, dict) else None
+    if not isinstance(block, dict) or not block.get("provider") or not block.get("name"):
+        raise SystemExit(f"{path} has no utility_model with a provider and a name")
+    return dict(block)
+
+
+def _reachable(block: dict) -> bool:
+    import urllib.request
+
+    base = str(block.get("api_base") or "").rstrip("/")
+    if not base:
+        return True  # a cloud provider: nothing to probe
+    try:
+        with urllib.request.urlopen(f"{base}/models", timeout=10) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+
+def write_report(out: Path, header: dict, results: list[Result], complete: bool) -> dict:
+    report = {**header, "complete": complete, "summary": summarize(results), "results": [r.__dict__ for r in results]}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    tmp.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    os.replace(tmp, out)
+    return report
+
+
 def select(tasks: list[Task], categories: set[str], only: set[str], with_apps: bool) -> list[Task]:
     has_git = shutil.which("git") is not None
     picked = []
@@ -767,7 +801,10 @@ async def main(argv=None) -> int:
     parser.add_argument("--only", default="", help="comma-separated task ids")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--with-apps", action="store_true", help="include tasks that drive desktop apps")
-    parser.add_argument("--utility-as-main", action="store_true", help="run background jobs on the Main model (Main-only configuration)")
+    utility = parser.add_mutually_exclusive_group()
+    utility.add_argument("--utility-as-main", action="store_true", help="run background jobs on the Main model (Main-only configuration)")
+    utility.add_argument("--utility-from", default="", metavar="CONFIG_JSON",
+                         help="use the utility_model of this model config file, e.g. the live install's usr/plugins/_model_config/config.json")
     parser.add_argument("--timeout", type=float, default=600, help="seconds per task")
     parser.add_argument("--label", default="", help="name for this configuration in the report")
     parser.add_argument("--out", default="")
@@ -793,9 +830,23 @@ async def main(argv=None) -> int:
     dotenv.load_dotenv()
     if args.utility_as_main:
         model_config._get_utility_model_config = lambda agent=None: model_config.get_chat_model_config(agent)
+    elif args.utility_from:
+        block = utility_block(args.utility_from)
+        if not _reachable(block):
+            raise SystemExit(f"Utility model {block['name']} does not answer at its address; is that PC and its server on?")
+        model_config._get_utility_model_config = lambda agent=None: dict(block)
 
     install_tool_recorder()
     workdir = Path(settings.get_settings()["workdir_path"])
+    out = ROOT / (args.out or f"usr/benchmarks/capability-{time.strftime('%Y%m%d-%H%M%S')}.json")
+    header = {
+        "when": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "label": args.label,
+        "model": model_config.get_chat_model_config().get("name", ""),
+        "utility_model": "main" if args.utility_as_main else model_config._get_utility_model_config().get("name", ""),
+        "repeats": args.repeats,
+        "planned_runs": args.repeats * len(tasks),
+    }
     results = []
     for repeat in range(args.repeats):
         for task in tasks:
@@ -807,19 +858,9 @@ async def main(argv=None) -> int:
                   f"{' UNINTENDED ' + json.dumps(result.unintended) if result.unintended else ''}"
                   f"{' error: ' + result.error if result.error else ''}", flush=True)
             results.append(result)
+            write_report(out, header, results, complete=False)  # an interrupted run keeps what it finished
 
-    report = {
-        "when": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "label": args.label,
-        "model": model_config.get_chat_model_config().get("name", ""),
-        "utility_model": "main" if args.utility_as_main else model_config._get_utility_model_config().get("name", ""),
-        "repeats": args.repeats,
-        "summary": summarize(results),
-        "results": [r.__dict__ for r in results],
-    }
-    out = ROOT / (args.out or f"usr/benchmarks/capability-{time.strftime('%Y%m%d-%H%M%S')}.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    report = write_report(out, header, results, complete=True)
     print(json.dumps(report["summary"]["by_category"], indent=2))
     print(f"report: {out}")
     return 0
