@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.6.1
+
+A virtual machine can no longer reach Agent Zero as if it were you, and the Python packages get minor and patch updates.
 
 ### Security
 - **A virtual machine can no longer reach Agent Zero as if it were you.** A VM on VirtualBox's default NAT network (QEMU and some others work the same way) reaches this PC through its loopback address, so A0W counted it as a local visitor and let it in without a login or the allowlist. A0W now checks which program is on the other end of a local connection: a VM, an SSH port forward or a tunnel client counts as remote and is refused like any other remote visitor.
