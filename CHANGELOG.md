@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.6.2
+
+Fixes the Responses API calls that v1.6.1's package update broke, makes a finished coding task clean up after itself, and gives a model that repeats itself a useful warning.
 
 ### Fixed
 - **Calls through LiteLLM's Responses API work again.** v1.6.1's LiteLLM 1.108 needs a newer MCP library than A0W ships, so every call A0W makes through that API failed with `cannot import name 'CacheableResult'`, while plain completion calls worked. Vision captions on an LM Studio model failed outright, and background jobs on such a model quietly moved to the Main model. LiteLLM is now 1.102.4 (the last release for MCP 1.x) and MCP 1.30.0, and a new test makes a real Responses API call against a local stand-in server, so this combination can't ship again.
