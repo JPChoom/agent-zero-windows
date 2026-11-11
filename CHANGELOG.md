@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.6.3
+
+Replies to messaging chats are no longer lost, the chat-app loopholes found in an audit are closed, the local model server needs a key, and child agents get a live panel and a worktree of their own.
 
 ### New
 - **See what each child agent is doing.** A new *Child agents* panel in the side rail lists the child agents of the open chat: whether each is working, what it is doing right now (its newest step), how many steps it has taken and when it last did something, with *Stop* and *Open chat*. In a child's chat it shows its siblings and a way back to the parent.
