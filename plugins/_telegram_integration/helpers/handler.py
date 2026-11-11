@@ -544,9 +544,11 @@ async def send_telegram_reply(
                 if await draft_stream.finalize_response(context, response_text, keyboard):
                     pass
                 elif keyboard:
-                    await tc.send_text_with_keyboard(reply_bot, chat_id, html_text, keyboard, reply_to_message_id=reply_to)
+                    await tc.send_text_with_keyboard(reply_bot, chat_id, html_text, keyboard,
+                                                     reply_to_message_id=reply_to, raise_errors=True)
                 else:
-                    await tc.send_text(reply_bot, chat_id, html_text, reply_to_message_id=reply_to)
+                    # raise_errors: a failed send used to look like a success, so the reply was lost
+                    await tc.send_text(reply_bot, chat_id, html_text, reply_to_message_id=reply_to, raise_errors=True)
 
         return None
 

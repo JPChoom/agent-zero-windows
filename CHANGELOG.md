@@ -2,6 +2,11 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
+## Unreleased
+
+### Fixed
+- **A reply to a messaging chat is no longer lost when the first send fails.** Every channel sent a reply once: Discord and Slack logged a failure and dropped it, WhatsApp and email asked the language model to resend (twice), and Telegram reported a failed send as a success, so those replies vanished without a trace. All five now retry in line when the failure is temporary (network trouble, a timeout, rate limits, a bot that is restarting), waiting as long as the service asks. A reply still failing after that is queued on disk and retried about once a minute, with growing gaps, until it arrives or is 24 hours old; the queue survives a restart, and the chat shows a note when a reply is queued, delivered or given up. Failures that cannot get better (a blocked bot, a chat that no longer exists, bad credentials) are not retried. Approval questions sent to your phone get quick retries too. A retry can deliver a reply twice when the first send worked but its confirmation was lost.
+
 ## v1.6.2
 
 Fixes the Responses API calls that v1.6.1's package update broke, makes a finished coding task clean up after itself, and gives a model that repeats itself a useful warning.

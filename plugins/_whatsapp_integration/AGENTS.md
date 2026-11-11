@@ -14,6 +14,7 @@
 
 ## Local Contracts
 
+- Replies are sent through `helpers/channel_delivery.deliver` (in-line retries, then a persistent retry queue); a send function must return its error instead of swallowing it.
 - An empty `allowed_numbers` answers nobody (one rule for every channel, owner decision 2026-11-08); `helpers/allowlist.py` tells phone approvals whether the list is set.
 
 - Treat WhatsApp sessions, QR data, phone numbers, attachments, and bridge state as sensitive.

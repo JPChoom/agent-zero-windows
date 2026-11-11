@@ -24,7 +24,11 @@ class DiscordResponseIntercept(Extension):
             from plugins._discord_integration.helpers import bot
 
             text = tool.args.get("text", tool.args.get("message", ""))
-            error = await bot.send_reply(context, text, context.data.pop(C.CTX_ATTACHMENTS, []) or [])
+            from helpers import channel_delivery
+
+            # a mid-task update is worth a quick retry, not a queue
+            error = (await channel_delivery.deliver(context, text, context.data.pop(C.CTX_ATTACHMENTS, []) or [],
+                                                    send=bot.send_reply, queue=False)).error
             result = f"discord update failed: {error}" if error else "discord update sent, continue working"
             response.break_loop = False
             response.message = result

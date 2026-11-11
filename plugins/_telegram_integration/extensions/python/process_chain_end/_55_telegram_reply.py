@@ -56,12 +56,18 @@ class TelegramAutoReply(Extension):
         ensure_dependencies()
         from plugins._telegram_integration.helpers.handler import send_telegram_reply
 
-        error = await send_telegram_reply(
-            context, response_text, attachments or None, keyboard,
-        )
-        if not error:
+        from helpers import channel_delivery
+
+        async def send(ctx, text, files_):
+            return await send_telegram_reply(ctx, text, files_ or None, keyboard)
+
+        delivery = await channel_delivery.deliver(context, response_text, attachments or None, send=send)
+        if delivery.ok:
             context.data[CTX_SEND_FAILURES] = 0
             return
+        if delivery.queued:
+            return  # retried automatically (helpers/channel_delivery.py)
+        error = delivery.error
 
         failures = context.data.get(CTX_SEND_FAILURES, 0) + 1
         context.data[CTX_SEND_FAILURES] = failures

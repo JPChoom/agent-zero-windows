@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- Ordered Python files own cleanup of expired API chats (`_20_`), the stall watchdog (`_30_`), the local model server (`_40_`: autostart once per start, and restarting a running server whose saved settings changed while no chat is mid-turn and no model call is waiting or running; it closes `model_concurrency.maintenance` for the server first, checks again and gives up if a turn started, so a call arriving during the restart waits instead of failing), cache trimming (`_50_`), and future job-loop tasks.
+- Ordered Python files own cleanup of expired API chats (`_20_`), the stall watchdog (`_30_`), the local model server (`_40_`: autostart once per start, and restarting a running server whose saved settings changed while no chat is mid-turn and no model call is waiting or running; it closes `model_concurrency.maintenance` for the server first, checks again and gives up if a turn started, so a call arriving during the restart waits instead of failing), the channel reply queue (`_35_`: `helpers/channel_delivery.drain`, retrying replies that could not be delivered), cache trimming (`_50_`), and future job-loop tasks.
 
 ## Local Contracts
 

@@ -35,10 +35,18 @@ class WhatsAppAutoReply(Extension):
         reply_to: str = "",
     ):
         from plugins._whatsapp_integration.helpers.handler import send_wa_reply
-        error = await send_wa_reply(context, response_text, attachments, reply_to=reply_to)
-        if not error:
+        from helpers import channel_delivery
+
+        async def send(ctx, text, files_):
+            return await send_wa_reply(ctx, text, files_, reply_to=reply_to)
+
+        delivery = await channel_delivery.deliver(context, response_text, attachments, send=send)
+        if delivery.ok:
             context.data[CTX_SEND_FAILURES] = 0
             return
+        if delivery.queued:
+            return  # retried automatically (helpers/channel_delivery.py)
+        error = delivery.error
         failures = context.data.get(CTX_SEND_FAILURES, 0) + 1
         context.data[CTX_SEND_FAILURES] = failures
         if failures <= MAX_SEND_RETRIES:

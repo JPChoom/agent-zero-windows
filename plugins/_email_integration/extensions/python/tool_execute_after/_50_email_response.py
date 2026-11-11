@@ -47,7 +47,11 @@ class EmailResponseIntercept(Extension):
         if attachments:
             PrintStyle.info(f"Email: sending update with {len(attachments)} attachment(s)")
 
-        error = await send_email_reply(context, text, attachments or None)
+        from helpers import channel_delivery
+
+        # a mid-task update is worth a quick retry, not a queue
+        error = (await channel_delivery.deliver(context, text, attachments or None,
+                                                send=send_email_reply, queue=False)).error
 
         if error:
             result = agent.read_prompt("fw.email.update_error.md", error=error)

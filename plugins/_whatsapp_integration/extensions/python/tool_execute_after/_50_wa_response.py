@@ -51,7 +51,13 @@ class WhatsAppResponseIntercept(Extension):
         if attachments:
             PrintStyle.info(f"WhatsApp: sending update with {len(attachments)} attachment(s)")
 
-        error = await send_wa_reply(context, text, attachments or None, reply_to=reply_to, keep_typing=True)
+        from helpers import channel_delivery
+
+        async def send(ctx, body, files_):
+            return await send_wa_reply(ctx, body, files_ or None, reply_to=reply_to, keep_typing=True)
+
+        # a mid-task update is worth a quick retry, not a queue
+        error = (await channel_delivery.deliver(context, text, attachments or None, send=send, queue=False)).error
 
         if error:
             result = agent.read_prompt("fw.wa.update_error.md", error=error)

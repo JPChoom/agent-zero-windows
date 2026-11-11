@@ -55,6 +55,17 @@ async def send(context, text: str, attachments: list[str] | None = None) -> str:
     return str(error or "")
 
 
+async def _question_sender(context, text: str, attachments: list[str]) -> str:
+    return await send(context, text, attachments)
+
+
+async def _deliver_question(context, text: str) -> None:
+    """Send an approval question with quick retries; a stale question is not queued."""
+    from helpers import channel_delivery
+
+    await channel_delivery.deliver(context, text, send=_question_sender, queue=False, delays=(2.0, 6.0))
+
+
 def _channel_allowlist_set(context, channel: str) -> bool:
     """Does the channel's bot/handler for this chat have a non-empty allowlist?
     Plugins expose it through `channel_allowlist_set(context)`; one that does
@@ -98,7 +109,7 @@ def announce(agent, approval_id: str, question: str) -> str:
         context.set_data(CODES_KEY, codes)
         text = (f"Approval needed: {str(question).strip()[:1500]}\n\n"
                 f"Reply  yes {code}  to allow or  no {code}  to refuse.")
-        task = asyncio.get_running_loop().create_task(send(context, text))
+        task = asyncio.get_running_loop().create_task(_deliver_question(context, text))
         _tasks.add(task)
         task.add_done_callback(_tasks.discard)
         return code

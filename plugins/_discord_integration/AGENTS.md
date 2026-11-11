@@ -13,6 +13,7 @@
 
 ## Local Contracts
 
+- Replies are sent through `helpers/channel_delivery.deliver` (in-line retries, then a persistent retry queue); a send function must return its error instead of swallowing it.
 - `helpers/allowlist.py` tells phone approvals (`helpers/channel_approvals.py`) whether this bot's `allowed_users` is set.
 
 - `allowed_users` empty = nobody; ignored senders are logged with their id. Other bots and the bot itself are ignored.

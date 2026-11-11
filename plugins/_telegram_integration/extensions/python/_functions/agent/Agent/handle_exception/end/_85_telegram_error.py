@@ -31,7 +31,12 @@ class TelegramFriendlyError(Extension):
         from plugins._telegram_integration.helpers.handler import send_telegram_reply
 
         text = error_ui.friendly_error_message(exception)
-        error = await send_telegram_reply(context, text)
+        from helpers import channel_delivery
+
+        async def send(ctx, body, files_):
+            return await send_telegram_reply(ctx, body)
+
+        error = (await channel_delivery.deliver(context, text, send=send, queue=False)).error
         if error:
             PrintStyle.debug(f"Telegram error reply failed: {error}")
 

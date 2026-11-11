@@ -13,6 +13,7 @@
 
 ## Local Contracts
 
+- Replies are sent through `helpers/channel_delivery.deliver` (in-line retries, then a persistent retry queue); a send function must return its error instead of swallowing it.
 - An empty `allowed_users` answers nobody (one rule for every channel, owner decision 2026-11-08); `helpers/allowlist.py` tells phone approvals whether the list is set.
 
 - Webhook mode always registers a secret with Telegram (`setup_webhook` generates a random one when none is configured); `api/webhook.py` refuses any update without the matching `X-Telegram-Bot-Api-Secret-Token` (constant-time compare), and refuses everything for a bot with no active secret.

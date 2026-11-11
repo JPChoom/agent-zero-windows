@@ -63,7 +63,13 @@ class TelegramResponseIntercept(Extension):
         keyboard = context.data.pop(CTX_TG_KEYBOARD, None)
 
         if attachments:
-            error = await send_telegram_reply(context, text, attachments or None, keyboard)
+            from helpers import channel_delivery
+
+            async def send(ctx, body, files_):
+                return await send_telegram_reply(ctx, body, files_ or None, keyboard)
+
+            # a mid-task update is worth a quick retry, not a queue
+            error = (await channel_delivery.deliver(context, text, attachments, send=send, queue=False)).error
         elif await draft_stream.send_intermediate_response(context, text, keyboard):
             error = None
         else:

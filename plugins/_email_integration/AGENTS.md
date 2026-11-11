@@ -13,6 +13,7 @@
 
 ## Local Contracts
 
+- Replies are sent through `helpers/channel_delivery.deliver` (in-line retries, then a persistent retry queue); a send function must return its error instead of swallowing it.
 - An empty `sender_whitelist` answers nobody (one rule for every channel, owner decision 2026-11-08). Email never answers approval questions: a sender address is easy to fake.
 
 - Treat mailbox credentials and downloaded attachments as sensitive.

@@ -33,10 +33,15 @@ class EmailAutoReply(Extension):
         self, context: AgentContext, response_text: str, attachments: list[str],
     ):
         from plugins._email_integration.helpers.handler import send_email_reply
-        error = await send_email_reply(context, response_text, attachments)
-        if not error:
+        from helpers import channel_delivery
+
+        delivery = await channel_delivery.deliver(context, response_text, attachments, send=send_email_reply)
+        if delivery.ok:
             context.data[CTX_SEND_FAILURES] = 0
             return
+        if delivery.queued:
+            return  # retried automatically (helpers/channel_delivery.py)
+        error = delivery.error
         failures = context.data.get(CTX_SEND_FAILURES, 0) + 1
         context.data[CTX_SEND_FAILURES] = failures
         if failures <= MAX_SEND_RETRIES:

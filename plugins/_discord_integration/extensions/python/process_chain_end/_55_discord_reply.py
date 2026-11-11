@@ -21,7 +21,10 @@ class DiscordReply(Extension):
         attachments = context.data.pop(C.CTX_ATTACHMENTS, []) or []
         if not text and not attachments:
             return
-        error = await bot.send_reply(context, text, attachments)
+        from helpers import channel_delivery
+
+        delivery = await channel_delivery.deliver(context, text, attachments, send=bot.send_reply)
+        error = "" if delivery.queued else delivery.error  # a queued reply is retried automatically
         if error:
             PrintStyle.error(f"Discord reply failed: {error}")
             context.log.log(type="error", heading="Discord reply was not delivered", content=error)

@@ -27,8 +27,10 @@ async def send_text(
     text: str,
     reply_to_message_id: int | None = None,
     parse_mode: object = _UNSET,
+    raise_errors: bool = False,
 ) -> int | None:
-    """Send text message, splitting if too long. Returns last message_id or None on error.
+    """Send text message, splitting if too long. Returns last message_id or None on error
+    (or raises it with `raise_errors`, for callers that retry or queue).
 
     parse_mode behaviour:
       - _UNSET (default): omitted from send_message → Bot's DefaultBotProperties applies.
@@ -61,6 +63,8 @@ async def send_text(
         return last_msg_id
     except Exception as e:
         PrintStyle.error(f"Telegram send_text failed: {format_error(e)}")
+        if raise_errors:
+            raise
         return None
 
 # Files and images
@@ -222,6 +226,7 @@ async def send_text_with_keyboard(
     buttons: list[list[dict]],
     reply_to_message_id: int | None = None,
     parse_mode: object = _UNSET,
+    raise_errors: bool = False,
 ) -> int | None:
     """Send text with inline keyboard buttons."""
     try:
@@ -237,6 +242,8 @@ async def send_text_with_keyboard(
         return msg.message_id
     except Exception as e:
         PrintStyle.error(f"Telegram send_text_with_keyboard failed: {format_error(e)}")
+        if raise_errors:
+            raise
         return None
 
 # Typing indicator
