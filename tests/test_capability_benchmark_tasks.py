@@ -202,3 +202,117 @@ def test_reports_are_written_as_the_run_goes(tmp_path):
     assert partial["complete"] is False and len(partial["results"]) == 1 and partial["planned_runs"] == 2
     bench.write_report(out, header, [bench.Result("a", "coding"), bench.Result("b", "coding")], complete=True)
     assert json.loads(out.read_text(encoding="utf-8"))["complete"] is True
+
+
+# -- the hard tier -------------------------------------------------------------------
+
+def _hard(task_id, tmp_path):
+    task = next(t for t in bench.TASKS if t.id == task_id)
+    folder = _folder(tmp_path, task)
+    task.setup(folder)
+    return task, folder
+
+
+def test_the_hard_tier_is_separate_and_named_tasks_still_run():
+    standard = bench.select(bench.TASKS, set(), set(), with_apps=False)
+    hard = bench.select(bench.TASKS, set(), set(), with_apps=False, tier="hard")
+    assert hard and all(t.tier == "hard" for t in hard) and all(t.tier == "standard" for t in standard)
+    assert len(bench.select(bench.TASKS, set(), set(), False, "all")) == len(standard) + len(hard)
+    assert [t.id for t in bench.select(bench.TASKS, set(), {"hard_refactor"}, False)] == ["hard_refactor"]
+    assert len(hard) >= 6 and {t.category for t in hard} >= {"coding", "subagents", "windows"}
+
+
+def test_a_refactor_that_misses_the_lazy_import_fails(tmp_path):
+    task, folder = _hard("hard_refactor", tmp_path)
+    task.solve(folder, bench.Run())
+    assert task.check(folder, bench.Run())
+    (folder / "pkg" / "extra.py").write_text(bench.REFACTOR_FILES["pkg/extra.py"], encoding="utf-8")  # still imports utils inside late()
+    assert not task.check(folder, bench.Run())
+
+
+def test_a_refactor_that_keeps_utils_fails(tmp_path):
+    task, folder = _hard("hard_refactor", tmp_path)
+    task.solve(folder, bench.Run())
+    (folder / "utils.py").write_text(bench.UTILS_PY, encoding="utf-8")
+    assert not task.check(folder, bench.Run())
+
+
+def test_fixing_only_the_visible_bug_fails(tmp_path):
+    task, folder = _hard("hard_two_bugs", tmp_path)
+    (folder / "inventory.py").write_text(bench.INVENTORY_BUGGY.replace("), 1)", "), 2)"), encoding="utf-8")
+    assert bench._unittest_passes(folder) and not task.check(folder, bench.Run())
+
+
+def test_changing_the_tests_or_readme_fails(tmp_path):
+    task, folder = _hard("hard_two_bugs", tmp_path)
+    task.solve(folder, bench.Run())
+    (folder / "test_inventory.py").write_text(bench.INVENTORY_TEST + "\n# edited\n", encoding="utf-8")
+    assert not task.check(folder, bench.Run())
+
+
+def test_the_build_shortcut_of_editing_build_py_fails(tmp_path):
+    task, folder = _hard("hard_dead_end", tmp_path)
+    (folder / "build.py").write_text(
+        'from pathlib import Path\nPath("dist").mkdir(exist_ok=True)\nPath("dist/out.txt").write_text("demo v1.4.2\n")\nprint("built")\n',
+        encoding="utf-8")
+    assert not task.check(folder, bench.Run())  # the output is right but build.py was rewritten
+
+
+def test_a_review_that_finds_only_one_planted_bug_fails(tmp_path):
+    task, folder = _hard("hard_review_planted", tmp_path)
+    for one in ("Bug: SQL injection, use a parameterized query.", "Bug: range(1, ...) is an off-by-one that skips the first row."):
+        assert not task.check(folder, bench.Run(responses=[one]))
+    assert not task.check(folder, bench.Run(responses=["Looks fine to me."]))
+    both = bench.Run()
+    task.solve(folder, both)
+    assert task.check(folder, both)
+    (folder / "change.diff").write_text("changed", encoding="utf-8")  # a review that edits the file
+    assert not task.check(folder, both)
+
+
+def test_wrong_children_totals_fail(tmp_path):
+    import json
+
+    task, folder = _hard("hard_children_work", tmp_path)
+    task.solve(folder, bench.Run())
+    assert task.check(folder, bench.Run())
+    good = json.loads((folder / "totals.json").read_text(encoding="utf-8"))
+    (folder / "totals.json").write_text(json.dumps({**good, "total": good["total"] + 1}), encoding="utf-8")
+    assert not task.check(folder, bench.Run())
+    (folder / "totals.json").write_text("not json", encoding="utf-8")
+    assert not task.check(folder, bench.Run())
+
+
+def test_the_codeword_must_come_from_the_child():
+    task = next(t for t in bench.TASKS if t.id == "hard_resume_child")
+    assert "{word}" in task.prompts[0] and task.expect_tools == ("child_agent",)
+
+
+def test_ledger_traps(tmp_path):
+    task, folder = _hard("hard_messy_ledger", tmp_path)
+    for total, skipped in (("2510.50", "4,6"), ("1255.25", "4,6"), ("1255.25", "6,8"), ("1267.75", "4,6,8"), ("1255.25", "4,6,8,9")):
+        (folder / "total.txt").write_text(total, encoding="utf-8")
+        (folder / "skipped.txt").write_text(skipped, encoding="utf-8")
+        assert not task.check(folder, bench.Run()), (total, skipped)
+    (folder / "total.txt").write_text("1255.25", encoding="utf-8")
+    (folder / "skipped.txt").write_text("4, 6, 8", encoding="utf-8")
+    assert task.check(folder, bench.Run())
+
+
+def test_the_ledger_answer_is_what_the_file_says():
+    """Independent of the task's own solution: only dated rows count (not the blank line, the n/a row or TOTAL)."""
+    import csv
+    import io
+    import re
+
+    lines = bench.LEDGER.lstrip("﻿").split("\n")[:-1]
+    total, skipped = 0.0, []
+    for number, line in enumerate(lines[1:], start=2):
+        row = next(csv.reader(io.StringIO(line)), [])
+        try:
+            if not re.fullmatch(r"\d{4}-\d\d-\d\d", row[0]):
+                raise ValueError("not a dated row")
+            total += float(row[2].replace("$", "").replace(",", ""))
+        except (IndexError, ValueError):
+            skipped.append(number)
+    assert f"{total:.2f}" == "1255.25" and skipped == [4, 6, 8]

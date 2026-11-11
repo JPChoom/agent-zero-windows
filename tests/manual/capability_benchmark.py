@@ -13,7 +13,11 @@ scored on what happened, never on what the agent says it did:
 - used_expected: whether the run used the tool the row is about (for example
   `child_agent` for subagents), reported apart from completion
 
-Rows (categories): windows, coding, subagents, permissions, learning. Routing
+Rows (categories): windows, coding, subagents, permissions, learning. Tasks are in
+the "standard" tier (the baseline: all pass on a 27B local model) or the "hard"
+tier (`--tier hard`: multi-file refactors, hidden requirements, misleading failures,
+planted bugs, a child that must keep its memory, messy data).
+ Routing
 and local inference are measured by running the same tasks under different
 configurations and comparing the reports:
 
@@ -38,6 +42,7 @@ import asyncio
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -89,6 +94,7 @@ class Task:
     allowed_outside: tuple[str, ...] = ()  # workdir-relative prefixes a correct run may touch
     teardown: Callable[[Path], None] | None = None
     fresh_memory: bool = False  # own empty memory (and behaviour rules) for this run, deleted after
+    tier: str = "standard"  # "hard": harder tasks, run with --tier hard (or all)
 
 
 # ------------------------------------------------------------------ helpers
@@ -494,6 +500,282 @@ TASKS: list[Task] = _windows_tasks() + [
          lambda d: None, _check_date, new_chat_per_prompt=True, pause_between=30, params=_date_params, fresh_memory=True,
          solve=lambda d, run: _write(d / "date.txt", _date_in_format(run.params["word"]))),
 ]
+# ------------------------------------------------------------------ the hard tier
+#
+# The standard tasks pass at 100% on a 27B local model, which cannot separate
+# good from very good. These need real effort and punish the shortcuts: a
+# missed caller found only by a hidden test, a bug the visible tests do not
+# show, a failure message that points at the wrong fix, a review with two
+# planted bugs, delegation that has to keep its memory, and messy data.
+
+UTILS_PY = '''def slug(text):
+    return "-".join(text.lower().split())
+
+
+def shout(text):
+    return text.upper() + "!"
+
+
+def clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def average(values):
+    return sum(values) / len(values)
+'''
+REFACTOR_FILES = {
+    "utils.py": UTILS_PY,
+    "report.py": 'from utils import slug, average\n\n\ndef summary(values):\n    return f"{slug(\'A B\')}={average(values)}"\n',
+    "cli.py": 'import utils\n\n\ndef banner(text):\n    return utils.shout(utils.slug(text))\n',
+    "pkg/__init__.py": "",
+    "pkg/extra.py": 'def late(x):\n    from utils import clamp\n    return clamp(x, 0, 10)\n',
+    "test_all.py": ('import unittest\n\nimport cli\nimport report\nfrom pkg.extra import late\nfrom utils import average, slug\n\n\n'
+                    'class AllTest(unittest.TestCase):\n'
+                    '    def test_slug(self):\n        self.assertEqual(slug("Hello World"), "hello-world")\n\n'
+                    '    def test_average(self):\n        self.assertEqual(average([1, 2, 3]), 2)\n\n'
+                    '    def test_cli(self):\n        self.assertEqual(cli.banner("a b"), "a-b!".upper())\n\n'
+                    '    def test_report(self):\n        self.assertEqual(report.summary([2, 4]), "a-b=3.0")\n\n\n'
+                    'if __name__ == "__main__":\n    unittest.main()\n'),
+}
+REFACTOR_HIDDEN = ('import cli, report\nfrom pkg.extra import late\n'
+                   'assert cli.banner("x y") == "X-Y!"\nassert report.summary([1, 3]) == "a-b=2.0"\n'
+                   'assert late(15) == 10 and late(-3) == 0 and late(4) == 4\n'
+                   'import strings, numeric as n\nassert strings.slug("A B") == "a-b" and strings.shout("a") == "A!"\n'
+                   'assert n.clamp(5, 0, 3) == 3 and n.average([2, 4]) == 3\n')
+
+
+def _setup_refactor(d: Path) -> None:
+    for name, text in REFACTOR_FILES.items():
+        _write(d / name, text)
+
+
+def _imports_utils(folder: Path) -> bool:
+    pattern = re.compile(r"(^|\s)(import|from)\s+utils\b|\butils\.", re.MULTILINE)
+    return any(pattern.search(_read(p)) for p in folder.rglob("*.py") if "__pycache__" not in p.parts)
+
+
+def _check_refactor(d: Path, run: Run) -> bool:
+    strings, numbers = _read(d / "strings.py"), _read(d / "numeric.py")
+    return (not (d / "utils.py").exists() and "def slug" in strings and "def shout" in strings
+            and "def clamp" in numbers and "def average" in numbers
+            and "def clamp" not in strings and "def slug" not in numbers
+            and not _imports_utils(d) and _unittest_passes(d) and _snippet_ok(d, REFACTOR_HIDDEN))
+
+
+def _solve_refactor(d: Path, run: Run) -> None:
+    (d / "utils.py").unlink()
+    _write(d / "strings.py", 'def slug(text):\n    return "-".join(text.lower().split())\n\n\ndef shout(text):\n    return text.upper() + "!"\n')
+    _write(d / "numeric.py", "def clamp(x, lo, hi):\n    return max(lo, min(hi, x))\n\n\ndef average(values):\n    return sum(values) / len(values)\n")
+    _write(d / "report.py", REFACTOR_FILES["report.py"].replace("from utils import slug, average", "from numeric import average\nfrom strings import slug"))
+    _write(d / "cli.py", REFACTOR_FILES["cli.py"].replace("import utils", "import strings").replace("utils.shout(utils.slug(text))", "strings.shout(strings.slug(text))"))
+    _write(d / "pkg/extra.py", REFACTOR_FILES["pkg/extra.py"].replace("from utils import clamp", "from numeric import clamp"))
+    _write(d / "test_all.py", REFACTOR_FILES["test_all.py"].replace("from utils import average, slug", "from numeric import average\nfrom strings import slug"))
+
+
+INVENTORY_BUGGY = '''def total_value(items):
+    """Sum of price * quantity."""
+    return round(sum(i["price"] * i["qty"] for i in items), 1)
+
+
+def add_item(items, name, price, qty):
+    items.append({"name": name, "price": price, "qty": qty})
+    return items
+'''
+INVENTORY_README = """# inventory
+
+- `total_value(items)` is the sum of price * qty, rounded to cents (2 decimals).
+- `add_item(items, name, price, qty)` raises `ValueError` when `qty` is not a positive whole number
+  or `price` is negative, and leaves `items` unchanged.
+"""
+INVENTORY_TEST = '''import unittest
+
+from inventory import add_item, total_value
+
+
+class InventoryTest(unittest.TestCase):
+    def test_total_is_in_cents(self):
+        self.assertEqual(total_value([{"price": 1.25, "qty": 3}]), 3.75)
+
+    def test_add_item(self):
+        self.assertEqual(add_item([], "pen", 2.0, 4), [{"name": "pen", "price": 2.0, "qty": 4}])
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+INVENTORY_HIDDEN = ('from inventory import add_item, total_value\n'
+                    'assert total_value([{"price": 0.333, "qty": 3}]) == 1.0\n'
+                    'assert total_value([{"price": 2.675, "qty": 1}]) in (2.67, 2.68)\n'
+                    'for bad in ((1.0, 0), (1.0, -2), (1.0, 1.5), (-1.0, 2), (1.0, True)):\n'
+                    '    items = []\n'
+                    '    try:\n        add_item(items, "x", *bad)\n    except ValueError:\n        assert items == []\n'
+                    '    else:\n        raise SystemExit("accepted " + repr(bad))\n'
+                    'ok = add_item([], "x", 0.0, 1)\nassert ok == [{"name": "x", "price": 0.0, "qty": 1}]\n')
+INVENTORY_FIXED = '''def total_value(items):
+    """Sum of price * quantity, in cents."""
+    return round(sum(i["price"] * i["qty"] for i in items), 2)
+
+
+def add_item(items, name, price, qty):
+    if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0 or price < 0:
+        raise ValueError("qty must be a positive whole number and price must not be negative")
+    items.append({"name": name, "price": price, "qty": qty})
+    return items
+'''
+
+
+def _setup_inventory(d: Path) -> None:
+    _write(d / "inventory.py", INVENTORY_BUGGY)
+    _write(d / "README.md", INVENTORY_README)
+    _write(d / "test_inventory.py", INVENTORY_TEST)
+
+
+def _check_inventory(d: Path, run: Run) -> bool:
+    return (_read(d / "test_inventory.py") == INVENTORY_TEST and _read(d / "README.md") == INVENTORY_README
+            and _unittest_passes(d) and _snippet_ok(d, INVENTORY_HIDDEN))
+
+
+BUILD_PY = '''import json
+from pathlib import Path
+
+config = json.loads(Path("config.json").read_text(encoding="utf-8"))
+version = config["version"]
+template = Path("templates/out.tpl").read_text(encoding="utf-8")
+Path("dist").mkdir(exist_ok=True)
+Path("dist/out.txt").write_text(template.format(version=version, name=config["name"]), encoding="utf-8")
+print("built", version)
+'''
+
+
+def _setup_build(d: Path) -> None:
+    _write(d / "build.py", BUILD_PY)
+    _write(d / "config.json", '{"name": "demo", "verison": "1.4.2"}\n')
+    _write(d / "templates/out.tmpl", "{name} v{version}\n")
+
+
+def _check_build(d: Path, run: Run) -> bool:
+    shutil.rmtree(d / "dist", ignore_errors=True)
+    try:
+        built = _py(d, "build.py").returncode == 0
+    except Exception:
+        built = False
+    return built and _read(d / "build.py") == BUILD_PY and _read(d / "dist" / "out.txt") == "demo v1.4.2\n"
+
+
+def _solve_build(d: Path, run: Run) -> None:
+    _write(d / "config.json", '{"name": "demo", "version": "1.4.2"}\n')
+    (d / "templates" / "out.tmpl").rename(d / "templates" / "out.tpl")
+
+
+PLANTED_DIFF = '''--- a/users.py
++++ b/users.py
+@@ -0,0 +1,14 @@
++import sqlite3
++
++
++def find_user(conn, name):
++    cursor = conn.execute("SELECT id, name FROM users WHERE name = '" + name + "'")
++    return cursor.fetchall()
++
++
++def names(rows):
++    result = []
++    for i in range(1, len(rows)):
++        result.append(rows[i][1])
++    return result
+'''
+
+
+def _check_planted(d: Path, run: Run) -> bool:
+    reply = " ".join(run.responses).lower()
+    injection = any(k in reply for k in ("injection", "parameteri", "placeholder", "concatenat", "unsanitized", "sanitiz"))
+    off_by_one = any(k in reply for k in ("range(1", "off-by-one", "off by one", "skips the first", "first row", "first element", "index 0"))
+    return injection and off_by_one and _snapshot(d) == {"change.diff": PLANTED_DIFF}
+
+
+def _setup_numbers_csv(d: Path) -> None:
+    for name, step in (("a.csv", 3), ("b.csv", 5), ("c.csv", 7)):
+        _write(d / name, "key,value\n" + "".join(f"k{i},{(i * step) % 23 + 1}\n" for i in range(1, 161)))
+
+
+def _csv_sum(step: int) -> int:
+    return sum((i * step) % 23 + 1 for i in range(1, 161))
+
+
+def _check_totals(d: Path, run: Run) -> bool:
+    try:
+        got = json.loads(_read(d / "totals.json"))
+    except ValueError:
+        return False
+    want = {"a": _csv_sum(3), "b": _csv_sum(5), "c": _csv_sum(7)}
+    return got == {**want, "total": sum(want.values())}
+
+
+def _word_params() -> dict:
+    return {"word": random.choice(WORDS) + str(random.randint(100, 999))}
+
+
+LEDGER = ('﻿date,description,amount\n'
+          '2026-01-02,"Paper, toner","$1,200.00"\n'
+          '2026-01-03,Coffee,4.50\n'
+          '\n'
+          '2026-01-05,Refund,-12.50\n'
+          '2026-01-06,Parking,n/a\n'
+          '2026-01-07,"Lunch ""team""",63.25\n'
+          'TOTAL,,1255.25\n')
+
+
+def _setup_ledger(d: Path) -> None:
+    (d / "ledger.csv").write_bytes(LEDGER.encode("utf-8"))
+
+
+def _check_ledger(d: Path, run: Run) -> bool:
+    return _read(d / "total.txt").strip() == "1255.25" and _read(d / "skipped.txt").replace(" ", "").strip() == "4,6,8"
+
+
+def _solve_ledger(d: Path, run: Run) -> None:
+    _write(d / "total.txt", "1255.25\n")
+    _write(d / "skipped.txt", "4,6,8\n")
+
+
+HARD_TASKS: list[Task] = [
+    Task("hard_refactor", "coding",
+         ["In {dir}, split utils.py into strings.py (slug, shout) and numeric.py (clamp, average). Update every import in the project, "
+          "tests included, and delete utils.py. `python -m unittest` must still pass in that folder."],
+         _setup_refactor, _check_refactor, solve=_solve_refactor, tier="hard"),
+    Task("hard_two_bugs", "coding",
+         ["The tests in {dir} fail. Fix the code, not the tests, and make sure the code does everything README.md says."],
+         _setup_inventory, _check_inventory, solve=lambda d, run: _write(d / "inventory.py", INVENTORY_FIXED), tier="hard"),
+    Task("hard_dead_end", "coding",
+         ["`python build.py` fails in {dir}. Make it succeed WITHOUT editing build.py; dist/out.txt must contain the project name and version."],
+         _setup_build, _check_build, solve=_solve_build, tier="hard"),
+    Task("hard_review_planted", "coding",
+         ["Review the change in {dir}\\change.diff and list every bug you find, with the reason. Do not change any files."],
+         lambda d: _write(d / "change.diff", PLANTED_DIFF), _check_planted, profile="coding-reviewer", tier="hard",
+         solve=lambda d, run: run.responses.append("1) find_user builds SQL by string concatenation: SQL injection, use a parameterized query. "
+                                                    "2) names starts at range(1, ...) and skips the first row (off-by-one).")),
+    Task("hard_children_work", "subagents",
+         ["Use three child agents working at the same time, one per file: each computes the sum of the value column of its file "
+          "({dir}\\a.csv, {dir}\\b.csv, {dir}\\c.csv). When all three have answered, write {dir}\\totals.json as "
+          "{{\"a\": <sum>, \"b\": <sum>, \"c\": <sum>, \"total\": <sum of the three>}}."],
+         _setup_numbers_csv, _check_totals, expect_tools=("child_agent",), tier="hard",
+         solve=lambda d, run: _write(d / "totals.json", json.dumps({"a": _csv_sum(3), "b": _csv_sum(5), "c": _csv_sum(7),
+                                                                   "total": _csv_sum(3) + _csv_sum(5) + _csv_sum(7)}))),
+    Task("hard_resume_child", "subagents",
+         ["Start a child agent named analyst and tell it the codeword {word}; do not write the word anywhere. "
+          "Then send the same child a second message asking which codeword you gave it, and write its answer to {dir}\\answer.txt."],
+         lambda d: None, lambda d, run: _read(d / "answer.txt").strip().strip('"\'`.').lower() == run.params.get("word", "?").lower(),
+         params=_word_params, expect_tools=("child_agent",), tier="hard",
+         solve=lambda d, run: _write(d / "answer.txt", run.params["word"])),
+    Task("hard_messy_ledger", "windows",
+         ["{dir}\\ledger.csv has a byte order mark, quoted fields with commas and quotes, a blank line, a row whose amount is not a number "
+          "and a TOTAL line. Add up the amount column, treating a $ sign and thousands separators as part of the number and a minus sign as a refund, "
+          "and skip every line that is not a normal row. Write the total with two decimals to "
+          "{dir}\\total.txt, and the 1-based line numbers of the skipped lines (the header is line 1 and is not skipped), comma-separated, "
+          "to {dir}\\skipped.txt."],
+         _setup_ledger, _check_ledger, solve=_solve_ledger, tier="hard"),
+]
+TASKS += HARD_TASKS
 
 
 # ------------------------------------------------------------------ running
@@ -515,6 +797,7 @@ class Result:
     error: str = ""
     latency: dict = field(default_factory=dict)
     params: dict = field(default_factory=dict)
+    tier: str = "standard"
 
 
 class _FreshMemory:
@@ -625,7 +908,7 @@ async def _run_task(task: Task, workdir: Path, timeout: float, repeat: int, fold
 
     before_tree = wwb._tree(workdir, folder)
     before_run = wwb._run_key_values()
-    result = Result(task.id, task.category, repeat, params=dict(run.params))
+    result = Result(task.id, task.category, repeat, params=dict(run.params), tier=task.tier)
     contexts = []
     started = time.time()
     try:
@@ -779,12 +1062,14 @@ def write_report(out: Path, header: dict, results: list[Result], complete: bool)
     return report
 
 
-def select(tasks: list[Task], categories: set[str], only: set[str], with_apps: bool) -> list[Task]:
+def select(tasks: list[Task], categories: set[str], only: set[str], with_apps: bool, tier: str = "standard") -> list[Task]:
     has_git = shutil.which("git") is not None
     picked = []
     for task in tasks:
         if only and task.id not in only:
             continue
+        if not only and tier != "all" and task.tier != tier:
+            continue  # a task named with --only is run whatever its tier
         if categories and task.category not in categories:
             continue
         if "apps" in task.needs and not with_apps:
@@ -798,6 +1083,8 @@ def select(tasks: list[Task], categories: set[str], only: set[str], with_apps: b
 async def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--category", default="", help="comma-separated: " + ", ".join(CATEGORIES))
+    parser.add_argument("--tier", choices=("standard", "hard", "all"), default="standard",
+                        help="standard: the baseline set (default); hard: the harder tasks; all: both")
     parser.add_argument("--only", default="", help="comma-separated task ids")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--with-apps", action="store_true", help="include tasks that drive desktop apps")
@@ -818,10 +1105,10 @@ async def main(argv=None) -> int:
         return 0
     categories = {c.strip() for c in args.category.split(",") if c.strip()}
     only = {t.strip() for t in args.only.split(",") if t.strip()}
-    tasks = select(TASKS, categories, only, args.with_apps)
+    tasks = select(TASKS, categories, only, args.with_apps, args.tier)
     if args.list:
         for task in tasks:
-            print(f"{task.category:<12} {task.id}")
+            print(f"{task.category:<12} {task.tier:<9} {task.id}")
         return 0
 
     from helpers import dotenv, settings
