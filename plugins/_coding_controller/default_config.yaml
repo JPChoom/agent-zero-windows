@@ -8,6 +8,12 @@ enforce_completion_gate: false
 # tool result. Cheap, runs nothing; on by default.
 quick_check: true
 
+# After a Python file is written or patched, report problems the edit
+# introduced that still parse but fail when run (undefined names, names used
+# before assignment, redefined functions). Needs `ruff` on PATH; without it
+# this does nothing. Only problems the edit added are reported.
+lint_check: true
+
 # Maximum automatic repair attempts per project before giving up and
 # reporting the failure instead of blocking forever.
 max_repair_attempts: 3

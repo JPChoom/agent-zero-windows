@@ -53,6 +53,7 @@ def get_config(agent) -> dict:
     return {
         "enforce_completion_gate": _as_bool(cfg.get("enforce_completion_gate", False)),
         "quick_check": _as_bool(cfg.get("quick_check", True)),
+        "lint_check": _as_bool(cfg.get("lint_check", True)),
         "max_repair_attempts": int(cfg.get("max_repair_attempts", 3)),
         "command_timeout_seconds": int(cfg.get("command_timeout_seconds", 300)),
         "dotnet_restore_first": _as_bool(cfg.get("dotnet_restore_first", True)),

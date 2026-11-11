@@ -38,6 +38,18 @@
 
                 <div class="field">
                     <div class="field-label">
+                        <div class="field-title">Lint check after every Python edit</div>
+                        <div class="field-description">
+                            After the agent writes or patches a Python file, tell it at once about problems the edit added that still parse but fail when run: undefined names, names used before assignment, redefined functions. Needs ruff installed (<code>pip install ruff</code>); without it nothing is checked. Runs no project code.
+                        </div>
+                    </div>
+                    <div class="field-control">
+                        <input type="checkbox" :checked="config.lint_check !== false" @change="config.lint_check = $event.target.checked" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <div class="field-label">
                         <div class="field-title">Max repair attempts</div>
                         <div class="field-description">Automatic repair attempts allowed per project before giving up and reporting the failure.</div>
                     </div>
