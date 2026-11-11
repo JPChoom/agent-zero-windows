@@ -16,6 +16,7 @@
 
 ## Local Contracts
 
+- An agent stopped while it waits for an answer (the Stop button, a stopped child) closes its question: the approval is dropped from the registry, the card shows "cancelled" and the phone code is forgotten. `plugins/_safety_policy` and `plugins/_infection_check` do the same.
 - Fail closed: an unreadable config makes the gate decide as Manual with no rules (`config.fallback_config`); an invalid channel cap counts as Manual.
 
 - The mode and messaging cap come from the chat a call acts for: a parallel worker uses its parent chat (`helpers/parallel_tools.governing_context`), never above Manual if that chat is gone; scheduled tasks carry their creating chat's channel (`helpers/channels.py`). Approval cards are posted to that visible chat.

@@ -598,6 +598,17 @@ class InfectionChecker:
                 pass  # the WebUI card still asks
             with perf.waiting_for_user():
                 approved = await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.CancelledError:
+            # The agent was stopped while asking: close the card and the pending answer.
+            approval_registry.cleanup(approval_id)
+            self._finish_clarification(request_item, outcome="cancelled")
+            try:
+                from helpers import channel_approvals
+
+                channel_approvals.forget(agent, approval_id)
+            except Exception:
+                pass
+            raise
         except (TimeoutError, asyncio.TimeoutError):
             approval_registry.cleanup(approval_id)
             self._finish_clarification(request_item, outcome="timeout")

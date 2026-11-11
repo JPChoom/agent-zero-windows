@@ -244,6 +244,17 @@ class SafetyCommandPolicy(Extension):
         try:
             with perf.waiting_for_user():
                 approved = await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.CancelledError:
+            # The agent was stopped while asking: close the card and the pending answer.
+            approval_registry.cleanup(approval_id)
+            self._finish_approval(log_item, approval_id, approved=False, outcome="cancelled")
+            try:
+                from helpers import channel_approvals
+
+                channel_approvals.forget(self.agent, approval_id)
+            except Exception:
+                pass
+            raise
         except TimeoutError:
             approval_registry.cleanup(approval_id)
             self._finish_approval(log_item, approval_id, approved=False, outcome="timeout")

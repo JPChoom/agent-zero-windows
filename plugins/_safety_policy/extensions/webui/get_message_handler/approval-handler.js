@@ -81,6 +81,8 @@ function outcomeLabel(outcome) {
       return "denied";
     case "timeout":
       return "timed out (denied)";
+    case "cancelled":
+      return "cancelled (the agent was stopped)";
     default:
       return outcome || "resolved";
   }

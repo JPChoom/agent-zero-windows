@@ -83,6 +83,8 @@ function outcomeLabel(outcome) {
       return "superseded by a newer prompt";
     case "error":
       return "could not be answered - blocked";
+    case "cancelled":
+      return "cancelled (the agent was stopped)";
     default:
       return "resolved";
   }

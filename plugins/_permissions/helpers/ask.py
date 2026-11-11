@@ -62,6 +62,13 @@ async def request_approval(
     try:
         with perf.waiting_for_user():
             approved = await asyncio.wait_for(future, timeout=timeout)
+    except asyncio.CancelledError:
+        # The agent was stopped while asking (a stopped child, the Stop button):
+        # close the card and the pending answer instead of leaving them open.
+        approval_registry.cleanup(approval_id)
+        _resolve(log_item, approved=False, outcome="cancelled")
+        channel_approvals.forget(agent, approval_id)
+        raise
     except (TimeoutError, asyncio.TimeoutError):
         approval_registry.cleanup(approval_id)
         _resolve(log_item, approved=False, outcome="timeout")

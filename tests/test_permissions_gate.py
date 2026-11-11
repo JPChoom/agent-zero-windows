@@ -249,3 +249,38 @@ def test_gate_runs_after_the_safety_policy():
     assert "_05_command_policy.py" < min(perms_names)
     # The startup tripwire snapshot is meant to run last, after every gate.
     assert "_90_startup_tripwire.py" in safety_names
+
+
+@pytest.mark.asyncio
+async def test_a_stopped_agent_closes_its_open_question(monkeypatch):
+    """Stopping an agent (a child, or the Stop button) while it waits must close
+    the card and free the pending answer, not leave them open."""
+    from plugins._permissions.helpers import ask
+
+    monkeypatch.setattr(gate_mod, "get_config", lambda agent=None: _cfg("manual"))
+    cleaned, resolved = [], []
+    monkeypatch.setattr(approval_registry, "register", lambda approval_id: asyncio.get_event_loop().create_future())
+    monkeypatch.setattr(approval_registry, "cleanup", lambda approval_id: cleaned.append(approval_id))
+    monkeypatch.setattr(ask, "_resolve", lambda item, approved, outcome: resolved.append((approved, outcome)))
+
+    waiting = asyncio.ensure_future(_gate().execute(tool_name="code_execution_tool", tool_args={"code": "ls"}))
+    await asyncio.sleep(0.05)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    assert cleaned and resolved == [(False, "cancelled")]
+
+
+def test_every_approval_site_closes_its_card_when_cancelled():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for path in ("plugins/_permissions/helpers/ask.py",
+                 "plugins/_safety_policy/extensions/python/tool_execute_before/_05_command_policy.py",
+                 "plugins/_infection_check/helpers/checker.py"):
+        source = (root / path).read_text(encoding="utf-8")
+        assert "except asyncio.CancelledError:" in source and 'outcome="cancelled"' in source, path
+    for path in ("plugins/_permissions/extensions/webui/get_message_handler/permissions-approval.js",
+                 "plugins/_safety_policy/extensions/webui/get_message_handler/approval-handler.js",
+                 "plugins/_infection_check/extensions/webui/get_message_handler/clarification-handler.js"):
+        assert '"cancelled"' in (root / path).read_text(encoding="utf-8"), path
