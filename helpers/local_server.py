@@ -67,6 +67,7 @@ DEFAULTS: dict = {
     "startup_timeout_seconds": 300,
     "thinking_budget": 6144,
     "prompt_cache_mib": 0,
+    "require_api_key": True,
 }
 
 # Files that are never a chat model.
@@ -188,7 +189,31 @@ def server_config(cfg: dict | None = None):
         extra_args=extra,
         vram_check=bool(s.get("vram_check", True)),
         startup_timeout=float(_as_int(s.get("startup_timeout_seconds"), 300)),
+        api_key_file=llama_server.ensure_api_key() if s.get("require_api_key", True) else "",
     )
+
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def api_key_for(api_base) -> str:
+    """The managed server's key when `api_base` is that server (loopback, its
+    port) and it requires one; "" for any other server, so the key never
+    goes to another machine."""
+    from urllib.parse import urlparse
+
+    from helpers import llama_server
+
+    try:
+        parsed = urlparse(str(api_base or "").strip())
+        s = settings()
+    except Exception:
+        return ""
+    if (parsed.hostname or "").lower() not in LOOPBACK_HOSTS or not s.get("require_api_key", True):
+        return ""
+    if parsed.port != _as_int(s.get("port"), DEFAULT_PORT):
+        return ""
+    return llama_server.current_api_key()
 
 
 def _as_int(value, default: int) -> int:

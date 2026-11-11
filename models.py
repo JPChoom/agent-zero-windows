@@ -1090,6 +1090,18 @@ def _merge_provider_defaults(
         if key and key not in ("None", "NA"):
             kwargs["api_key"] = key
 
+    # A0W's own llama.cpp server requires its key (helpers/llama_server.py);
+    # a placeholder key is replaced by it only when api_base is that server.
+    if original_provider == "llama_cpp" and str(kwargs.get("api_key") or "") in ("", "None", "NA", "llama-cpp"):
+        try:
+            from helpers import local_server
+
+            managed = local_server.api_key_for(kwargs.get("api_base"))
+        except Exception:
+            managed = ""
+        if managed:
+            kwargs["api_key"] = managed
+
     return provider_name, kwargs
 
 

@@ -17,6 +17,12 @@ from helpers import llama_download as download
 from helpers import llama_server as supervisor
 from helpers import local_server
 
+
+@pytest.fixture(autouse=True)
+def _key_file_in_tmp(tmp_path, monkeypatch):
+    """server_config() creates the server's API key file: never in the real usr/."""
+    monkeypatch.setattr(supervisor, "api_key_path", lambda: str(tmp_path / "llama-cpp" / "api_key.txt"))
+
 DIGEST = "sha256:" + "a" * 64
 BASE = "https://github.com/ggml-org/llama.cpp/releases/download/b9999/"
 
@@ -290,7 +296,8 @@ def test_coding_preset_builds_the_benchmarked_command(tmp_path):
            "local_server": {"model_path": model, "preset": "coding"}}
     cmd = local_server.server_config(cfg).command()
     tail = " ".join(cmd[cmd.index("-c"):cmd.index("--reasoning-budget-message")])
-    assert tail == ("-c 49152 -ngl 99 -np 1 -fa on -ctk q8_0 -ctv q8_0 --jinja --cache-reuse 256 "
+    assert tail == ("-c 49152 -ngl 99 -np 1 --api-key-file " + supervisor.api_key_path() + " "
+                    "-fa on -ctk q8_0 -ctv q8_0 --jinja --cache-reuse 256 "
                     "--spec-type draft-mtp --spec-draft-n-max 6 --reasoning-budget 6144")
 
 
@@ -420,3 +427,64 @@ def test_prompt_cache_size_is_automatic_from_ram_or_as_set(tmp_path, monkeypatch
     assert local_server.prompt_cache_mib(12000) == 12000  # set by hand
     cfg["local_server"].update(preset="custom", extra_args="-fa on")
     assert "--cache-ram" not in local_server.server_config(cfg).extra_args
+
+
+# -- the API key -----------------------------------------------------------------
+
+def test_the_server_requires_a_key_made_once(tmp_path):
+    model = _gguf(tmp_path / "m.gguf")
+    cfg = {"local_server": {"model_path": model, "preset": "custom"}}
+    first = local_server.server_config(cfg)
+    key = supervisor.current_api_key()
+    assert len(key) >= 32 and first.command()[first.command().index("--api-key-file") + 1] == supervisor.api_key_path()
+    second = local_server.server_config(cfg)
+    assert supervisor.current_api_key() == key and second.identity() == first.identity()  # same key, same server
+    assert key not in " ".join(first.command())  # the key itself never goes on a command line
+
+
+def test_the_key_can_be_turned_off(tmp_path):
+    cfg = {"local_server": {"model_path": _gguf(tmp_path / "m.gguf"), "preset": "custom", "require_api_key": False}}
+    assert "--api-key-file" not in local_server.server_config(cfg).command()
+
+
+def test_extra_args_cannot_set_or_replace_the_key():
+    for arg in ("--api-key=x", "--api-key-file=other.txt"):
+        with pytest.raises(supervisor.SupervisorError):
+            supervisor.parse_extra_args(arg)
+
+
+def test_the_key_goes_only_to_this_server(monkeypatch):
+    supervisor.ensure_api_key()
+    key = supervisor.current_api_key()
+    monkeypatch.setattr(local_server, "settings", lambda cfg=None: {**local_server.DEFAULTS, "port": 8090})
+    assert local_server.api_key_for("http://127.0.0.1:8090/v1") == key
+    assert local_server.api_key_for("http://localhost:8090") == key
+    for other in ("http://127.0.0.1:1234/v1", "http://203.0.113.9:8090/v1", "", None, "not a url"):
+        assert local_server.api_key_for(other) == "", other
+    monkeypatch.setattr(local_server, "settings", lambda cfg=None: {**local_server.DEFAULTS, "port": 8090, "require_api_key": False})
+    assert local_server.api_key_for("http://127.0.0.1:8090/v1") == ""
+
+
+def test_probes_send_the_key(monkeypatch):
+    supervisor.ensure_api_key()
+    seen = {}
+
+    class _Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"data": [{"id": "m"}]}'
+
+    def fake_urlopen(request, timeout=None):
+        seen["auth"] = request.get_header("Authorization")
+        return _Resp()
+
+    monkeypatch.setattr(supervisor.urllib.request, "urlopen", fake_urlopen)
+    assert supervisor.served_models(8090) == ["m"]
+    assert seen["auth"] == "Bearer " + supervisor.current_api_key()

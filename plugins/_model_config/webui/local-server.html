@@ -220,6 +220,10 @@
       <div class="field-control"><input type="number" min="0" max="999" x-model.number="ls.gpu_layers" /></div>
     </div>
     <div class="field">
+      <div class="field-label"><div class="field-title">Require an API key</div><div class="field-description">Recommended. Without it any program on this PC, and a virtual machine that can reach this PC's loopback, can use the model and the GPU. Agent Zero sends the key itself; other programs find it in <code>usr/llama-cpp/api_key.txt</code>.</div></div>
+      <div class="field-control"><label class="toggle"><input type="checkbox" :checked="ls.require_api_key !== false" @change="ls.require_api_key = $event.target.checked" /><span class="toggler"></span></label></div>
+    </div>
+    <div class="field">
       <div class="field-label"><div class="field-title">Check GPU memory before starting</div><div class="field-description">NVIDIA only: refuse to start when free memory is clearly too small.</div></div>
       <div class="field-control"><label class="toggle"><input type="checkbox" x-model="ls.vram_check" /><span class="toggler"></span></label></div>
     </div>

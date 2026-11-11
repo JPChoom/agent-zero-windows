@@ -11,6 +11,7 @@
 
 ## Runtime Contracts
 
+- API key: `ServerConfig.api_key_file` adds `--api-key-file`; `ensure_api_key()` creates `usr/llama-cpp/api_key.txt` once (a random key, so the server's identity stays the same across starts), `current_api_key()` reads it without creating it, and `_http_json` sends it. Every endpoint except `/health` refuses calls without it. `--api-key` and `--api-key-file` are refused in extra arguments.
 - Listens on 127.0.0.1 only; host, port, path, TLS files, model and alias are set here and refused in extra arguments (`FORBIDDEN_ARGS`).
 - "Running" = the process we started (pid + start time) is alive, `/health` is ready and `/v1/models` lists our alias.
 - Refuses to start when the binary or model is missing, the port is used by another program, or (NVIDIA) free VRAM is clearly too small (`VRAM_HEADROOM`; with `--mmproj` the projector file plus `MMPROJ_EXTRA_MIB` is added).

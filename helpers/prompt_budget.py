@@ -69,8 +69,11 @@ def _server_root(cfg: dict) -> str:
     return f"{parsed.scheme}://{host}{port}"
 
 
-def _get_json(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=DETECT_TIMEOUT) as resp:
+def _get_json(url: str, key: str = "") -> dict:
+    request = urllib.request.Request(url)
+    if key:
+        request.add_header("Authorization", f"Bearer {key}")
+    with urllib.request.urlopen(request, timeout=DETECT_TIMEOUT) as resp:
         return json.loads(resp.read().decode("utf-8") or "{}")
 
 
@@ -83,7 +86,9 @@ def _query_window(provider: str, root: str, model: str) -> int | None:
                 return int(value) if value else None
         return None
     if provider == "llama_cpp":
-        data = _get_json(f"{root}/props")
+        from helpers import local_server
+
+        data = _get_json(f"{root}/props", local_server.api_key_for(f"{root}/v1"))
         value = (data.get("default_generation_settings") or {}).get("n_ctx") or data.get("n_ctx")
         return int(value) if value else None
     return None

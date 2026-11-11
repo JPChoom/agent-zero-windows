@@ -36,6 +36,15 @@ Lifecycle:
   behind is found through the state file on the next start: adopted when it
   is identical (same binary, model, arguments) and healthy, otherwise
   stopped.
+
+API key: bound to 127.0.0.1 is not private enough. A virtual machine on
+NAT with host-loopback access, or any other program, could use the model
+(and the GPU) through it, and every endpoint except /health would answer.
+So the server is started with `--api-key-file` pointing at a random key kept
+in usr/llama-cpp/api_key.txt (created once, so the server's identity stays
+the same across starts and the key never appears on a command line), and
+A0W sends it on its own calls (`_http_json`, `helpers/local_server.api_key_for`
+for model calls). Other programs that should use the server read the file.
 """
 
 from __future__ import annotations
@@ -43,6 +52,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 import shutil
 import socket
 import subprocess
@@ -77,7 +87,8 @@ PROCESS_NAME_HINT = "llama-server"
 
 # Arguments that would change where the server listens or what it serves;
 # the supervisor owns those. --host 0.0.0.0 would expose the model to the LAN.
-FORBIDDEN_ARGS = {"--host", "--port", "--path", "--ssl-key-file", "--ssl-cert-file", "-m", "--model", "--alias"}
+FORBIDDEN_ARGS = {"--host", "--port", "--path", "--ssl-key-file", "--ssl-cert-file", "-m", "--model", "--alias",
+                  "--api-key", "--api-key-file"}
 
 
 class SupervisorError(Exception):
@@ -96,6 +107,7 @@ class ServerConfig:
     extra_args: list[str] = field(default_factory=list)
     vram_check: bool = True
     startup_timeout: float = 300.0
+    api_key_file: str = ""  # --api-key-file: the server refuses every call without the key except /health
     # Arguments placed between the binary and the server's own arguments
     # (never from settings; tests run a Python stand-in this way).
     launcher_prefix: list[str] = field(default_factory=list)
@@ -112,6 +124,8 @@ class ServerConfig:
         ]
         if self.threads > 0:
             cmd += ["-t", str(self.threads)]
+        if self.api_key_file:
+            cmd += ["--api-key-file", self.api_key_file]
         return cmd + list(self.extra_args)
 
     def identity(self) -> str:
@@ -125,6 +139,31 @@ def default_binary() -> str:
 
 def state_path() -> str:
     return files.get_abs_path("usr", "llama-cpp", "server.json")
+
+
+def api_key_path() -> str:
+    return files.get_abs_path("usr", "llama-cpp", "api_key.txt")
+
+
+def ensure_api_key() -> str:
+    """The key file's path, creating a random key the first time."""
+    path = api_key_path()
+    if not current_api_key():
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        files.write_file_atomic(path, secrets.token_urlsafe(32) + "\n")
+    return path
+
+
+def current_api_key() -> str:
+    """The server's key, or "" when there is none (never creates one)."""
+    try:
+        with open(api_key_path(), encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip() and not line.lstrip().startswith("#"):
+                    return line.strip()
+    except OSError:
+        pass
+    return ""
 
 
 def log_path() -> str:
@@ -169,8 +208,12 @@ def config_from_settings(cfg: dict) -> ServerConfig:
 # ------------------------------------------------------------------ probes
 
 def _http_json(port: int, path: str, timeout: float = 2.0) -> tuple[int, dict]:
+    request = urllib.request.Request(f"http://{HOST}:{port}{path}")
+    key = current_api_key()
+    if key:
+        request.add_header("Authorization", f"Bearer {key}")
     try:
-        with urllib.request.urlopen(f"http://{HOST}:{port}{path}", timeout=timeout) as resp:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as exc:
         try:

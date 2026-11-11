@@ -22,14 +22,14 @@ def _no_cache():
 # -- the window the server really has -----------------------------------------
 
 def test_lm_studio_reported_window_wins_when_smaller(monkeypatch):
-    monkeypatch.setattr(prompt_budget, "_get_json", lambda url: {"data": [
+    monkeypatch.setattr(prompt_budget, "_get_json", lambda url, key="": {"data": [
         {"id": "qwen", "state": "loaded", "loaded_context_length": 16384}]})
     cfg = {"provider": "lm_studio", "name": "qwen", "ctx_length": 32768}
     assert prompt_budget.effective_ctx_length(cfg) == 16384
 
 
 def test_configured_window_wins_when_smaller(monkeypatch):
-    monkeypatch.setattr(prompt_budget, "_get_json", lambda url: {"data": [
+    monkeypatch.setattr(prompt_budget, "_get_json", lambda url, key="": {"data": [
         {"id": "qwen", "state": "loaded", "loaded_context_length": 49152}]})
     cfg = {"provider": "lm_studio", "name": "qwen", "ctx_length": 32768}
     assert prompt_budget.effective_ctx_length(cfg) == 32768
@@ -38,7 +38,7 @@ def test_configured_window_wins_when_smaller(monkeypatch):
 def test_llama_cpp_reports_n_ctx(monkeypatch):
     seen = []
 
-    def fake(url):
+    def fake(url, key=""):
         seen.append(url)
         return {"default_generation_settings": {"n_ctx": 8192}}
 
@@ -49,7 +49,7 @@ def test_llama_cpp_reports_n_ctx(monkeypatch):
 
 
 def test_unreachable_server_falls_back_to_the_configured_window(monkeypatch):
-    def down(url):
+    def down(url, key=""):
         raise OSError("connection refused")
 
     monkeypatch.setattr(prompt_budget, "_get_json", down)
@@ -57,7 +57,7 @@ def test_unreachable_server_falls_back_to_the_configured_window(monkeypatch):
 
 
 def test_cloud_providers_are_never_queried(monkeypatch):
-    monkeypatch.setattr(prompt_budget, "_get_json", lambda url: pytest.fail("must not query"))
+    monkeypatch.setattr(prompt_budget, "_get_json", lambda url, key="": pytest.fail("must not query"))
     assert prompt_budget.effective_ctx_length({"provider": "anthropic", "name": "x", "ctx_length": 200000}) == 200000
 
 
@@ -204,3 +204,13 @@ def test_other_errors_are_not_treated_as_overflow():
     ext = retry.RetryCriticalException(agent=agent)
     payload = {"exception": RuntimeError("Model unloaded by user or API request")}
     assert asyncio.run(ext._recover_from_overflow(payload, payload["exception"])) is False
+
+
+def test_the_llama_cpp_window_query_sends_the_servers_key(monkeypatch):
+    from helpers import local_server
+
+    seen = []
+    monkeypatch.setattr(local_server, "api_key_for", lambda base: "k123" if base == "http://127.0.0.1:8090/v1" else "")
+    monkeypatch.setattr(prompt_budget, "_get_json", lambda url, key="": seen.append((url, key)) or {"n_ctx": 4096})
+    assert prompt_budget.effective_ctx_length({"provider": "llama_cpp", "name": "keyed", "ctx_length": 32768}) == 4096
+    assert seen == [("http://127.0.0.1:8090/props", "k123")]

@@ -385,7 +385,10 @@ def test_local_provider_defaults_are_docker_friendly():
 
 
 def test_local_provider_runtime_defaults_and_overrides(monkeypatch):
+    from helpers import local_server
+
     monkeypatch.setattr(models, "get_api_key", lambda provider: "None")
+    monkeypatch.setattr(local_server, "api_key_for", lambda base: "")  # no managed key here: see the next test
     # The Docker contract: inside Docker the defaults keep the host alias.
     monkeypatch.setattr(runtime, "is_dockerized", lambda: True)
 
@@ -564,3 +567,17 @@ def test_native_host_only_touches_the_docker_alias(monkeypatch):
     assert providers.native_host("http://host.docker.internal:8000/v1") == "http://127.0.0.1:8000/v1"
     assert providers.native_host("http://localhost:1234/v1") == "http://localhost:1234/v1"
     assert providers.native_host("") == "" and providers.native_host(None) is None
+
+
+def test_the_managed_llama_cpp_key_replaces_only_the_placeholder(monkeypatch):
+    from helpers import local_server
+
+    monkeypatch.setattr(models, "get_api_key", lambda provider: "None")
+    monkeypatch.setattr(runtime, "is_dockerized", lambda: False)
+    monkeypatch.setattr(local_server, "api_key_for", lambda base: "managed-key" if "127.0.0.1:8090" in str(base) else "")
+    own = models.get_chat_model("llama_cpp", "local-chat-model")
+    assert own.kwargs["api_key"] == "managed-key"
+    remote = models.get_chat_model("llama_cpp", "m", api_base="http://203.0.113.9:8090/v1")
+    assert remote.kwargs["api_key"] == "llama-cpp"  # another machine never gets the key
+    explicit = models.get_chat_model("llama_cpp", "m", api_key="my-own-key")
+    assert explicit.kwargs["api_key"] == "my-own-key"  # a key the user set wins
