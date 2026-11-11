@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 
 _CLEAR_VALUES = {"", "default", "none", "clear", "off"}
+PINNED_TEXT = ("This chat's {what} is set in the channel's settings, so {command} cannot change it here. "
+               "The owner can allow switching in those settings.")
 
 
 @dataclass(frozen=True)
@@ -288,8 +290,10 @@ def _handle_status(context: "AgentContext") -> str:
 def _handle_sessions(context: "AgentContext") -> str:
     from agent import AgentContext
 
+    from plugins._telegram_integration.helpers import session_scope
+
     contexts = sorted(
-        AgentContext.all(),
+        (item for item in AgentContext.all() if session_scope.visible(context, item)),
         key=lambda item: str(item.output().get("last_message") or ""),
         reverse=True,
     )
@@ -365,6 +369,11 @@ def _handle_project(context: "AgentContext", args: str) -> str:
             f"Available projects: {available}\n"
             "Use /project <name> to switch, or /project none to clear it."
         )
+
+    from helpers import channel_locks
+
+    if channel_locks.pinned(context)["project"]:
+        return PINNED_TEXT.format(what="project", command="/project")
 
     desired = _strip_quotes(args)
     if _normalize_lookup(desired) in _CLEAR_VALUES:
@@ -448,6 +457,11 @@ def _handle_agent(context: "AgentContext", args: str) -> str:
             f"Available agents: {available}\n"
             "Use /agent <profile> to switch after the current run finishes."
         )
+
+    from helpers import channel_locks
+
+    if channel_locks.pinned(context)["profile"]:
+        return PINNED_TEXT.format(what="agent", command="/agent")
 
     if context.is_running():
         return "Agent profile can be changed after the current run finishes."

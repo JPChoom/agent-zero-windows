@@ -6,6 +6,7 @@ bots: []
 #   app_token: ""             # xapp-... (Basic Information > App-Level Tokens, scope connections:write)
 #   allowed_users: []         # Slack member IDs (U...) allowed to talk to the agent.
 #   agent_profile: ""      # Agent profile for new chats from this bot (empty = default).
+#   allow_switching: false  # /agent and /project may change a profile or project set here.
 #                             # EMPTY = NOBODY. Ignored senders are logged with their id.
 #   channel_mode: mention     # mention (answer @mentions, in a thread) | all (every message in
 #                             # channels the app is in; needs message.channels) | off (DMs only)

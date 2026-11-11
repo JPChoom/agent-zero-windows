@@ -194,6 +194,19 @@
 
                             <div class="field">
                                 <div class="field-label">
+                                    <div class="field-title">Allow switching agent and project</div>
+                                    <div class="field-description">Let users change the agent and project with /agent and /project. Off: a profile or project set here stays fixed for these chats.</div>
+                                </div>
+                                <div class="field-control">
+                                    <label class="toggle">
+                                        <input type="checkbox" x-model="$store.whatsappConfig.config.allow_switching" />
+                                        <span class="toggler"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <div class="field-label">
                                     <div class="field-title">Allow groups</div>
                                     <div class="field-description">Reply in group chats when mentioned or replied to.
                                     </div>

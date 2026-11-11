@@ -9,7 +9,7 @@ from helpers import integration_commands
 from helpers.persist_chat import save_tmp_chat
 from helpers.state_monitor_integration import mark_dirty_for_context
 from plugins._model_config.helpers import model_config
-from plugins._telegram_integration.helpers import telegram_client as tc
+from plugins._telegram_integration.helpers import session_scope, telegram_client as tc
 from plugins._telegram_integration.helpers.constants import (
     CTX_TG_STREAM_ENABLED,
     CTX_TG_TOOLS_ENABLED,
@@ -350,7 +350,7 @@ def _session_view(
     *,
     selected: bool = False,
 ) -> tuple[str, dict | None]:
-    items = _session_items()
+    items = _session_items(context)
     current_label = _session_label(context)
     status = f"Current session: <b>{_html(current_label)}</b>"
     if context.is_running():
@@ -429,7 +429,7 @@ async def _select_agent(context: AgentContext, index: int) -> None:
 async def _select_session(context: AgentContext, index: int) -> AgentContext | None:
     if context.is_running():
         return None
-    items = _session_items()
+    items = _session_items(context)
     if index < 0 or index >= len(items):
         return None
     target = items[index].context
@@ -444,9 +444,10 @@ async def _select_session(context: AgentContext, index: int) -> AgentContext | N
     return target
 
 
-def _session_items() -> list[SessionItem]:
+def _session_items(context: AgentContext) -> list[SessionItem]:
+    """The chats this Telegram chat may list and adopt (session_scope.visible)."""
     contexts = sorted(
-        AgentContext.all(),
+        (item for item in AgentContext.all() if session_scope.visible(context, item)),
         key=lambda item: str(item.output().get("last_message") or ""),
         reverse=True,
     )

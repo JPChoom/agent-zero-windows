@@ -62,6 +62,11 @@
             <div class="field-control"><input type="text" x-model="bot.agent_profile" placeholder="default" /></div>
           </div>
           <div class="field">
+            <div class="field-label"><div class="field-title">Allow switching agent and project</div>
+              <div class="field-description">Let users change the agent and project with /agent and /project. Off: a profile or project set here stays fixed for these chats.</div></div>
+            <div class="field-control"><label class="toggle"><input type="checkbox" x-model="bot.allow_switching" /><span class="toggler"></span></label></div>
+          </div>
+          <div class="field">
             <div class="field-label"><div class="field-title">In channels</div>
               <div class="field-description">DMs always work. Channel replies go in a thread. "Every message" needs the message.channels event and channels:history.</div></div>
             <div class="field-control">

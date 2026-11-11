@@ -16,6 +16,8 @@ handlers: []
 #   process_unread_days: 0
 #   sender_whitelist: []
 #   agent_profile: ""        # Agent profile for new chats from this account (empty = default).
+#   allow_switching: false   # /agent and /project may change a profile or project set here.
+#   require_dkim: false      # Answer only mail the receiving server verified (DKIM/DMARC).
 #   project: ""
 #   dispatcher_model: utility
 #   chat_model_preset: ""       # Optional preset from Model Configuration for new email chats

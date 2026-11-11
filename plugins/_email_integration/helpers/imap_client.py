@@ -37,6 +37,7 @@ class InboundMessage:
     message_id: str = ""
     in_reply_to: str = ""
     references: str = ""
+    authenticated: bool | None = None  # the receiving server vouches for the From domain; None = unknown
 
 
 # ------------------------------------------------------------------
@@ -230,6 +231,7 @@ async def _fetch_single(
         message_id=message_id,
         in_reply_to=in_reply_to,
         references=references,
+        authenticated=sender_authenticated(email_msg, sender),
     )
 
 
@@ -462,6 +464,41 @@ def _is_noreply(sender: str) -> bool:
         "donotreply", "do-not-reply", "do_not_reply",
         "mailer-daemon", "postmaster",
     )
+
+
+def _domain_of(address: str) -> str:
+    return address.rsplit("@", 1)[-1].strip().strip(">").lower() if "@" in address else ""
+
+
+def _aligned(signing: str, sender: str) -> bool:
+    """Relaxed alignment: the same domain, or one a subdomain of the other."""
+    signing, sender = signing.lower().strip("."), sender.lower().strip(".")
+    if not signing or not sender:
+        return False
+    return signing == sender or signing.endswith("." + sender) or sender.endswith("." + signing)
+
+
+def sender_authenticated(email_msg: EmailMessage, sender: str) -> bool:
+    """Did the receiving mail server verify that this message really comes
+    from the From domain? Reads only the TOPMOST Authentication-Results header
+    (the one the final server added; lower ones can be forged by the sender)
+    and accepts `dmarc=pass`, or `dkim=pass` signed by a domain aligned with
+    the From domain. A missing header counts as not verified."""
+    header = email_msg.get_all("Authentication-Results") or []
+    if not header:
+        return False
+    text = str(header[0])
+    sender_domain = _domain_of(_extract_email_from_sender(sender.lower()))
+    if re.search(r"\bdmarc=pass\b", text, re.IGNORECASE):
+        return True
+    for part in text.split(";"):
+        if not re.search(r"\bdkim=pass\b", part, re.IGNORECASE):
+            continue
+        for key in ("header.d", "header.i"):
+            match = re.search(rf"{re.escape(key)}=@?([^\s;]+)", part, re.IGNORECASE)
+            if match and _aligned(_domain_of("@" + match.group(1).split("@")[-1]), sender_domain):
+                return True
+    return False
 
 
 def _matches_whitelist(sender: str, whitelist: list[str]) -> bool:

@@ -31,7 +31,7 @@
 - Update this file whenever public functions, classes, persistence behavior, path/security assumptions, side effects, or cross-module contracts change.
 - Observed side-effect areas: filesystem writes, model calls, plugin state, settings/state persistence.
 - Imported dependency areas include: `__future__`, `helpers`, `helpers.persist_chat`, `helpers.state_monitor_integration`, `plugins._model_config.helpers`, `re`, `typing`.
-- `/agent` switches the top-level chat profile and preserves existing subordinate agent profiles.
+- `/agent` switches the top-level chat profile and preserves existing subordinate agent profiles. `/agent` and `/project` refuse to change what the channel's settings pin (`helpers/channel_locks.pinned`). Telegram's `/sessions` text lists only chats `plugins/_telegram_integration/helpers/session_scope.visible` allows.
 
 ## Key Concepts
 

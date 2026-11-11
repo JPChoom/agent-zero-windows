@@ -13,6 +13,7 @@
 
 ## Local Contracts
 
+- `require_dkim` (per account, default off) answers only mail whose topmost `Authentication-Results` header shows `dmarc=pass` or an aligned `dkim=pass` (`imap_client.sender_authenticated`); Exchange mail is never verified, so it is refused when set.
 - Replies are sent through `helpers/channel_delivery.deliver` (in-line retries, then a persistent retry queue); a send function must return its error instead of swallowing it.
 - An empty `sender_whitelist` answers nobody (one rule for every channel, owner decision 2026-11-08). Email never answers approval questions: a sender address is easy to fake.
 

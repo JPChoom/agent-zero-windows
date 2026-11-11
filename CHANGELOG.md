@@ -4,6 +4,12 @@ All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or
 
 ## Unreleased
 
+### Security
+- **Discord no longer trusts display names.** The allowed-users list matched a person's display name as well as their unique username, so anyone could set their display name to an allowed entry and be answered. Only IDs and unique usernames match now.
+- **Telegram's /sessions shows only your own chats.** The list and its picker offered every chat on the PC (WebUI chats, other people's chats, other channels), so a second allowed user could see another's chat names, adopt their chat and read its history. Now only chats from the same bot and user are offered; *Offer WebUI chats in /sessions* adds your plain WebUI chats back for continuing them from your phone.
+- **A profile or project set for a channel stays fixed.** `/agent` and `/project` could swap a profile or project set in a channel's settings for another, leaving its capability limits. They now refuse; *Allow switching agent and project* in the channel's settings turns that off. Global capability limits and the messaging limits always held.
+- **Email can require a verified sender.** A From address is easy to forge. With *Require a verified sender* on, an account answers only mail its mail server verified (DMARC pass, or a DKIM pass for the sender's own domain). Off by default; not available for Exchange accounts.
+
 ### Fixed
 - **A reply to a messaging chat is no longer lost when the first send fails.** Every channel sent a reply once: Discord and Slack logged a failure and dropped it, WhatsApp and email asked the language model to resend (twice), and Telegram reported a failed send as a success, so those replies vanished without a trace. All five now retry in line when the failure is temporary (network trouble, a timeout, rate limits, a bot that is restarting), waiting as long as the service asks. A reply still failing after that is queued on disk and retried about once a minute, with growing gaps, until it arrives or is 24 hours old; the queue survives a restart, and the chat shows a note when a reply is queued, delivered or given up. Failures that cannot get better (a blocked bot, a chat that no longer exists, bad credentials) are not retried. Approval questions sent to your phone get quick retries too. A retry can deliver a reply twice when the first send worked but its confirmation was lost.
 

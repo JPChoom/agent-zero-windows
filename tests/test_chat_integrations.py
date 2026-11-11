@@ -222,6 +222,26 @@ async def test_discord_ignores_users_not_on_the_allowlist(captured, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_discord_does_not_trust_a_display_name(captured, monkeypatch):
+    """The allowlist names the owner; anyone can set their display name to match."""
+    discord = pytest.importorskip("discord", reason="the Discord plugin's own requirements are not installed")
+
+    seen, _ = captured
+    monkeypatch.setattr(discord, "DMChannel", object)
+    b = dbot.DiscordBot("main", {"allowed_users": ["jp"]})
+    b.client = type("C", (), {"user": None})()
+    monkeypatch.setattr(dbot, "current_cfg", lambda name: {})
+
+    class Msg:
+        author = type("A", (), {"id": 9, "name": "mallory", "global_name": "JP", "bot": False})()
+        channel = type("Ch", (), {"id": 77})()
+        content, mentions, attachments, id = "hi", [], [], 1
+
+    await b._on_message(Msg())
+    assert seen["created"] == [] and seen["delivered"] == []
+
+
+@pytest.mark.asyncio
 async def test_discord_reply_without_a_running_bot_reports_an_error():
     ctx = _Ctx()
     ctx.data[DC.CTX_BOT] = "not-running"

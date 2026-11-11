@@ -395,6 +395,32 @@
 
                                         <div class="field">
                                             <div class="field-label">
+                                                <div class="field-title">Allow switching agent and project</div>
+                                                <div class="field-description">Let users change the agent and project with /agent and /project. Off: a profile or project set here stays fixed for these chats.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <label class="toggle">
+                                                    <input type="checkbox" x-model="handler.allow_switching" />
+                                                    <span class="toggler"></span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
+                                                <div class="field-title">Require a verified sender (DKIM / DMARC)</div>
+                                                <div class="field-description">A From address is easy to forge. On: only mail the receiving server verified (an Authentication-Results header with dmarc=pass, or dkim=pass for the sender's own domain) is answered. Not available for Exchange accounts.</div>
+                                            </div>
+                                            <div class="field-control">
+                                                <label class="toggle">
+                                                    <input type="checkbox" x-model="handler.require_dkim" />
+                                                    <span class="toggler"></span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="field">
+                                            <div class="field-label">
                                                 <div class="field-title">Catch up on unread mail</div>
                                                 <div class="field-description">On startup, process unread mail from the
                                                     last N days. Use 0 for brand-new mail only.</div>

@@ -13,6 +13,7 @@
 
 ## Local Contracts
 
+- `/sessions` and its picker list and adopt only the user's own chats from the same bot (`helpers/session_scope.py`), plus plain WebUI chats when the bot's `allow_webui_sessions` is on; other channels', other users', child-agent and background chats are never offered.
 - Replies are sent through `helpers/channel_delivery.deliver` (in-line retries, then a persistent retry queue); a send function must return its error instead of swallowing it.
 - An empty `allowed_users` answers nobody (one rule for every channel, owner decision 2026-11-08); `helpers/allowlist.py` tells phone approvals whether the list is set.
 

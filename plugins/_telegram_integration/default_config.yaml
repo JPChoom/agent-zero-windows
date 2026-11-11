@@ -9,6 +9,8 @@ bots: []
 #   webhook_secret: ""           # shared secret for webhook verification (random if empty)
 #   allowed_users: []            # Telegram user IDs or @usernames. Empty = nobody.
 #   agent_profile: ""         # Agent profile for new chats from this bot (empty = default).
+#   allow_switching: false     # /agent and /project may change a profile or project set here.
+#   allow_webui_sessions: false  # /sessions also lists plain WebUI chats.
 #   group_mode: mention          # mention (respond when @mentioned or replied to) | all (respond to every message) | off (ignore groups)
 #   welcome_enabled: false       # Send a greeting when someone joins the group
 #   welcome_message: ""          # Welcome template. Use {name} for the new member's name. Default: "Welcome, {name}!"

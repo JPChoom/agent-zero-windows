@@ -151,6 +151,12 @@ async def _fetch_exchange(
     )
 
 
+def unverified_sender(handler_cfg: dict, msg: InboundMessage) -> bool:
+    """True when this account requires a verified sender (`require_dkim`) and the
+    receiving mail server did not vouch for the From domain (Exchange mail is never verified)."""
+    return bool(handler_cfg.get("require_dkim")) and msg.authenticated is not True
+
+
 async def _dispatch_all(handler_cfg: dict, messages: list[InboundMessage]):
     own_address = (handler_cfg.get("username") or "").lower()
 
@@ -171,6 +177,12 @@ async def _dispatch_all(handler_cfg: dict, messages: list[InboundMessage]):
     for msg in messages:
         if own_address and _is_own_email(msg.sender, own_address):
             PrintStyle.info(f"Email: skipping self-sent from {msg.sender}")
+            continue
+        if unverified_sender(handler_cfg, msg):
+            # A From address is easy to forge; this account wants the mail server's DKIM/DMARC pass.
+            PrintStyle.warning(
+                f"Email ({handler_cfg.get('name', 'default')}): ignored a message from {msg.sender} - "
+                "the mail server did not verify its sender (DKIM/DMARC), and this account requires it.")
             continue
         try:
             await _dispatch_message(agent, handler_cfg, msg)

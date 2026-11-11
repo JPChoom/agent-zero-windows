@@ -126,7 +126,9 @@ class DiscordBot:
             return
 
         author = message.author
-        names = [author.name, getattr(author, "global_name", "") or ""]
+        # The unique username only: a display name (global_name) is free text anyone can set
+        # to match an allowlist entry.
+        names = [author.name]
         if not chat_channels.is_allowed(cfg.get("allowed_users"), str(author.id), names):
             PrintStyle.warning(
                 f"Discord ({self.name}): ignored a message from {author.name} (id {author.id}) - "

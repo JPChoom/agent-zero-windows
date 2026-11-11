@@ -3,8 +3,9 @@ bots: []
 # - name: my_bot
 #   enabled: true
 #   token: ""                 # Bot token from the Discord Developer Portal (Bot > Reset Token)
-#   allowed_users: []         # Discord user IDs (or usernames) allowed to talk to the agent.
+#   allowed_users: []         # Discord user IDs (or unique usernames, never display names) allowed to talk to the agent.
 #   agent_profile: ""      # Agent profile for new chats from this bot (empty = default).
+#   allow_switching: false  # /agent and /project may change a profile or project set here.
 #                             # EMPTY = NOBODY. Ignored senders are logged with their id.
 #   server_mode: mention      # mention (answer when @mentioned) | all (every message; needs the
 #                             # Message Content intent enabled in the portal) | off (DMs only)
