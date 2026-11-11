@@ -9,7 +9,7 @@
 - `child_agent.py` owns argument parsing and the response; `helpers/child_agents.py` owns the lifecycle.
 - Classes:
 - `ChildAgent` (`Tool`)
-  - `async execute(self, action=..., name=..., message=..., profile=..., wait=..., timeout=..., **kwargs)`
+  - `async execute(self, action=..., name=..., message=..., profile=..., wait=..., timeout=..., repo=..., **kwargs)`
   - `get_log_object(self)`
 
 ## Runtime Contracts

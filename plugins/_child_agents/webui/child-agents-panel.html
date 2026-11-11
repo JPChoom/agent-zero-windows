@@ -1,0 +1,112 @@
+<html>
+<head>
+  <!-- The docked panel is loaded on its own (the canvas restores it after a
+       reload without ever opening main.html), so it must load its store. -->
+  <script type="module">
+    import { store } from "/plugins/_child_agents/webui/child-agents-store.js";
+  </script>
+</head>
+<body>
+<div x-data class="ca-shell">
+  <template x-if="$store.childAgents">
+    <div class="ca" x-data="{ get ca() { return $store.childAgents } }" x-init="ca.onMount()" x-destroy="ca.onUnmount()">
+
+      <div class="ca-bar">
+        <span class="ca-title" x-text="ca.parent ? 'Child agents of ' + ca.parent.name : 'Child agents'"></span>
+        <span class="ca-grow"></span>
+        <button type="button" class="ca-btn" x-show="ca.isChild" @click="ca.open(ca.parent.id)">Open parent chat</button>
+        <button type="button" class="ca-icon-btn" title="Refresh" @click="ca.refresh()">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+      </div>
+
+      <div class="ca-list">
+        <div class="ca-error" x-show="ca.error" x-text="ca.error"></div>
+
+        <template x-for="child in ca.children" :key="child.id">
+          <div class="ca-row" :class="{ 'is-current': child.id === ca.current }">
+            <span class="material-symbols-outlined ca-state" :class="'is-' + child.state" :title="ca.stateText(child)"
+                  x-text="ca.stateIcon(child)"></span>
+            <div class="ca-main">
+              <div class="ca-label">
+                <span class="ca-name" x-text="child.name"></span>
+                <span class="ca-tag" x-text="child.profile" title="Agent profile"></span>
+                <span class="ca-tag ca-tag-tree" x-show="ca.worktreeLabel(child)" x-text="ca.worktreeLabel(child)"
+                      :title="ca.worktreeTitle(child)"></span>
+                <span class="ca-tag" x-show="child.id === ca.current">this chat</span>
+              </div>
+              <div class="ca-activity" x-show="child.activity && child.activity.text" x-text="child.activity.text"></div>
+              <div class="ca-detail" x-text="ca.detail(child)"></div>
+            </div>
+            <div class="ca-actions">
+              <button type="button" class="ca-btn" x-show="child.state !== 'gone' && child.id !== ca.current" @click="ca.open(child.id)">Open chat</button>
+              <button type="button" class="ca-btn ca-btn-danger" x-show="child.state === 'running'" :disabled="ca.busy"
+                      title="Stops this child; its chat stays and the parent keeps working" @click="ca.stop(child)">Stop</button>
+            </div>
+          </div>
+        </template>
+
+        <div class="ca-empty" x-show="ca.loaded && !ca.children.length">
+          <span class="material-symbols-outlined">account_tree</span>
+          <p>No child agents in this chat.</p>
+          <p class="ca-hint">A child agent is a named helper that works in a chat of its own while the agent carries on. The agent starts one with the child_agent tool, for example for a long test run or research.</p>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <style>
+    .ca-shell { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; width: 100%; }
+    .ca {
+      --ca-line: color-mix(in srgb, var(--color-border) 75%, transparent);
+      --ca-hover: var(--color-background-hover, color-mix(in srgb, var(--color-text) 7%, transparent));
+      display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; height: 100%; width: 100%;
+      font-size: 0.86rem; color: var(--color-text); container: ca / inline-size;
+    }
+    .ca .material-symbols-outlined { font-size: 19px; line-height: 1; }
+    .ca-grow { flex: 1 1 auto; }
+    .ca-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--ca-line); }
+    .ca-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ca-icon-btn { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .ca-icon-btn:hover { background: var(--ca-hover); }
+    .ca-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; }
+    .ca-error { color: var(--color-error, #ef4444); padding: 6px 4px; }
+    .ca-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px; border-radius: 6px; }
+    .ca-row:hover { background: var(--ca-hover); }
+    .ca-row.is-current { background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
+    .ca-state { flex: 0 0 auto; margin-top: 1px; }
+    .ca-state.is-running { color: var(--color-primary); animation: ca-spin 1.4s linear infinite; }
+    .ca-state.is-idle { color: var(--color-success, #22c55e); }
+    .ca-state.is-gone { color: var(--color-warning, #eab308); }
+    @keyframes ca-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .ca-state.is-running { animation: none; } }
+    .ca-main { flex: 1 1 auto; min-width: 0; }
+    .ca-label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ca-name { font-weight: 600; }
+    .ca-tag {
+      flex: 0 0 auto; padding: 0 7px; border-radius: 999px; font-size: 0.7rem; line-height: 1.5;
+      background: color-mix(in srgb, var(--color-primary) 18%, transparent); color: var(--color-primary);
+    }
+    .ca-tag-tree { background: color-mix(in srgb, var(--color-text) 10%, transparent); color: inherit; font-family: monospace; }
+    .ca-activity { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ca-detail { font-size: 0.76rem; opacity: 0.65; margin-top: 1px; }
+    .ca-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+    .ca-btn {
+      height: 26px; padding: 0 10px; border: 1px solid var(--ca-line); border-radius: 6px; background: transparent;
+      color: inherit; font: inherit; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+    }
+    .ca-btn:hover:not(:disabled) { background: var(--ca-hover); }
+    .ca-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .ca-btn-danger { color: var(--color-error, #ef4444); }
+    .ca-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 48px 20px; opacity: 0.75; }
+    .ca-empty .material-symbols-outlined { font-size: 44px; opacity: 0.6; }
+    .ca-empty p { margin: 0; }
+    .ca-hint { font-size: 0.78rem; opacity: 0.7; max-width: 460px; line-height: 1.45; }
+    @container ca (max-width: 520px) {
+      .ca-row { flex-wrap: wrap; }
+      .ca-actions { width: 100%; justify-content: flex-end; }
+    }
+  </style>
+</div>
+</body>
+</html>

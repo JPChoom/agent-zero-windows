@@ -1,7 +1,7 @@
 ### child_agent
 named agent in its own chat: keeps its history between tasks, can work while you continue, can be stopped without stopping you
 use for separate longer jobs (test suite, research, review); call_subordinate for quick one-off subtasks
-args: `action`, `name`, `message`, optional `profile` (first start only), `wait`, `timeout`
+args: `action`, `name`, `message`, optional `profile` (first start only), `repo` (git repo: the child works in its own worktree), `wait`, `timeout`
 actions: `start`/`message` (give a task; same name = same child), `result` (wait for it), `status`, `stop`, `forget`
 `wait: false` lets it work while you continue; it works under your permission mode and capability limits
 example:

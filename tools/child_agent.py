@@ -9,7 +9,7 @@ class ChildAgent(Tool):
     """Named child agents in chats of their own (helpers/child_agents.py)."""
 
     async def execute(self, action: str = "", name: str = "", message: str = "", profile: str = "",
-                      wait=True, timeout=None, **kwargs):
+                      wait=True, timeout=None, repo: str = "", **kwargs):
         action = str(action or self.method or "start").strip().lower()
         wait = str(wait).strip().lower() not in ("false", "0", "no")
         try:
@@ -22,7 +22,8 @@ class ChildAgent(Tool):
                     from tools.call_subordinate import _validate_subordinate_profile
 
                     profile = _validate_subordinate_profile(self.agent, profile)
-                outcome = await child_agents.send(self.agent, name, message, profile=profile, wait=wait, timeout=limit)
+                outcome = await child_agents.send(self.agent, name, message, profile=profile, wait=wait, timeout=limit,
+                                                  repo=str(repo or "").strip())
             elif action in ("result", "wait"):
                 outcome = await child_agents.result(self.agent, name, timeout=limit)
             elif action in ("status", "list"):

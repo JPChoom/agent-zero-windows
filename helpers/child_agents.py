@@ -94,10 +94,56 @@ def _create(parent: "AgentContext", agent: "Agent", name: str, profile: str) -> 
     return child
 
 
+def _discard(child: "AgentContext") -> None:
+    """Remove a child that was created but never used."""
+    try:
+        from agent import AgentContext
+
+        child.kill_process()
+        AgentContext.remove(child.id)
+    except Exception:
+        pass
+
+
 def _state(child: "AgentContext | None") -> str:
     if child is None:
         return "gone"
     return "running" if child.is_running() else "idle"
+
+
+STEP_TYPES = {"tool", "code_exe", "browser", "mcp", "subagent"}  # chat log entries that are work steps
+_HEADING_PREFIX = re.compile(r"^(icon://\S+\s+)?(A\d+:\s*)?")
+
+
+def progress(child: "AgentContext | None") -> dict[str, Any]:
+    """What a child is doing, from its chat log: the newest entry's heading,
+    its kind, how many work steps it has taken, and when it last did anything."""
+    empty = {"text": "", "kind": "", "steps": 0, "last_activity": 0.0}
+    try:
+        with child.log._lock:
+            items = list(child.log.logs)
+    except Exception:
+        return empty
+    if not items:
+        return empty
+    steps = sum(1 for item in items if getattr(item, "type", "") in STEP_TYPES)
+    last = next((item for item in reversed(items) if getattr(item, "type", "") not in ("user", "util") and getattr(item, "heading", "")), items[-1])
+    text = _HEADING_PREFIX.sub("", str(getattr(last, "heading", "") or "")).strip()
+    return {"text": text[:140], "kind": str(getattr(last, "type", "")), "steps": steps,
+            "last_activity": float(getattr(last, "timestamp", 0.0) or 0.0)}
+
+
+def worktrees_of(child: "AgentContext | None") -> list[dict[str, Any]]:
+    """The git worktrees the child works in (plugins/_coding_controller coding_task)."""
+    if child is None:
+        return []
+    try:
+        from plugins._coding_controller.helpers import task_worktrees
+
+        return [{"name": task["name"], "path": task["path"], "branch": task["branch"], "repo": task["repo"]}
+                for task in task_worktrees.describe(child)]
+    except Exception:
+        return []
 
 
 def describe(parent: "AgentContext") -> list[dict[str, Any]]:
@@ -105,13 +151,31 @@ def describe(parent: "AgentContext") -> list[dict[str, Any]]:
     for name, child_id in registry(parent).items():
         child = find(parent, name)
         profile = getattr(getattr(child, "config", None), "profile", "") if child else ""
-        result.append({"name": name, "id": child_id, "state": _state(child), "profile": profile or "default"})
+        result.append({"name": name, "id": child_id, "state": _state(child), "profile": profile or "default",
+                       "activity": progress(child), "worktrees": worktrees_of(child)})
     return result
 
 
+async def _attach_worktree(child: "AgentContext", name: str, repo: str) -> str:
+    """Give the child a git worktree of `repo` for this job; returns the note
+    to put in front of its task. Raises ChildAgentError when it cannot."""
+    from plugins._coding_controller.helpers import task_worktrees
+
+    existing = task_worktrees.describe(child)
+    if existing:
+        raise ChildAgentError(f"Child '{name}' already works in {existing[0]['path']}; ask for its result, or forget it and start a new one.")
+    try:
+        task = await task_worktrees.start(child, repo, name)
+    except task_worktrees.TaskError as exc:
+        raise ChildAgentError(str(exc)) from exc
+    return (f"Your own git worktree for this job is {task['path']} (branch {task['branch']}, started from {task['repo']}). "
+            f"Do all your work there, not in {task['repo']}, and commit your changes there when you finish.\n\n")
+
+
 async def send(agent: "Agent", name: str, message: str, profile: str = "", wait: bool = True,
-               timeout: float | None = None) -> dict[str, Any]:
-    """Start the child `name`, or give an existing one its next task."""
+               timeout: float | None = None, repo: str = "") -> dict[str, Any]:
+    """Start the child `name`, or give an existing one its next task. With
+    `repo` (a git repository) the child works in a worktree of its own."""
     from agent import UserMessage
     from helpers import message_queue, persist_chat
 
@@ -125,6 +189,12 @@ async def send(agent: "Agent", name: str, message: str, profile: str = "", wait:
         if name not in children and len(children) >= MAX_CHILDREN:
             raise ChildAgentError(f"This chat already has {MAX_CHILDREN} child agents. Forget one first.")
         child = _create(parent, agent, name, profile)
+        if repo:
+            try:
+                message = await _attach_worktree(child, name, repo) + message
+            except ChildAgentError:
+                _discard(child)  # a child that could not get its worktree is not kept
+                raise
         children[name] = child.id
         _save_registry(parent, children)
     else:
@@ -133,6 +203,8 @@ async def send(agent: "Agent", name: str, message: str, profile: str = "", wait:
             raise ChildAgentError(f"Child '{name}' uses profile '{current or 'default'}'. Forget it and start a new one to change profile.")
         if child.is_running():
             raise ChildAgentError(f"Child '{name}' is still working. Wait for its result, or stop it first.")
+        if repo:
+            message = await _attach_worktree(child, name, repo) + message
 
     _bind(child, parent, agent)
     message_queue.log_user_message(child, message, [], source=f" (from {agent.agent_name})")

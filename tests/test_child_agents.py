@@ -203,7 +203,10 @@ def test_names_profiles_and_limits_are_checked(world):
 def test_status_lists_every_child(world):
     _run(child_agents.send(world.agent, "tests", "x", profile="developer"))
     listed = child_agents.describe(world.parent)
-    assert listed == [{"name": "tests", "id": child_agents.find(world.parent, "tests").id, "state": "idle", "profile": "developer"}]
+    [row] = listed
+    assert {k: row[k] for k in ("name", "id", "state", "profile")} == {
+        "name": "tests", "id": child_agents.find(world.parent, "tests").id, "state": "idle", "profile": "developer"}
+    assert row["worktrees"] == [] and set(row["activity"]) == {"text", "kind", "steps", "last_activity"}
 
 
 def test_the_tool_and_its_prompt_exist():

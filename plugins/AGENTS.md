@@ -76,6 +76,7 @@ Direct child DOX files:
 | [_chat_branching/AGENTS.md](_chat_branching/AGENTS.md) | Chat branching from an existing message. |
 | [_capabilities/AGENTS.md](_capabilities/AGENTS.md) | Capability policies: tools and actions an agent may use at all, per project and profile, in every permission mode. |
 | [_chat_compaction/AGENTS.md](_chat_compaction/AGENTS.md) | Full-chat compaction into a summary message. |
+| [_child_agents/AGENTS.md](_child_agents/AGENTS.md) | Child agents surface: what each child agent of a chat is doing, live, with Stop and Open chat. |
 | [_coding_controller/AGENTS.md](_coding_controller/AGENTS.md) | Coding quality gate after edits: build/test runs, repair loop, checkpoints, review. |
 | [_computer_use/AGENTS.md](_computer_use/AGENTS.md) | `computer_use` tool: Windows UI Automation control through trycua's cua-driver. |
 | [_context_usage/AGENTS.md](_context_usage/AGENTS.md) | Context-window usage indicator in the chat input bar. |

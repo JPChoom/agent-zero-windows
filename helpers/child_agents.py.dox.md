@@ -6,7 +6,7 @@
 
 ## Ownership
 
-- Public: `send(agent, name, message, profile, wait, timeout)`, `result(agent, name, timeout)`, `describe(parent)`, `stop(parent, name)`, `forget(parent, name)`, `stop_all(parent)`, `registry(parent)`, `find(parent, name)`, `normalize_name`, `ChildAgentError`, `CHILDREN_KEY`, `CHILD_OF_KEY`, `MAX_CHILDREN`.
+- Public: `send(agent, name, message, profile, wait, timeout, repo)`, `result(agent, name, timeout)`, `describe(parent)` (name, id, state, profile, `activity`, `worktrees`), `progress(child)`, `worktrees_of(child)`, `stop(parent, name)`, `forget(parent, name)`, `stop_all(parent)`, `registry(parent)`, `find(parent, name)`, `normalize_name`, `ChildAgentError`, `CHILDREN_KEY`, `CHILD_OF_KEY`, `MAX_CHILDREN`.
 
 ## Runtime Contracts
 
@@ -14,6 +14,8 @@
 - `_bind` re-applies the runtime links on every run (keys with a leading `_` are not saved): `PARALLEL_WORKER_PARENT_CONTEXT_KEY` (so `parallel_tools.governing_context` returns the root chat for permission mode, messaging limits and approval cards; it follows up to `GOVERNING_DEPTH` levels) and the capability scopes (`plugins/_capabilities` `CONTEXT_SCOPES_KEY`, saved).
 - A task runs as the child chat's own task (`communicate`), so the chat's Stop works and the parent continues with `wait: false`. A parent cancelled while waiting kills the child (`result`). Resetting or deleting a parent stops its children and grandchildren (`_functions/agent/AgentContext/{reset,remove}/start/_40_stop_child_agents.py`). `forget` keeps the child's chat for reading.
 - A busy child is not given a second task; a profile is fixed at the first start.
+- `progress` reads the child's chat log: the newest non-user entry's heading (icon and `A1:` prefix removed) as its current activity, the number of work steps (`STEP_TYPES`), and the time of its last entry. The Child agents panel (`plugins/_child_agents`) shows it.
+- `send(..., repo=)` gives the child its own git worktree of `repo` (`plugins/_coding_controller` `task_worktrees.start` on the child's context, branch `a0/<name>`) and puts its path in front of the task; one worktree per child, kept across tasks. A new child whose worktree cannot be made is discarded. The parent reviews, commits, merges or discards it with `coding_task` and `child=<name>`.
 
 ## Verification
 
