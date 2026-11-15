@@ -2,7 +2,9 @@
 
 All notable changes to Agent Zero for Windows. Versions are git tags (`vX.Y`, or `vX.Y.Z` for patch releases).
 
-## Unreleased
+## v1.7
+
+Agent Zero can now drive your VirtualBox VMs, build itself a disposable sandbox to work in, and run full-speed inside one that's sealed off from your PC.
 
 ### New
 - **Full control of your VirtualBox VMs.** A new `vm` tool lets the agent run any installed VM, Windows or Linux: start it (with or without a window), shut it down, power it off, save, pause, resume or reset it; take and restore snapshots; take screenshots and look at them; type, press key combinations (Ctrl+Alt+Del included) and use the mouse with exact clicks, drags and scrolling, which also works at boot menus, installers and recovery screens; and, with Guest Additions, run commands (PowerShell, cmd or a Linux shell) and read, write and copy files inside the guest. Looking (list, status, screenshots) needs no approval; everything else asks in Manual mode. Guest passwords come from Secrets and never appear in the agent's prompt, a command line or the log. The tool never changes a VM's settings (except a sandbox clone it made). It is described to the model only on PCs with VirtualBox installed.
