@@ -262,20 +262,18 @@ def clone(golden: dict, name: str = "") -> str:
     machine = resolve(name)
     _run(["setextradata", machine["uuid"], CLONE_MARK, golden["uuid"]])
     _harden(machine)
-    return (f"Cloned '{golden['name']}' (snapshot '{snapshot}') to '{name}': a sandbox with no host loopback, "
-            "shared folders or clipboard. A broken clone is cheap: `vm reset_clone` replaces it with a fresh one.")
+    return (f"Cloned '{golden['name']}' (snapshot '{snapshot}') to '{name}': a sealed sandbox (no network, shared "
+            "folders or clipboard), so it counts as isolated. `vm net {name} internet` gives it NAT internet when a task "
+            "needs downloads; `vm reset_clone` throws a broken clone away for a fresh one.")
 
 
 def _harden(machine: dict) -> None:
-    """Cut the host-facing surfaces a sandbox must not keep: reaching the
-    host's own services through NAT, the shared clipboard, drag and drop,
-    and every shared folder."""
+    """Default a sandbox clone to the sealed state: no shared clipboard,
+    drag and drop, shared folders, and no network at all (no host, LAN or
+    internet). `vm net <clone> internet` opens NAT internet (loopback off)
+    when a task needs it, and the clone stays isolated either way."""
     info = parse_machinereadable(_run(["showvminfo", machine["uuid"], "--machinereadable"]).stdout)
-    args = ["modifyvm", machine["uuid"], "--clipboard-mode", "disabled", "--drag-and-drop", "disabled"]
-    for key, value in info.items():
-        if re.fullmatch(r"nic\d+", key) and value == "nat":
-            args += [f"--nat-localhostreachable{key[3:]}", "off"]
-    _run(args)
+    _run(["modifyvm", machine["uuid"], "--clipboard-mode", "disabled", "--drag-and-drop", "disabled", "--nic1", "null"])
     for key, value in info.items():
         if key.startswith("SharedFolderNameMachineMapping"):
             _run(["sharedfolder", "remove", machine["uuid"], "--name", value])
@@ -303,6 +301,78 @@ def reset_clone(machine: dict) -> str:
     delete_clone(machine)
     clone(golden, name)
     return f"Reset '{name}': a fresh clone of '{golden['name']}' replaced it (the old one is deleted)."
+
+
+# ------------------------------------------------------------------ isolation (for the no-floor exemption)
+
+# Adapter types that keep a guest away from both the host and the LAN.
+SEALED_NIC_TYPES = {"null", "none", "intnet"}
+_HOSTWARD_CLIPBOARD = {"guesttohost", "bidirectional"}
+
+
+def _shared_folders(machine: dict) -> list[tuple[str, bool]]:
+    """(name, writable) for every shared folder. --machinereadable omits the
+    writable flag, so the human-readable listing is parsed for it."""
+    folders: list[tuple[str, bool]] = []
+    for line in _run(["showvminfo", machine["uuid"]]).stdout.splitlines():
+        match = re.match(r"\s*Name:\s*'([^']*)'.*Host path:", line)
+        if match:
+            folders.append((match.group(1), "readonly" not in line.lower()))
+    return folders
+
+
+def vm_is_isolated(machine: dict) -> tuple[bool, list[str]]:
+    """Whether a guest can neither write back to the host nor reach it.
+
+    Isolated means: no writable shared folder (a read-only one is fine - that
+    is one-way host->guest ingress), the clipboard and drag-and-drop never go
+    guest->host, host loopback is off, and every network adapter is sealed
+    (null/none/intnet) or NAT with loopback off. Host-only and bridged
+    adapters are never isolated. Returns (isolated, reasons it is not) and
+    fails safe - any error reading the VM leaves it not isolated.
+    """
+    info = parse_machinereadable(_run(["showvminfo", machine["uuid"], "--machinereadable"]).stdout)
+    reasons: list[str] = []
+    for name, writable in _shared_folders(machine):
+        if writable:
+            reasons.append(f"writable shared folder '{name}' (make it read-only)")
+    if info.get("clipboard", "").lower() in _HOSTWARD_CLIPBOARD:
+        reasons.append(f"clipboard '{info['clipboard']}' lets the guest write to the host")
+    if info.get("draganddrop", "").lower() in _HOSTWARD_CLIPBOARD:
+        reasons.append(f"drag-and-drop '{info['draganddrop']}' lets the guest write to the host")
+    for key, value in info.items():
+        match = re.fullmatch(r"nic(\d+)", key)
+        if not match:
+            continue
+        number, kind = match.group(1), value.lower()
+        if kind in SEALED_NIC_TYPES:
+            continue
+        if kind == "nat":
+            reachable = info.get(f"localhostReachable{number}", info.get("localhostReachable", ""))
+            if str(reachable).lower() in ("1", "true", "on"):
+                reasons.append(f"NIC {number} is NAT with host loopback on (reaches host services)")
+        else:
+            reasons.append(f"NIC {number} is '{value}' (reaches the host or the LAN)")
+    return (not reasons, reasons)
+
+
+def set_sandbox_network(machine: dict, mode: str) -> str:
+    """Switch an A0W-made clone between 'sealed' (no host, LAN or internet)
+    and 'internet' (NAT, host loopback off: internet, no host services, but
+    LAN-routable). Refused on anything the tool did not clone."""
+    if not clone_source(machine):
+        raise VmError(f"'{machine['name']}' is not an A0W-made clone; `vm` only changes the network of its own clones.")
+    if status(machine)["state"] in RUNNING_STATES:
+        raise VmError(f"Power off '{machine['name']}' before changing its network.")
+    mode = str(mode or "").strip().lower()
+    if mode == "sealed":
+        _run(["modifyvm", machine["uuid"], "--nic1", "null"])
+        return f"'{machine['name']}' network sealed: no host, no LAN, no internet. Still isolated for the no-floor exemption."
+    if mode == "internet":
+        _run(["modifyvm", machine["uuid"], "--nic1", "nat", "--nat-localhostreachable1", "off"])
+        return (f"'{machine['name']}' network set to NAT internet: downloads work, host services are unreachable, but it "
+                "is LAN-routable. Still isolated for the exemption.")
+    raise VmError("network mode must be 'sealed' or 'internet'.")
 
 
 # ------------------------------------------------------------------ screen and keyboard

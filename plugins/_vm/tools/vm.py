@@ -8,7 +8,7 @@ from helpers.errors import RepairableException
 from helpers.tool import Response, Tool
 from plugins._vm.helpers import vbox
 
-READ_ACTIONS = {"list", "status", "snapshots", "screenshot"}
+READ_ACTIONS = {"list", "status", "snapshots", "screenshot", "clones", "isolation"}
 
 
 class Vm(Tool):
@@ -58,6 +58,11 @@ class Vm(Tool):
             return vbox.delete_clone(machine)
         if action == "reset_clone":
             return vbox.reset_clone(machine)
+        if action == "net":
+            return vbox.set_sandbox_network(machine, str(args.get("mode") or ""))
+        if action == "isolation":
+            isolated, reasons = vbox.vm_is_isolated(machine)
+            return "isolated" if isolated else "NOT isolated: " + "; ".join(reasons)
         if action == "screenshot":
             path, width, height = vbox.screenshot(machine, files.get_abs_path("tmp", "vm"))
             return (f"Screenshot of '{machine['name']}' ({width}x{height} pixels) saved to {path} - load it with "
@@ -92,7 +97,7 @@ class Vm(Tool):
             return "Copied to " + vbox.copy_from(machine, guest, _host_path(str(host)), user, password)
         raise vbox.VmError("action must be list, status, start, stop, pause, resume, reset, snapshots, snapshot, restore, "
                            "screenshot, type, keys, mouse, run, read, write, copy_in, copy_out, clone, clones, "
-                           "reset_clone or delete_clone.")
+                           "reset_clone, delete_clone, net or isolation.")
 
     def _credentials(self, machine: dict, args: dict) -> tuple[str, str]:
         """The guest account: tool args (passwords arrive as §§secret(...)

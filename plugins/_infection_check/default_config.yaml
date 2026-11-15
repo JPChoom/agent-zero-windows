@@ -6,6 +6,12 @@ model: utility
 # skipped. Set false to check every tool call from the start, which also
 # polices credential exfiltration a user requests directly.
 only_after_untrusted_content: true
+# Skip the check for a `vm` tool action whose target VM is verifiably
+# isolated (no writable share, no guest->host clipboard, host loopback off,
+# every adapter sealed or NAT-loopback-off). Such a guest cannot reach the
+# host, so an injection confined to it has nothing to attack; the check
+# still runs on any VM that is not provably isolated. See plugins/_vm.
+exempt_isolated_vm: true
 # Compare only: the Utility model also judges in the background and the two
 # verdicts are logged (helpers/shadow.py). It never affects what runs.
 shadow_utility: false

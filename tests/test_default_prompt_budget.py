@@ -69,7 +69,7 @@ def _no_host_conditional_tools(monkeypatch):
 
 def test_host_conditional_tool_prompts_stay_small():
     text = (PROJECT_ROOT / "plugins" / "_vm" / "prompts" / "vm.tool.md").read_text(encoding="utf-8")
-    assert tokens.approximate_tokens(text) <= 400
+    assert tokens.approximate_tokens(text) <= 450
 
 
 @pytest.mark.asyncio

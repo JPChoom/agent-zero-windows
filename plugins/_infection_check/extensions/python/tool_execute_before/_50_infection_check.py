@@ -28,6 +28,34 @@ class InfectionAwaitCheck(Extension):
         ):
             return
 
+        # A `vm` action against a verifiably isolated guest cannot reach the
+        # host, so an injected instruction confined to it has nothing to
+        # attack - skip the check there (the safety floor already does not
+        # gate vm actions). On a VM that is not provably isolated the check
+        # stays. Opt out with the exempt_isolated_vm config.
+        if (
+            tool_name == "vm"
+            and get_config(self.agent).get("exempt_isolated_vm", True)
+            and _vm_target_is_isolated(tool_args)
+        ):
+            return
+
         await get_checker(self.agent).gate(
             self.agent, tool_name=tool_name, tool_args=tool_args
         )
+
+
+def _vm_target_is_isolated(tool_args) -> bool:
+    """True only when the plugins/_vm target VM is verifiably isolated.
+    Fails safe: any import/lookup error means not isolated, so the check
+    runs."""
+    try:
+        from plugins._vm.helpers import vbox
+
+        name = str((tool_args or {}).get("vm") or "").strip()
+        if not name or not vbox.installed():
+            return False
+        isolated, _reasons = vbox.vm_is_isolated(vbox.resolve(name))
+        return bool(isolated)
+    except Exception:
+        return False

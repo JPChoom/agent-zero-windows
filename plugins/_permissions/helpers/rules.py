@@ -79,7 +79,7 @@ _READ_ACTIONS = {
     "scheduler": {"list_tasks", "show_task", "find_task_by_name"},
     "skills": {"list", "search", "read_file"},
     # plugins/_vm: looking at a VM; power, input and anything inside the guest act.
-    "vm": {"list", "status", "snapshots", "screenshot", "clones"},
+    "vm": {"list", "status", "snapshots", "screenshot", "clones", "isolation"},
     "ytdlp": {"info", "formats"},
     "desktop_control": {"focus"},
     "computer_use": {"apps", "windows", "inspect", "screenshot", "status", "hand_over"},

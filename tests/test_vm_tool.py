@@ -37,12 +37,20 @@ if args[:2] == ["list", "runningvms"]:
     out("".join(f'"{v["name"]}" {{{u}}}\n' for u, v in state["vms"].items() if v["state"] == "running"))
 uuid = next((a for a in args if a in state["vms"]), "")
 vm = state["vms"].get(uuid)
-if args[0] == "showvminfo":
-    lines = [f'name="{vm["name"]}"', f'ostype="{vm["os"]}"', f'VMState="{vm["state"]}"', 'memory=8192', 'cpus=4', 'nic1="nat"']
+if args[0] == "showvminfo" and "--machinereadable" in args:
+    lines = [f'name="{vm["name"]}"', f'ostype="{vm["os"]}"', f'VMState="{vm["state"]}"', 'memory=8192', 'cpus=4',
+             f'nic1="{vm.get("nic1", "nat")}"', f'localhostReachable="{vm.get("loopback", "1")}"',
+             f'clipboard="{vm.get("clipboard", "disabled")}"', f'draganddrop="{vm.get("draganddrop", "disabled")}"']
     lines += [f'SnapshotName{"" if i == 0 else "-" + str(i)}="{s}"' for i, s in enumerate(vm["snapshots"])]
     lines += [f'SharedFolderNameMachineMapping{i + 1}="{s}"' for i, s in enumerate(vm.get("shared", []))]
     if vm["snapshots"]:
         lines.append(f'CurrentSnapshotName="{vm["snapshots"][-1]}"')
+    out("\n".join(lines) + "\n")
+if args[0] == "showvminfo":  # human-readable form (shared-folder writability)
+    lines = [f"Name: {vm['name']}", "Shared folders:"]
+    for s in vm.get("shared", []):
+        tag = "readonly" if s in vm.get("shared_ro", []) else "writable"
+        lines.append(f"Name: '{s}', Host path: 'C:\\x' (machine mapping), {tag}")
     out("\n".join(lines) + "\n")
 if args[0] == "getextradata":
     out(f"Value: {vm['extra'][args[2]]}\n" if args[2] in vm.get("extra", {}) else "No value set!\n")
@@ -64,7 +72,14 @@ if args[0] == "unregistervm":
 if args[0] == "sharedfolder":
     vm["shared"].remove(args[args.index("--name") + 1]); save(); out("")
 if args[0] == "modifyvm":
-    vm.setdefault("modified", []).extend(args[2:]); save(); out("")
+    opts = args[2:]; vm.setdefault("modified", []).extend(opts)
+    def _v(flag):
+        return opts[opts.index(flag) + 1] if flag in opts else None
+    if "--nic1" in opts: vm["nic1"] = _v("--nic1")
+    if "--clipboard-mode" in opts: vm["clipboard"] = _v("--clipboard-mode")
+    if "--drag-and-drop" in opts: vm["draganddrop"] = _v("--drag-and-drop")
+    if "--nat-localhostreachable1" in opts: vm["loopback"] = "0" if _v("--nat-localhostreachable1") == "off" else "1"
+    save(); out("")
 if args[0] == "guestproperty":
     out(f"Value: {vm['ga']}\n" if vm.get("ga") and vm["state"] == "running" else "No value set!\n")
 if args[0] == "startvm":
@@ -347,8 +362,9 @@ def test_clone_takes_a_golden_snapshot_marks_and_hardens(world):
     assert ["snapshot", WIN, "take", "a0w-golden", "--description", "Base for A0W sandbox clones"] in calls
     assert ["clonevm", WIN, "--snapshot", "a0w-golden", "--options", "Link", "--name", "Win11-clone-1", "--register"] in calls
     modify = next(c for c in calls if c[0] == "modifyvm" and c[1] == made["uuid"])
-    assert ["--clipboard-mode", "disabled", "--drag-and-drop", "disabled", "--nat-localhostreachable1", "off"] == modify[2:]
+    assert ["--clipboard-mode", "disabled", "--drag-and-drop", "disabled", "--nic1", "null"] == modify[2:]
     assert ["sharedfolder", "remove", made["uuid"], "--name", "code"] in calls
+    assert vbox.vm_is_isolated(made)[0]  # the hardened clone is isolated
 
 
 def test_clone_uses_the_current_snapshot_and_counts_names(world):
@@ -387,6 +403,68 @@ def test_reset_clone_replaces_it_with_a_fresh_one(world):
     assert "fresh clone" in message
     fresh = vbox.resolve("Ubuntu-clone-1")
     assert fresh["uuid"] != old["uuid"] and vbox.clone_source(fresh) == LNX
+
+
+# -- isolation (the no-floor exemption) --------------------------------------------------------
+
+def test_a_hardened_clone_is_isolated(world):
+    vbox.clone(vbox.resolve("Win11"))
+    isolated, reasons = vbox.vm_is_isolated(vbox.resolve("Win11-clone-1"))
+    assert isolated and reasons == []
+
+
+def test_what_breaks_isolation(world):
+    machine = vbox.resolve("Ubuntu")
+    world.set_state(LNX, nic1="nat", loopback="1", shared=[])  # NAT loopback on
+    ok, reasons = vbox.vm_is_isolated(machine)
+    assert not ok and any("loopback" in r for r in reasons)
+    world.set_state(LNX, loopback="0", shared=["data"], shared_ro=[])  # writable share
+    ok, reasons = vbox.vm_is_isolated(machine)
+    assert not ok and any("writable shared folder" in r for r in reasons)
+    world.set_state(LNX, clipboard="bidirectional", shared=[])  # guest->host clipboard
+    ok, reasons = vbox.vm_is_isolated(machine)
+    assert not ok and any("clipboard" in r for r in reasons)
+    for kind in ("bridged", "hostonly"):
+        world.set_state(LNX, nic1=kind, clipboard="disabled", loopback="0", shared=[])
+        ok, reasons = vbox.vm_is_isolated(machine)
+        assert not ok and any(kind in r for r in reasons)
+
+
+def test_read_only_share_and_sealed_or_nat_loopback_off_stay_isolated(world):
+    machine = vbox.resolve("Ubuntu")
+    world.set_state(LNX, nic1="null", clipboard="hosttoguest", shared=["ingress"], shared_ro=["ingress"])
+    assert vbox.vm_is_isolated(machine)[0]  # sealed + read-only ingress + host->guest clipboard
+    world.set_state(LNX, nic1="nat", loopback="0")
+    assert vbox.vm_is_isolated(machine)[0]  # NAT internet with loopback off still isolated
+
+
+def test_clone_defaults_to_a_sealed_network(world):
+    vbox.clone(vbox.resolve("Ubuntu"))
+    info = vbox.parse_machinereadable(vbox._run(["showvminfo", vbox.resolve("Ubuntu-clone-1")["uuid"], "--machinereadable"]).stdout)
+    assert info["nic1"] == "null"
+
+
+def test_vm_net_toggles_a_clone_only(world):
+    vbox.clone(vbox.resolve("Win11"))
+    made = vbox.resolve("Win11-clone-1")
+    vbox.set_sandbox_network(made, "internet")
+    info = vbox.parse_machinereadable(vbox._run(["showvminfo", made["uuid"], "--machinereadable"]).stdout)
+    assert info["nic1"] == "nat" and info["localhostReachable"] == "0"
+    assert vbox.vm_is_isolated(made)[0]  # NAT-loopback-off clone still isolated
+    assert "sealed" in vbox.set_sandbox_network(made, "sealed")
+    with pytest.raises(vbox.VmError, match="only changes the network of its own clones"):
+        vbox.set_sandbox_network(vbox.resolve("Win11"), "internet")
+    with pytest.raises(vbox.VmError, match="sealed. or .internet"):
+        vbox.set_sandbox_network(made, "bridged")
+
+
+def test_infection_check_skips_only_an_isolated_vm(world):
+    from plugins._infection_check.extensions.python.tool_execute_before import _50_infection_check as ic
+    vbox.clone(vbox.resolve("Win11"))
+    assert ic._vm_target_is_isolated({"vm": "Win11-clone-1"}) is True
+    assert ic._vm_target_is_isolated({"vm": "Win11"}) is False  # writable share 'code' + NAT loopback on
+    assert ic._vm_target_is_isolated({"vm": ""}) is False
+    assert ic._vm_target_is_isolated({}) is False
 
 
 # -- the tool -----------------------------------------------------------------------------
@@ -446,10 +524,10 @@ def test_copy_out_defaults_to_the_workdir(world, monkeypatch):
 def test_looking_is_a_read_and_acting_is_execute():
     from plugins._permissions.helpers import rules
 
-    for action in ("list", "status", "snapshots", "screenshot", "clones"):
+    for action in ("list", "status", "snapshots", "screenshot", "clones", "isolation"):
         assert rules.classify("vm", {"action": action}) == "read", action
     for action in ("start", "stop", "restore", "type", "keys", "mouse", "run", "write", "copy_in", "copy_out",
-                   "clone", "delete_clone", "reset_clone"):
+                   "clone", "delete_clone", "reset_clone", "net"):
         assert rules.classify("vm", {"action": action}) == "execute", action
 
 
