@@ -1,0 +1,10 @@
+name: _vm
+title: Virtual machines
+description: Full control of installed VirtualBox VMs (Windows or Linux) - power, snapshots, screen, keyboard, mouse, and programs and files inside the guest.
+version: 1.0.0
+always_enabled: false
+os_support:
+  - windows
+settings_sections: []
+per_project_config: false
+per_agent_config: false

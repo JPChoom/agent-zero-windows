@@ -56,6 +56,22 @@ async def _build_system_text(profile: str = "agent0") -> str:
         runtime.args.update(old_args)
 
 
+@pytest.fixture(autouse=True)
+def _no_host_conditional_tools(monkeypatch):
+    # Some tool descriptions are added only on PCs that have the software
+    # (plugins/_vm: VirtualBox). The budget guards the framework default, so it
+    # must not depend on what the PC running the tests has installed; those
+    # sections get their own cap below.
+    from plugins._vm.helpers import vbox
+
+    monkeypatch.setattr(vbox, "installed", lambda: False)
+
+
+def test_host_conditional_tool_prompts_stay_small():
+    text = (PROJECT_ROOT / "plugins" / "_vm" / "prompts" / "vm.tool.md").read_text(encoding="utf-8")
+    assert tokens.approximate_tokens(text) <= 400
+
+
 @pytest.mark.asyncio
 async def test_default_agent0_prompt_budget_and_guardrails():
     system_text = await _build_system_text()

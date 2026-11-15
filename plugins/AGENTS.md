@@ -110,6 +110,7 @@ Direct child DOX files:
 | [_text_editor/AGENTS.md](_text_editor/AGENTS.md) | Native text read, write, and patch tool. |
 | [_time_travel/AGENTS.md](_time_travel/AGENTS.md) | Workspace history, diff, travel, snapshot, and revert flows. |
 | [_workspace/AGENTS.md](_workspace/AGENTS.md) | Workspace surface: who owns which apps, terminals and browser tabs, with Adopt, Release and Close. |
+| [_vm/AGENTS.md](_vm/AGENTS.md) | The `vm` tool: full control of installed VirtualBox VMs (power, snapshots, screen, keyboard, mouse, guest programs and files). |
 | [_win_desktop/AGENTS.md](_win_desktop/AGENTS.md) | Windows desktop screenshot/control tools and the shared-loop live viewer stream. |
 | [_windows_intel/AGENTS.md](_windows_intel/AGENTS.md) | Typed read-only Windows system queries and safe per-user settings (foundation: validation, formatting, redaction, PowerShell runner). |
 | [_whatsapp_integration/AGENTS.md](_whatsapp_integration/AGENTS.md) | WhatsApp Baileys bridge integration. |
